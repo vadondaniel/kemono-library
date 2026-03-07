@@ -449,11 +449,12 @@ def _infer_inline_name(node: Any, absolute_url: str) -> str:
     if not text:
         return fallback
 
-    # If anchor text is a label like "Break Room", treat it as filename stem.
-    # Keep URL extension so it can dedupe with API attachment names.
-    suffix = Path(urlparse(absolute_url).path).suffix
-    if suffix and not Path(text).suffix:
-        return f"{text}{suffix}"
+    # If anchor text is a label like "Break Room" or "Artwork No.34",
+    # treat it as filename stem and keep URL extension for dedupe.
+    url_suffix = Path(urlparse(absolute_url).path).suffix.lower()
+    text_suffix = Path(text).suffix.lower()
+    if url_suffix and text_suffix != url_suffix and not _is_known_file_extension(text_suffix):
+        return f"{text}{url_suffix}"
     return text
 
 
@@ -476,6 +477,38 @@ def _candidate_priority(candidate: AttachmentCandidate) -> int:
         "inline_media": 10,
     }
     return priorities.get(candidate.kind, 20)
+
+
+def _is_known_file_extension(suffix: str) -> bool:
+    if not suffix:
+        return False
+    known = {
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".gif",
+        ".webp",
+        ".bmp",
+        ".svg",
+        ".mp4",
+        ".webm",
+        ".m4v",
+        ".mov",
+        ".mp3",
+        ".wav",
+        ".ogg",
+        ".flac",
+        ".zip",
+        ".rar",
+        ".7z",
+        ".tar",
+        ".gz",
+        ".pdf",
+        ".txt",
+        ".json",
+        ".csv",
+    }
+    return suffix in known
 
 
 def _collect_declared_media_names(

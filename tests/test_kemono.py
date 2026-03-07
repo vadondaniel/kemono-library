@@ -201,6 +201,22 @@ def test_extract_attachments_dedupes_inline_anchor_text_file_name():
     assert all(item.kind != "inline_media" for item in items)
 
 
+def test_extract_attachments_dedupes_inline_anchor_with_numeric_suffix_label():
+    payload = {
+        "post": {
+            "attachments": [{"name": "Artwork No.34.zip", "path": "/aa/bb/art.zip"}],
+            "content": (
+                '<a href="https://downloads.fanbox.cc/files/post/11441751/'
+                'EZNQnKOMdH7j94svQWqmIaPo.zip" rel="noopener noreferrer">Artwork No.34</a>'
+            ),
+        }
+    }
+    items = extract_attachments(payload)
+    names = [item.name for item in items]
+    assert names.count("Artwork No.34.zip") == 1
+    assert all(item.kind != "inline_media" for item in items)
+
+
 def test_extract_attachments_skips_inline_when_name_declared_in_api_attachments():
     payload = {
         "post": {
