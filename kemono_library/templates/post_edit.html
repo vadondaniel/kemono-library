@@ -20,4 +20,11 @@
     <button type="submit">Save Changes</button>
   </form>
 </section>
+
+<section class="panel">
+  <h2>Danger zone</h2>
+  <form method="post" action="{{ url_for('delete_post', post_id=post['id']) }}" class="inline-form" onsubmit="return confirm('Delete this post from your local library?');">
+    <button type="submit" class="button-ghost button-danger-quiet">Delete post</button>
+  </form>
+</section>
 {% endblock %}

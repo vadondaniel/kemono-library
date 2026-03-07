@@ -136,6 +136,19 @@ class LibraryDB:
         with self._connect() as conn:
             return conn.execute("SELECT * FROM creators WHERE id = ?", (creator_id,)).fetchone()
 
+    def list_post_ids_for_creator(self, creator_id: int) -> list[int]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT id FROM posts WHERE creator_id = ?",
+                (creator_id,),
+            ).fetchall()
+            return [int(row["id"]) for row in rows]
+
+    def delete_creator(self, creator_id: int) -> int:
+        with self._connect() as conn:
+            cursor = conn.execute("DELETE FROM creators WHERE id = ?", (creator_id,))
+            return int(cursor.rowcount or 0)
+
     def attach_creator_external(self, creator_id: int, service: str, external_user_id: str) -> None:
         with self._connect() as conn:
             conn.execute(
@@ -490,6 +503,11 @@ class LibraryDB:
                 (post_id,),
             ).fetchall()
             return list(rows)
+
+    def delete_post(self, post_id: int) -> int:
+        with self._connect() as conn:
+            cursor = conn.execute("DELETE FROM posts WHERE id = ?", (post_id,))
+            return int(cursor.rowcount or 0)
 
     def update_post(self, post_id: int, title: str, content: str, series_id: int | None) -> None:
         with self._connect() as conn:

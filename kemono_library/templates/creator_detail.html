@@ -36,11 +36,19 @@
         </span>
       </div>
     </div>
-    {% if selected_series %}
-      <div class="creator-hero-actions">
+    <div class="creator-hero-actions">
+      {% if selected_series %}
         <a class="button-link button-ghost" href="{{ url_for('creator_detail', creator_id=creator['id'], sort=sort_by, direction=sort_direction) }}">Back to all posts</a>
-      </div>
-    {% endif %}
+      {% endif %}
+      <details class="action-menu-disclosure">
+        <summary class="button-link button-ghost action-menu-toggle">More</summary>
+        <div class="action-menu-popover">
+          <form method="post" action="{{ url_for('delete_creator', creator_id=creator['id']) }}" class="inline-form" onsubmit="return confirm('Delete this creator and all imported posts?');">
+            <button type="submit" class="button-ghost button-danger-quiet">Delete creator</button>
+          </form>
+        </div>
+      </details>
+    </div>
   </div>
 
 </section>

@@ -590,3 +590,86 @@ def test_series_metadata_update_flow(tmp_path):
     assert updated["name"] == "After"
     assert updated["description"] == "Updated description"
     assert updated["tags_text"] == "tag one, tag two"
+
+
+def test_delete_post_removes_files_and_record(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+
+    creator_id = db.create_creator("Delete Post Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="delete-user",
+        external_post_id="501",
+        title="Delete Me",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/delete-user/post/501",
+    )
+    post_dir = Path(app.config["FILES_DIR"]) / f"post_{post_id}"
+    post_dir.mkdir(parents=True, exist_ok=True)
+    (post_dir / "sample.txt").write_text("x", encoding="utf-8")
+
+    response = app.test_client().post(f"/posts/{post_id}/delete", follow_redirects=False)
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith(f"/creators/{creator_id}")
+    assert db.get_post(post_id) is None
+    assert not post_dir.exists()
+
+
+def test_delete_creator_removes_posts_files_and_icon(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+
+    creator_id = db.create_creator("Delete Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="delete-user",
+        external_post_id="601",
+        title="Delete Creator Post",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/delete-user/post/601",
+    )
+
+    post_dir = Path(app.config["FILES_DIR"]) / f"post_{post_id}"
+    post_dir.mkdir(parents=True, exist_ok=True)
+    (post_dir / "sample.txt").write_text("x", encoding="utf-8")
+
+    icon_rel = "fanbox_delete-user.jpg"
+    icon_path = Path(app.config["ICONS_DIR"]) / icon_rel
+    icon_path.parent.mkdir(parents=True, exist_ok=True)
+    icon_path.write_bytes(b"icon")
+    db.update_creator_icon(
+        creator_id,
+        icon_remote_url="https://img.kemono.cr/icons/fanbox/delete-user",
+        icon_local_path=icon_rel,
+    )
+
+    response = app.test_client().post(f"/creators/{creator_id}/delete", follow_redirects=False)
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/")
+    assert db.get_creator(creator_id) is None
+    assert db.get_post(post_id) is None
+    assert not post_dir.exists()
+    assert not icon_path.exists()

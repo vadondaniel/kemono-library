@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -158,6 +159,30 @@ def create_app(test_config: dict | None = None) -> Flask:
         )
         flash("Series updated.", "success")
         return redirect(url_for("creator_detail", creator_id=creator_id, series_id=series_id))
+
+    @app.post("/creators/<int:creator_id>/delete")
+    def delete_creator(creator_id: int):
+        creator = db.get_creator(creator_id)
+        if not creator:
+            return ("Creator not found", 404)
+
+        post_ids = db.list_post_ids_for_creator(creator_id)
+        icon_local_path = creator["icon_local_path"]
+        deleted = db.delete_creator(creator_id)
+        if not deleted:
+            return ("Creator not found", 404)
+
+        files_root = Path(app.config["FILES_DIR"])
+        for post_id in post_ids:
+            shutil.rmtree(files_root / f"post_{post_id}", ignore_errors=True)
+
+        if isinstance(icon_local_path, str) and icon_local_path.strip():
+            icon_path = Path(app.config["ICONS_DIR"]) / icon_local_path
+            if icon_path.exists():
+                icon_path.unlink()
+
+        flash("Creator deleted.", "success")
+        return redirect(url_for("index"))
 
     @app.get("/import")
     def import_form():
@@ -355,6 +380,25 @@ def create_app(test_config: dict | None = None) -> Flask:
             attachments=attachments,
             rendered_content=rendered_content,
         )
+
+    @app.post("/posts/<int:post_id>/delete")
+    def delete_post(post_id: int):
+        post = db.get_post(post_id)
+        if not post:
+            return ("Post not found", 404)
+
+        creator_id = int(post["creator_id"])
+        series_id = int(post["series_id"]) if post["series_id"] else None
+        deleted = db.delete_post(post_id)
+        if not deleted:
+            return ("Post not found", 404)
+
+        files_root = Path(app.config["FILES_DIR"])
+        shutil.rmtree(files_root / f"post_{post_id}", ignore_errors=True)
+        flash("Post deleted.", "success")
+        if series_id:
+            return redirect(url_for("creator_detail", creator_id=creator_id, series_id=series_id))
+        return redirect(url_for("creator_detail", creator_id=creator_id))
 
     @app.route("/posts/<int:post_id>/edit", methods=["GET", "POST"])
     def edit_post(post_id: int):
