@@ -117,6 +117,7 @@ def _rewrite_kemono_links(
 ) -> str:
     soup = BeautifulSoup(html_content, "html.parser")
     for link in soup.find_all("a"):
+        _normalize_fanbox_linkified_anchor(link)
         href = link.get("href")
         if not href:
             continue
@@ -139,6 +140,59 @@ def _rewrite_kemono_links(
     return str(soup)
 
 
+def _normalize_fanbox_linkified_anchor(link: object) -> None:
+    href = getattr(link, "get", lambda *_args, **_kwargs: None)("href")
+    if not isinstance(href, str) or not href:
+        return
+
+    parsed = urlparse(href)
+    host = parsed.netloc.lower()
+    if not host.endswith("fanbox.cc"):
+        return
+
+    path_prefix, path_suffix = _split_fanbox_post_path(parsed.path)
+    if not path_prefix or not path_suffix:
+        return
+
+    normalized_href = f"{parsed.scheme}://{parsed.netloc}{path_prefix}"
+    if parsed.query:
+        normalized_href += f"?{parsed.query}"
+    if parsed.fragment:
+        normalized_href += f"#{parsed.fragment}"
+    link["href"] = normalized_href
+
+    # Linkified plain-text URLs become <a>FULL_MATCH</a>. If the full match
+    # wrongly included trailing prose, split it back out after </a>.
+    link_text = getattr(link, "get_text", lambda *_args, **_kwargs: "")("", strip=False)
+    if not isinstance(link_text, str):
+        return
+    if link_text != href:
+        return
+
+    if not link_text.startswith(normalized_href):
+        return
+    trailing_text = link_text[len(normalized_href) :]
+    if not trailing_text:
+        return
+
+    if not all(isinstance(node, NavigableString) for node in getattr(link, "contents", [])):
+        return
+
+    link.clear()
+    link.append(NavigableString(normalized_href))
+    link.insert_after(NavigableString(trailing_text))
+
+
+def _split_fanbox_post_path(path: str) -> tuple[str | None, str]:
+    direct = re.match(r"^(/posts/\d+)(.*)$", path)
+    if direct:
+        return direct.group(1), direct.group(2)
+    creator = re.match(r"^(/@[^/]+/posts/\d+)(.*)$", path)
+    if creator:
+        return creator.group(1), creator.group(2)
+    return None, ""
+
+
 def _parse_supported_post_link(href: str):
     try:
         return parse_kemono_post_url(href)
@@ -149,6 +203,21 @@ def _parse_supported_post_link(href: str):
     host = parsed.netloc.lower()
     if not host.endswith("fanbox.cc"):
         return None
+
+    # Linkification can sometimes swallow adjacent CJK text into the URL when
+    # there is no delimiter (e.g. ".../posts/12345のつづき"). Recover the post
+    # id from the valid path prefix before handling stricter route shapes.
+    direct_post_match = re.match(r"^/posts/(\d+)", parsed.path)
+    if direct_post_match:
+        from .kemono import KemonoPostRef
+
+        return KemonoPostRef(service="fanbox", post_id=direct_post_match.group(1), user_id=None)
+    creator_post_match = re.match(r"^/@[^/]+/posts/(\d+)", parsed.path)
+    if creator_post_match:
+        from .kemono import KemonoPostRef
+
+        return KemonoPostRef(service="fanbox", post_id=creator_post_match.group(1), user_id=None)
+
     parts = [p for p in parsed.path.split("/") if p]
     if len(parts) >= 2 and parts[0] == "posts":
         post_id = parts[1]

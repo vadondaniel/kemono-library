@@ -126,6 +126,26 @@ def test_render_linkifies_and_rewrites_plain_fanbox_post_url():
     )
 
 
+def test_render_rewrites_linkified_fanbox_url_with_trailing_cjk_text():
+    content = (
+        "<p>pixiv\u30ea\u30af\u30a8\u30b9\u30c8\u3042\u308a\u304c\u3068\u3046\u3054\u3056\u3044\u307e\u3059\u3002"
+        "https://tetetoroort.fanbox.cc/posts/6663853\u306e\u3064\u3065\u304d\u3002\u30ad\u30e3\u30e9\u30af\u30bf\u30fcAI"
+        "\u306f\u30aa\u30d5\u306b\u306a\u3063\u3066\u3044\u308b\u306e\u3067\u3001\u5f7c\u5973\u305f\u3061\u306f\u7d20\u9762\u3067"
+        "\u30ed\u30fc\u30eb\u30d7\u30ec\u30a4\u3092\u697d\u3057\u3093\u3067\u3044\u308b\u3088\u3046\u3067\u3059\u3002</p>"
+    )
+    rendered = render_post_content(
+        content,
+        current_service="fanbox",
+        current_user_id="67922",
+        current_post_id=1,
+    )
+    assert (
+        '/links/resolve?service=fanbox&amp;post=6663853&amp;from_post=1&amp;user=67922&amp;assumed_from_context=1'
+        in rendered
+    )
+    assert "posts/6663853</a>\u306e\u3064\u3065\u304d" in rendered
+
+
 def test_render_rewrites_www_fanbox_creator_post_link():
     content = (
         '<h3><a href="https://www.fanbox.cc/@tetetoroort/posts/9187463" '
