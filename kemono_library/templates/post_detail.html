@@ -31,12 +31,25 @@
     <ul class="list">
       {% for file in attachments %}
         <li>
-          {% if file['local_path'] %}
+          {% if file['local_available'] %}
             <a href="{{ url_for('serve_file', relative_path=file['local_path']) }}">{{ file['name'] }}</a>
           {% else %}
             <a href="{{ file['remote_url'] }}" target="_blank" rel="noopener noreferrer">{{ file['name'] }}</a>
           {% endif %}
           <small>{{ file['kind'] }}</small>
+          {% if not file['local_available'] %}
+            <form
+              method="post"
+              action="{{ url_for('retry_attachment_download', post_id=post['id'], attachment_id=file['id']) }}"
+              class="inline-form post-file-retry-form"
+            >
+              <a
+                href="{{ url_for('retry_attachment_download', post_id=post['id'], attachment_id=file['id']) }}"
+                class="post-file-retry-link"
+                onclick="event.preventDefault(); this.closest('form').submit();"
+              >retry</a>
+            </form>
+          {% endif %}
         </li>
       {% endfor %}
     </ul>

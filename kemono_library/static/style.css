@@ -1329,6 +1329,27 @@ small {
   flex-wrap: wrap;
 }
 
+.post-file-missing {
+  color: color-mix(in srgb, #9f4d58 82%, var(--text));
+}
+
+.post-file-retry-link {
+  color: color-mix(in srgb, #9f4d58 86%, var(--text));
+  font-size: 0.82rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.post-file-retry-link:hover {
+  color: color-mix(in srgb, #9f4d58 98%, var(--text));
+}
+
+.post-file-retry-form {
+  display: inline-flex;
+  margin-left: 0.16rem;
+  vertical-align: baseline;
+}
+
 @media (max-width: 720px) {
   .site-header {
     padding: 0.75rem 0.8rem;

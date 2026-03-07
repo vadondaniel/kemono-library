@@ -91,6 +91,26 @@ def test_render_rewrites_file_link_alias_with_numeric_label_suffix():
     assert ">Artwork No.34<" in rendered
 
 
+def test_render_falls_back_to_attachment_remote_url_when_local_missing():
+    content = (
+        '<a href="https://downloads.fanbox.cc/images/post/10791194/'
+        'eO8wzPLjankw59mg6YeTMzxN.jpeg" rel="noopener noreferrer"></a>'
+    )
+    rendered = render_post_content(
+        content,
+        current_service="fanbox",
+        current_user_id="70479526",
+        current_post_id=1,
+        local_media_map={},
+        local_media_by_name={},
+        remote_media_by_name={
+            "eo8wzpljankw59mg6yetmzxn.jpeg": "https://n2.kemono.cr/c2/4f/hash.jpg",
+        },
+    )
+    assert 'href="https://n2.kemono.cr/c2/4f/hash.jpg"' in rendered
+    assert 'src="https://n2.kemono.cr/c2/4f/hash.jpg"' in rendered
+
+
 def test_render_linkifies_and_rewrites_plain_fanbox_post_url():
     content = "<p>前のhttps://tetetoroort.fanbox.cc/posts/8644398</p>"
     rendered = render_post_content(

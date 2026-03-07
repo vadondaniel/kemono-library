@@ -521,6 +521,115 @@ def test_post_detail_prefers_attachment_over_inline_same_name(tmp_path):
     assert b'src="' + expected + b'"' in detail.data
 
 
+def test_post_detail_falls_back_to_attachment_remote_when_local_missing(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Remote Fallback Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="70479526",
+        external_post_id="1002",
+        title="Fallback Case",
+        content=(
+            '<p><a href="https://downloads.fanbox.cc/images/post/10791194/'
+            'same-name.jpeg" rel="noopener noreferrer"></a></p>'
+        ),
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/70479526/post/1002",
+    )
+    db.replace_attachments(
+        post_id,
+        [
+            {
+                "name": "same-name.jpeg",
+                "remote_url": "https://downloads.fanbox.cc/images/post/10791194/same-name.jpeg",
+                "local_path": None,
+                "kind": "inline_media",
+            },
+            {
+                "name": "same-name.jpeg",
+                "remote_url": "https://n3.kemono.cr/hashes/same-name.jpg",
+                "local_path": None,
+                "kind": "attachment",
+            },
+        ],
+    )
+
+    detail = app.test_client().get(f"/posts/{post_id}")
+    assert detail.status_code == 200
+    expected = b'https://n3.kemono.cr/hashes/same-name.jpg'
+    assert b'href="' + expected + b'"' in detail.data
+    assert b'src="' + expected + b'"' in detail.data
+    assert b"download missing" not in detail.data
+    assert b"retry" in detail.data
+
+
+def test_retry_attachment_download_updates_missing_file(tmp_path, monkeypatch):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Retry Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="retry-user",
+        external_post_id="1003",
+        title="Retry Me",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/retry-user/post/1003",
+    )
+    db.replace_attachments(
+        post_id,
+        [
+            {
+                "name": "broken.jpg",
+                "remote_url": "https://n1.kemono.cr/path/broken.jpg",
+                "local_path": f"post_{post_id}/broken.jpg",
+                "kind": "attachment",
+            }
+        ],
+    )
+
+    def fake_download(remote_url, destination):  # noqa: ARG001
+        Path(destination).parent.mkdir(parents=True, exist_ok=True)
+        Path(destination).write_bytes(b"recovered")
+
+    monkeypatch.setattr("kemono_library.web.download_attachment", fake_download)
+
+    attachment_id = int(db.list_attachments(post_id)[0]["id"])
+    response = app.test_client().post(
+        f"/posts/{post_id}/attachments/{attachment_id}/retry",
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith(f"/posts/{post_id}")
+
+    saved_file = Path(app.config["FILES_DIR"]) / f"post_{post_id}" / "broken.jpg"
+    assert saved_file.exists()
+    assert saved_file.read_bytes() == b"recovered"
+    updated = db.list_attachments(post_id)[0]
+    assert updated["local_path"] == f"post_{post_id}/broken.jpg"
+
+
 def test_edit_page_prettifies_html_content(tmp_path):
     app = create_app(
         {

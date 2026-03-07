@@ -13,7 +13,7 @@ from bs4 import NavigableString
 from bleach.linkifier import Linker
 from bleach.linkifier import URL_RE
 
-from .kemono import parse_kemono_post_url
+from .kemono import parse_kemono_post_url, sanitize_filename
 
 ALLOWED_TAGS = [
     "a",
@@ -68,6 +68,7 @@ def render_post_content(
     current_post_id: int,
     local_media_map: dict[str, str] | None = None,
     local_media_by_name: dict[str, str] | None = None,
+    remote_media_by_name: dict[str, str] | None = None,
 ) -> str:
     if not raw_content:
         return ""
@@ -94,6 +95,7 @@ def render_post_content(
         safe_html,
         local_media_map=local_media_map or {},
         local_media_by_name=local_media_by_name or {},
+        remote_media_by_name=remote_media_by_name or {},
     )
     linkified = _linkify_urls(with_local_media)
     with_inline_media = _expand_empty_image_links(linkified)
@@ -298,8 +300,9 @@ def _rewrite_local_media_urls(
     *,
     local_media_map: dict[str, str],
     local_media_by_name: dict[str, str],
+    remote_media_by_name: dict[str, str],
 ) -> str:
-    if not local_media_map and not local_media_by_name:
+    if not local_media_map and not local_media_by_name and not remote_media_by_name:
         return html_content
 
     soup = BeautifulSoup(html_content, "html.parser")
@@ -320,6 +323,7 @@ def _rewrite_local_media_urls(
                 node=node,
                 local_media_map=local_media_map,
                 local_media_by_name=local_media_by_name,
+                remote_media_by_name=remote_media_by_name,
             )
             if replacement:
                 node[attr] = replacement
@@ -332,6 +336,7 @@ def _find_local_media_replacement(
     node: object | None,
     local_media_map: dict[str, str],
     local_media_by_name: dict[str, str],
+    remote_media_by_name: dict[str, str],
 ) -> str | None:
     parsed = urlparse(url)
     filename = Path(parsed.path).name.lower()
@@ -355,6 +360,23 @@ def _find_local_media_replacement(
         if by_alias:
             return by_alias
 
+    # Fallback: if local file is unavailable, prefer the canonical attachment URL
+    # over locked inline fanbox links.
+    if filename:
+        remote_by_name = remote_media_by_name.get(filename)
+        if remote_by_name:
+            return remote_by_name
+        remote_by_sanitized = remote_media_by_name.get(sanitize_filename(filename).lower())
+        if remote_by_sanitized:
+            return remote_by_sanitized
+    if alias_name:
+        remote_by_alias = remote_media_by_name.get(alias_name)
+        if remote_by_alias:
+            return remote_by_alias
+        remote_by_alias_sanitized = remote_media_by_name.get(sanitize_filename(alias_name).lower())
+        if remote_by_alias_sanitized:
+            return remote_by_alias_sanitized
+
     # FANBOX image links sometimes put source URL in query parameters.
     query = parse_qs(parsed.query)
     for values in query.values():
@@ -364,6 +386,7 @@ def _find_local_media_replacement(
                 node=node,
                 local_media_map=local_media_map,
                 local_media_by_name=local_media_by_name,
+                remote_media_by_name=remote_media_by_name,
             )
             if nested:
                 return nested

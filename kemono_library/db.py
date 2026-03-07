@@ -527,6 +527,17 @@ class LibraryDB:
             ).fetchall()
             return list(rows)
 
+    def update_attachment_local_path(self, attachment_id: int, local_path: str | None) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE attachments
+                SET local_path = ?
+                WHERE id = ?
+                """,
+                (local_path, attachment_id),
+            )
+
     def delete_post(self, post_id: int) -> int:
         with self._connect() as conn:
             cursor = conn.execute("DELETE FROM posts WHERE id = ?", (post_id,))

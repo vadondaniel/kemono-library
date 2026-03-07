@@ -477,6 +477,23 @@ def create_app(test_config: dict | None = None) -> Flask:
             return ("Post not found", 404)
         attachments = db.list_attachments(post_id)
         local_media_map, local_media_by_name = _build_local_media_maps(post, attachments)
+        remote_media_by_name = _build_remote_media_by_name(attachments)
+        files_base = Path(app.config["FILES_DIR"])
+        attachment_rows = []
+        for row in attachments:
+            local_path = row["local_path"]
+            local_abs = files_base / local_path if isinstance(local_path, str) and local_path.strip() else None
+            local_available = _is_valid_file(local_abs)
+            attachment_rows.append(
+                {
+                    "id": int(row["id"]),
+                    "name": row["name"],
+                    "remote_url": row["remote_url"],
+                    "local_path": row["local_path"],
+                    "kind": row["kind"],
+                    "local_available": local_available,
+                }
+            )
 
         rendered_content = render_post_content(
             post["content"],
@@ -485,13 +502,49 @@ def create_app(test_config: dict | None = None) -> Flask:
             current_post_id=post_id,
             local_media_map=local_media_map,
             local_media_by_name=local_media_by_name,
+            remote_media_by_name=remote_media_by_name,
         )
         return render_template(
             "post_detail.html",
             post=post,
-            attachments=attachments,
+            attachments=attachment_rows,
             rendered_content=rendered_content,
         )
+
+    @app.post("/posts/<int:post_id>/attachments/<int:attachment_id>/retry")
+    def retry_attachment_download(post_id: int, attachment_id: int):
+        post = db.get_post(post_id)
+        if not post:
+            return ("Post not found", 404)
+
+        attachment = next(
+            (row for row in db.list_attachments(post_id) if int(row["id"]) == attachment_id),
+            None,
+        )
+        if attachment is None:
+            return ("Attachment not found", 404)
+
+        files_base = Path(app.config["FILES_DIR"])
+        existing_local = attachment["local_path"]
+        if isinstance(existing_local, str) and existing_local.strip():
+            destination = files_base / existing_local
+        else:
+            destination = files_base / f"post_{post_id}" / sanitize_filename(str(attachment["name"]))
+
+        try:
+            download_attachment(str(attachment["remote_url"]), destination)
+        except Exception as exc:  # noqa: BLE001
+            flash(f"Retry failed for {attachment['name']}: {exc}", "error")
+            return redirect(url_for("post_detail", post_id=post_id))
+
+        if not _is_valid_file(destination):
+            flash(f"Retry failed for {attachment['name']}: downloaded file is empty.", "error")
+            return redirect(url_for("post_detail", post_id=post_id))
+
+        local_rel = destination.relative_to(files_base).as_posix()
+        db.update_attachment_local_path(attachment_id, local_rel)
+        flash(f"Downloaded {attachment['name']}.", "success")
+        return redirect(url_for("post_detail", post_id=post_id))
 
     @app.post("/posts/<int:post_id>/delete")
     def delete_post(post_id: int):
@@ -740,6 +793,47 @@ def _build_local_media_maps(
             )
 
     return local_media_map, local_media_by_name
+
+
+def _build_remote_media_by_name(attachments: list[Any]) -> dict[str, str]:
+    remote_media_by_name: dict[str, str] = {}
+    remote_media_priority: dict[str, int] = {}
+    for attachment in attachments:
+        remote_url = attachment["remote_url"]
+        kind_priority = _media_kind_priority(attachment["kind"])
+
+        parsed = urlparse(remote_url)
+        filename = Path(parsed.path).name.lower()
+        if filename:
+            _assign_preferred(
+                remote_media_by_name,
+                remote_media_priority,
+                filename,
+                remote_url,
+                kind_priority,
+            )
+
+        name = attachment["name"]
+        if isinstance(name, str):
+            plain_name = name.strip().lower()
+            if plain_name:
+                _assign_preferred(
+                    remote_media_by_name,
+                    remote_media_priority,
+                    plain_name,
+                    remote_url,
+                    kind_priority,
+                )
+            normalized_name = sanitize_filename(name).lower()
+            if normalized_name:
+                _assign_preferred(
+                    remote_media_by_name,
+                    remote_media_priority,
+                    normalized_name,
+                    remote_url,
+                    kind_priority,
+                )
+    return remote_media_by_name
 
 
 def _safe_load_metadata(raw_metadata: str | None) -> dict[str, Any]:
