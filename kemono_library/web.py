@@ -5,13 +5,15 @@ import json
 import re
 import shutil
 import sqlite3
+import threading
+import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import urlparse
 
 import bleach
-from flask import Flask, flash, redirect, render_template, request, send_from_directory, url_for
+from flask import Flask, flash, jsonify, redirect, render_template, request, send_from_directory, url_for
 from markupsafe import Markup
 
 from .db import LibraryDB
@@ -46,6 +48,8 @@ def create_app(test_config: dict | None = None) -> Flask:
     Path(app.config["FILES_DIR"]).mkdir(parents=True, exist_ok=True)
     Path(app.config["ICONS_DIR"]).mkdir(parents=True, exist_ok=True)
     app.db = db  # type: ignore[attr-defined]
+    import_jobs: dict[str, dict[str, Any]] = {}
+    import_jobs_lock = threading.Lock()
 
     @app.template_filter("format_datetime")
     def format_datetime_filter(value: Any) -> str:
@@ -293,124 +297,178 @@ def create_app(test_config: dict | None = None) -> Flask:
         if not creator_id or not service or not user_id or not post_id:
             flash("Missing import fields.", "error")
             return redirect(url_for("import_form"))
-
-        creator = db.get_creator(creator_id)
-        if not creator:
-            flash("Creator not found.", "error")
-            return redirect(url_for("import_form"))
-
-        post_ref = KemonoPostRef(service=service, user_id=user_id, post_id=post_id)
         try:
-            raw_payload = fetch_post_json(post_ref)
-        except Exception as exc:  # noqa: BLE001
-            flash(f"Failed to fetch post during save: {exc}", "error")
+            local_post_id = _import_post_into_library(
+                db,
+                files_base=Path(app.config["FILES_DIR"]),
+                icons_base=Path(app.config["ICONS_DIR"]),
+                creator_id=creator_id,
+                series_id=series_id,
+                service=service,
+                user_id=user_id,
+                post_id=post_id,
+                requested_title=request.form.get("title"),
+                requested_content=request.form.get("content"),
+                requested_published_at=request.form.get("published_at"),
+                requested_edited_at=request.form.get("edited_at"),
+                requested_next_external_post_id=request.form.get("next_external_post_id"),
+                requested_prev_external_post_id=request.form.get("prev_external_post_id"),
+                tags_text=request.form.get("tags_text"),
+                field_presence={
+                    "published_at": "published_at" in request.form,
+                    "edited_at": "edited_at" in request.form,
+                    "next_external_post_id": "next_external_post_id" in request.form,
+                    "prev_external_post_id": "prev_external_post_id" in request.form,
+                },
+                selected_attachment_indices=set(request.form.getlist("selected_attachment")),
+            )
+        except ValueError as exc:
+            flash(str(exc), "error")
             return redirect(url_for("import_form"))
-        payload = normalize_post_payload(raw_payload)
-
-        db.attach_creator_external(creator_id, service=service, external_user_id=user_id)
-        _ensure_creator_icon(
-            db,
-            icons_base=Path(app.config["ICONS_DIR"]),
-            creator_id=creator_id,
-            service=service,
-            user_id=user_id,
-        )
-        all_attachments = extract_attachments(raw_payload)
-        selected_indices = set(request.form.getlist("selected_attachment"))
-        selected_attachments = [
-            candidate for idx, candidate in enumerate(all_attachments) if str(idx) in selected_indices
-        ]
-
-        title = _resolve_import_title(request.form.get("title"), payload.get("title"), service=service, post_id=post_id)
-        content = _resolve_import_content(request.form.get("content"), payload.get("content"))
-        thumbnail_name, thumbnail_remote_url = _extract_thumbnail_from_payload(payload, raw_payload)
-        published_at = _resolve_import_optional_metadata(
-            request.form.get("published_at"),
-            payload.get("published"),
-            field_present="published_at" in request.form,
-        )
-        edited_at = _resolve_import_optional_metadata(
-            request.form.get("edited_at"),
-            payload.get("edited"),
-            field_present="edited_at" in request.form,
-        )
-        next_external_post_id = _resolve_import_optional_metadata(
-            request.form.get("next_external_post_id"),
-            payload.get("next"),
-            field_present="next_external_post_id" in request.form,
-        )
-        prev_external_post_id = _resolve_import_optional_metadata(
-            request.form.get("prev_external_post_id"),
-            payload.get("prev"),
-            field_present="prev_external_post_id" in request.form,
-        )
-        source_url = post_ref.canonical_url
-        local_post_id = db.upsert_post(
-            creator_id=creator_id,
-            series_id=series_id,
-            service=service,
-            external_user_id=user_id,
-            external_post_id=post_id,
-            title=str(title),
-            content=str(content),
-            metadata=raw_payload,
-            source_url=source_url,
-            thumbnail_name=thumbnail_name,
-            thumbnail_remote_url=thumbnail_remote_url,
-            thumbnail_local_path=None,
-            published_at=published_at,
-            edited_at=edited_at,
-            next_external_post_id=next_external_post_id,
-            prev_external_post_id=prev_external_post_id,
-        )
-
-        download_root = Path(app.config["FILES_DIR"]) / f"post_{local_post_id}"
-        files_base = Path(app.config["FILES_DIR"])
-        existing_rows = db.list_attachments(local_post_id)
-        existing_by_remote, existing_by_name = _build_existing_file_indexes(files_base, existing_rows)
-
-        saved = []
-        for candidate in selected_attachments:
-            filename = sanitize_filename(candidate.name)
-            destination = (
-                existing_by_remote.get(candidate.remote_url)
-                or existing_by_name.get(filename)
-                or (download_root / filename)
-            )
-            needs_download = not _is_valid_file(destination)
-            if needs_download:
-                try:
-                    download_attachment(candidate.remote_url, destination)
-                except Exception:  # noqa: BLE001
-                    destination = None
-            if destination and _is_valid_file(destination):
-                local_path = destination.relative_to(files_base).as_posix()
-            else:
-                local_path = None
-            saved.append(
-                {
-                    "name": candidate.name,
-                    "remote_url": candidate.remote_url,
-                    "local_path": local_path,
-                    "kind": candidate.kind,
-                }
-            )
-        db.replace_attachments(local_post_id, saved)
-        db.update_post_thumbnail(
-            local_post_id,
-            _find_thumbnail_local_path(
-                saved,
-                thumbnail_name=thumbnail_name,
-                thumbnail_remote_url=thumbnail_remote_url,
-            ),
-        )
-        tags_text = request.form.get("tags_text")
-        tags = _parse_tags_text(tags_text) if tags_text is not None else _extract_tags(payload)
-        db.replace_tags(local_post_id, tags)
-        db.replace_previews(local_post_id, _extract_previews(raw_payload))
+        except Exception as exc:  # noqa: BLE001
+            flash(f"Failed to import post: {exc}", "error")
+            return redirect(url_for("import_form"))
 
         flash("Post imported into local library.", "success")
         return redirect(url_for("post_detail", post_id=local_post_id))
+
+    @app.post("/import/start")
+    def import_start():
+        creator_id = request.form.get("creator_id", type=int)
+        series_id = request.form.get("series_id", type=int)
+        service = request.form.get("service", "").strip()
+        user_id = request.form.get("user_id", "").strip()
+        post_id = request.form.get("post_id", "").strip()
+
+        if not creator_id or not service or not user_id or not post_id:
+            return jsonify({"error": "Missing import fields."}), 400
+
+        job_id = uuid.uuid4().hex
+        job_payload = {
+            "creator_id": creator_id,
+            "series_id": series_id,
+            "service": service,
+            "user_id": user_id,
+            "post_id": post_id,
+            "requested_title": request.form.get("title"),
+            "requested_content": request.form.get("content"),
+            "requested_published_at": request.form.get("published_at"),
+            "requested_edited_at": request.form.get("edited_at"),
+            "requested_next_external_post_id": request.form.get("next_external_post_id"),
+            "requested_prev_external_post_id": request.form.get("prev_external_post_id"),
+            "tags_text": request.form.get("tags_text"),
+            "field_presence": {
+                "published_at": "published_at" in request.form,
+                "edited_at": "edited_at" in request.form,
+                "next_external_post_id": "next_external_post_id" in request.form,
+                "prev_external_post_id": "prev_external_post_id" in request.form,
+            },
+            "selected_attachment_indices": set(request.form.getlist("selected_attachment")),
+        }
+
+        with import_jobs_lock:
+            import_jobs[job_id] = {
+                "status": "queued",
+                "message": "Queued import job...",
+                "completed": 0,
+                "total": 0,
+                "current_file": None,
+                "redirect_url": None,
+                "error": None,
+            }
+
+        def progress_callback(completed: int, total: int, current_file: str | None) -> None:
+            if total <= 0:
+                message = "Saving post content and metadata..."
+            elif completed >= total:
+                message = f"Finalizing import ({completed}/{total})..."
+            elif current_file:
+                message = f"Downloading {completed}/{total}: {current_file}"
+            else:
+                message = f"Downloading {completed}/{total} files..."
+            with import_jobs_lock:
+                job = import_jobs.get(job_id)
+                if not job:
+                    return
+                job.update(
+                    {
+                        "status": "running",
+                        "message": message,
+                        "completed": completed,
+                        "total": total,
+                        "current_file": current_file,
+                    }
+                )
+
+        def worker() -> None:
+            try:
+                with import_jobs_lock:
+                    job = import_jobs.get(job_id)
+                    if job:
+                        job.update({"status": "running", "message": "Fetching post payload..."})
+
+                local_post_id = _import_post_into_library(
+                    db,
+                    files_base=Path(app.config["FILES_DIR"]),
+                    icons_base=Path(app.config["ICONS_DIR"]),
+                    creator_id=int(job_payload["creator_id"]),
+                    series_id=job_payload["series_id"],
+                    service=str(job_payload["service"]),
+                    user_id=str(job_payload["user_id"]),
+                    post_id=str(job_payload["post_id"]),
+                    requested_title=job_payload.get("requested_title"),
+                    requested_content=job_payload.get("requested_content"),
+                    requested_published_at=job_payload.get("requested_published_at"),
+                    requested_edited_at=job_payload.get("requested_edited_at"),
+                    requested_next_external_post_id=job_payload.get("requested_next_external_post_id"),
+                    requested_prev_external_post_id=job_payload.get("requested_prev_external_post_id"),
+                    tags_text=job_payload.get("tags_text"),
+                    field_presence=dict(job_payload["field_presence"]),
+                    selected_attachment_indices=set(job_payload["selected_attachment_indices"]),
+                    progress_callback=progress_callback,
+                )
+                with import_jobs_lock:
+                    job = import_jobs.get(job_id)
+                    if job:
+                        total = int(job.get("total") or 0)
+                        completed = int(job.get("completed") or 0)
+                        job.update(
+                            {
+                                "status": "completed",
+                                "message": "Import complete.",
+                                "completed": max(completed, total),
+                                "redirect_url": f"/posts/{local_post_id}",
+                            }
+                        )
+            except Exception as exc:  # noqa: BLE001
+                with import_jobs_lock:
+                    job = import_jobs.get(job_id)
+                    if job:
+                        job.update(
+                            {
+                                "status": "failed",
+                                "message": "Import failed.",
+                                "error": str(exc),
+                            }
+                        )
+
+        thread = threading.Thread(target=worker, daemon=True)
+        thread.start()
+        return jsonify(
+            {
+                "job_id": job_id,
+                "status_url": url_for("import_job_status", job_id=job_id),
+            }
+        )
+
+    @app.get("/import/jobs/<job_id>/status")
+    def import_job_status(job_id: str):
+        with import_jobs_lock:
+            job = import_jobs.get(job_id)
+            if not job:
+                return jsonify({"error": "Import job not found."}), 404
+            snapshot = dict(job)
+        return jsonify(snapshot)
 
     @app.get("/posts/<int:post_id>")
     def post_detail(post_id: int):
@@ -820,6 +878,143 @@ def _find_thumbnail_local_path(
             if sanitize_filename(name).lower() == normalized_thumbnail_name:
                 return str(local)
     return None
+
+
+def _import_post_into_library(
+    db: LibraryDB,
+    *,
+    files_base: Path,
+    icons_base: Path,
+    creator_id: int,
+    series_id: int | None,
+    service: str,
+    user_id: str,
+    post_id: str,
+    requested_title: str | None,
+    requested_content: str | None,
+    requested_published_at: str | None,
+    requested_edited_at: str | None,
+    requested_next_external_post_id: str | None,
+    requested_prev_external_post_id: str | None,
+    tags_text: str | None,
+    field_presence: dict[str, bool],
+    selected_attachment_indices: set[str],
+    progress_callback: Callable[[int, int, str | None], None] | None = None,
+) -> int:
+    creator = db.get_creator(creator_id)
+    if not creator:
+        raise ValueError("Creator not found.")
+
+    post_ref = KemonoPostRef(service=service, user_id=user_id, post_id=post_id)
+    raw_payload = fetch_post_json(post_ref)
+    payload = normalize_post_payload(raw_payload)
+
+    db.attach_creator_external(creator_id, service=service, external_user_id=user_id)
+    _ensure_creator_icon(
+        db,
+        icons_base=icons_base,
+        creator_id=creator_id,
+        service=service,
+        user_id=user_id,
+    )
+
+    all_attachments = extract_attachments(raw_payload)
+    selected_attachments = [
+        candidate for idx, candidate in enumerate(all_attachments) if str(idx) in selected_attachment_indices
+    ]
+    if progress_callback:
+        progress_callback(0, len(selected_attachments), None)
+
+    title = _resolve_import_title(requested_title, payload.get("title"), service=service, post_id=post_id)
+    content = _resolve_import_content(requested_content, payload.get("content"))
+    thumbnail_name, thumbnail_remote_url = _extract_thumbnail_from_payload(payload, raw_payload)
+    published_at = _resolve_import_optional_metadata(
+        requested_published_at,
+        payload.get("published"),
+        field_present=field_presence.get("published_at", False),
+    )
+    edited_at = _resolve_import_optional_metadata(
+        requested_edited_at,
+        payload.get("edited"),
+        field_present=field_presence.get("edited_at", False),
+    )
+    next_external_post_id = _resolve_import_optional_metadata(
+        requested_next_external_post_id,
+        payload.get("next"),
+        field_present=field_presence.get("next_external_post_id", False),
+    )
+    prev_external_post_id = _resolve_import_optional_metadata(
+        requested_prev_external_post_id,
+        payload.get("prev"),
+        field_present=field_presence.get("prev_external_post_id", False),
+    )
+    source_url = post_ref.canonical_url
+    local_post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=series_id,
+        service=service,
+        external_user_id=user_id,
+        external_post_id=post_id,
+        title=str(title),
+        content=str(content),
+        metadata=raw_payload,
+        source_url=source_url,
+        thumbnail_name=thumbnail_name,
+        thumbnail_remote_url=thumbnail_remote_url,
+        thumbnail_local_path=None,
+        published_at=published_at,
+        edited_at=edited_at,
+        next_external_post_id=next_external_post_id,
+        prev_external_post_id=prev_external_post_id,
+    )
+
+    download_root = files_base / f"post_{local_post_id}"
+    existing_rows = db.list_attachments(local_post_id)
+    existing_by_remote, existing_by_name = _build_existing_file_indexes(files_base, existing_rows)
+
+    saved: list[dict[str, Any]] = []
+    total = len(selected_attachments)
+    for idx, candidate in enumerate(selected_attachments, start=1):
+        filename = sanitize_filename(candidate.name)
+        destination = (
+            existing_by_remote.get(candidate.remote_url)
+            or existing_by_name.get(filename)
+            or (download_root / filename)
+        )
+        needs_download = not _is_valid_file(destination)
+        if needs_download:
+            try:
+                download_attachment(candidate.remote_url, destination)
+            except Exception:  # noqa: BLE001
+                destination = None
+        if destination and _is_valid_file(destination):
+            local_path = destination.relative_to(files_base).as_posix()
+        else:
+            local_path = None
+        saved.append(
+            {
+                "name": candidate.name,
+                "remote_url": candidate.remote_url,
+                "local_path": local_path,
+                "kind": candidate.kind,
+            }
+        )
+        if progress_callback:
+            progress_callback(idx, total, candidate.name)
+
+    db.replace_attachments(local_post_id, saved)
+    db.update_post_thumbnail(
+        local_post_id,
+        _find_thumbnail_local_path(
+            saved,
+            thumbnail_name=thumbnail_name,
+            thumbnail_remote_url=thumbnail_remote_url,
+        ),
+    )
+    tags = _parse_tags_text(tags_text) if tags_text is not None else _extract_tags(payload)
+    db.replace_tags(local_post_id, tags)
+    db.replace_previews(local_post_id, _extract_previews(raw_payload))
+    return local_post_id
 
 
 def _extract_tags(payload: dict[str, Any]) -> list[str]:

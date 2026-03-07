@@ -567,6 +567,93 @@ small {
   color: var(--text);
 }
 
+.import-submit-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: color-mix(in srgb, var(--bg) 58%, transparent);
+  backdrop-filter: blur(2px);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.import-submit-overlay[hidden] {
+  display: none !important;
+}
+
+.import-submit-card {
+  width: min(520px, 94vw);
+  border: 1px solid var(--border);
+  border-radius: 0.8rem;
+  background: color-mix(in srgb, var(--card-solid) 96%, transparent);
+  box-shadow: var(--shadow);
+  padding: 0.9rem 1rem;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.import-submit-head {
+  display: flex;
+  align-items: center;
+  gap: 0.62rem;
+}
+
+.import-submit-head p {
+  margin: 0;
+  font-weight: 600;
+}
+
+.import-submit-progress-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.import-submit-progress-track {
+  height: 0.5rem;
+  border-radius: 999px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+}
+
+.import-submit-progress-fill {
+  display: block;
+  width: 0%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 64%, white));
+  transition: width 180ms ease-out;
+}
+
+.import-submit-current {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  min-height: 1.05rem;
+}
+
+.import-submit-spinner {
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 999px;
+  border: 2px solid color-mix(in srgb, var(--accent) 24%, transparent);
+  border-top-color: var(--accent);
+  animation: import-spin 900ms linear infinite;
+  flex: 0 0 auto;
+}
+
+@keyframes import-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .creator-line {
   display: inline-flex;
   align-items: center;

@@ -1,6 +1,11 @@
 {% extends "base.html" %}
 {% block content %}
-<form method="post" action="{{ url_for('import_commit') }}" id="file-selection-form">
+<form
+  method="post"
+  action="{{ url_for('import_commit') }}"
+  id="file-selection-form"
+  data-import-start-url="{{ url_for('import_start') }}"
+>
 <section class="panel">
   <h1>Import Preview</h1>
   <p><strong>Creator:</strong> {{ creator['name'] }}</p>
@@ -120,6 +125,22 @@
     <button type="submit">Import Post Content Only</button>
   {% endif %}
 </section>
+<div class="import-submit-overlay" data-import-submit-overlay hidden aria-live="polite" aria-atomic="true">
+  <div class="import-submit-card">
+    <div class="import-submit-head">
+      <span class="import-submit-spinner" aria-hidden="true"></span>
+      <p data-import-submit-message>Preparing import...</p>
+    </div>
+    <div class="import-submit-progress-line">
+      <span><strong data-import-progress-current>0</strong> / <strong data-import-progress-total>0</strong> files</span>
+      <span data-import-progress-percent>0%</span>
+    </div>
+    <div class="import-submit-progress-track" aria-hidden="true">
+      <span class="import-submit-progress-fill" data-import-progress-fill style="width: 0%;"></span>
+    </div>
+    <p class="import-submit-current" data-import-submit-current></p>
+  </div>
+</div>
 </form>
 <script src="{{ url_for('static', filename='import_preview.js') }}"></script>
 {% endblock %}

@@ -4,6 +4,148 @@
     return;
   }
 
+  let isSubmitting = false;
+  const submitOverlay = form.querySelector("[data-import-submit-overlay]");
+  const buttons = Array.from(form.querySelectorAll("button"));
+  const submitButtons = buttons.filter((button) => button.type === "submit");
+  const submitButtonText = new Map(submitButtons.map((button) => [button, button.textContent]));
+  const startUrl = form.dataset.importStartUrl || "";
+  const statusMessage = form.querySelector("[data-import-submit-message]");
+  const progressCurrent = form.querySelector("[data-import-progress-current]");
+  const progressTotal = form.querySelector("[data-import-progress-total]");
+  const progressPercent = form.querySelector("[data-import-progress-percent]");
+  const progressFill = form.querySelector("[data-import-progress-fill]");
+  const currentFile = form.querySelector("[data-import-submit-current]");
+
+  function setSubmittingState() {
+    if (isSubmitting) {
+      return;
+    }
+    isSubmitting = true;
+    form.setAttribute("aria-busy", "true");
+    buttons.forEach((button) => {
+      if (button.type === "submit") {
+        button.textContent = "Importing...";
+      }
+      button.disabled = true;
+    });
+    if (submitOverlay instanceof HTMLElement) {
+      submitOverlay.hidden = false;
+    }
+  }
+
+  function clearSubmittingState() {
+    isSubmitting = false;
+    form.removeAttribute("aria-busy");
+    buttons.forEach((button) => {
+      button.disabled = false;
+      if (button.type === "submit" && submitButtonText.has(button)) {
+        button.textContent = submitButtonText.get(button);
+      }
+    });
+    if (submitOverlay instanceof HTMLElement) {
+      submitOverlay.hidden = true;
+    }
+  }
+
+  function setOverlayMessage(message) {
+    if (statusMessage instanceof HTMLElement) {
+      statusMessage.textContent = message;
+    }
+  }
+
+  function updateProgress(completed, total, fileName, message) {
+    if (progressCurrent instanceof HTMLElement) {
+      progressCurrent.textContent = String(completed);
+    }
+    if (progressTotal instanceof HTMLElement) {
+      progressTotal.textContent = String(total);
+    }
+    const normalizedPercent = total > 0 ? Math.max(0, Math.min(100, Math.round((completed / total) * 100))) : 0;
+    if (progressPercent instanceof HTMLElement) {
+      progressPercent.textContent = `${normalizedPercent}%`;
+    }
+    if (progressFill instanceof HTMLElement) {
+      progressFill.style.width = `${normalizedPercent}%`;
+    }
+    if (currentFile instanceof HTMLElement) {
+      currentFile.textContent = fileName || "";
+    }
+    if (message) {
+      setOverlayMessage(message);
+    }
+  }
+
+  function delay(ms) {
+    return new Promise((resolve) => window.setTimeout(resolve, ms));
+  }
+
+  async function pollImportStatus(statusUrl) {
+    while (true) {
+      const response = await fetch(statusUrl, {
+        method: "GET",
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not read import progress.");
+      }
+
+      const total = Number(payload.total || 0);
+      const completed = Number(payload.completed || 0);
+      updateProgress(completed, total, payload.current_file || "", payload.message || "");
+
+      if (payload.status === "completed") {
+        if (payload.redirect_url) {
+          window.location.assign(payload.redirect_url);
+          return;
+        }
+        throw new Error("Import finished but no destination was returned.");
+      }
+
+      if (payload.status === "failed") {
+        throw new Error(payload.error || payload.message || "Import failed.");
+      }
+      await delay(400);
+    }
+  }
+
+  async function startImport() {
+    if (!startUrl) {
+      form.submit();
+      return;
+    }
+
+    setOverlayMessage("Starting import...");
+    updateProgress(0, 0, "", "");
+
+    const response = await fetch(startUrl, {
+      method: "POST",
+      body: new FormData(form),
+      headers: { "X-Requested-With": "XMLHttpRequest", Accept: "application/json" },
+      cache: "no-store",
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.status_url) {
+      throw new Error(payload.error || "Could not start import.");
+    }
+    await pollImportStatus(payload.status_url);
+  }
+
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (isSubmitting) {
+      return;
+    }
+    setSubmittingState();
+    startImport().catch((error) => {
+      clearSubmittingState();
+      const message = error instanceof Error ? error.message : "Import failed.";
+      window.alert(message);
+    });
+  });
+
   const cards = Array.from(form.querySelectorAll("[data-file-card]"));
   if (!cards.length) {
     return;

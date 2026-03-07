@@ -1,4 +1,5 @@
 from pathlib import Path
+import time
 
 from kemono_library.web import create_app
 
@@ -120,6 +121,87 @@ def test_import_and_resolve_flow(tmp_path, monkeypatch):
     unresolved = client.get("/links/resolve?service=fanbox&post=100&user=70479526")
     assert unresolved.status_code == 302
     assert unresolved.headers["Location"].endswith("/posts/1")
+
+
+def test_import_start_reports_live_progress_until_complete(tmp_path, monkeypatch):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+
+    payload = {
+        "post": {
+            "title": "Async Import",
+            "content": "",
+            "user": "70479526",
+            "attachments": [
+                {"name": "a.jpg", "path": "/aa/bb/a.jpg"},
+                {"name": "b.jpg", "path": "/aa/bb/b.jpg"},
+            ],
+        },
+        "attachments": [],
+    }
+
+    def fake_fetch(ref, fallback_user_id=None):  # noqa: ARG001
+        return payload
+
+    def fake_download(remote_url, destination):  # noqa: ARG001
+        time.sleep(0.01)
+        Path(destination).parent.mkdir(parents=True, exist_ok=True)
+        Path(destination).write_bytes(b"ok")
+
+    def fake_icon_download(service, user_id, icons_root):  # noqa: ARG001
+        destination = Path(icons_root) / f"{service}_{user_id}.jpg"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"icon")
+        return (f"https://img.kemono.cr/icons/{service}/{user_id}", destination)
+
+    monkeypatch.setattr("kemono_library.web.fetch_post_json", fake_fetch)
+    monkeypatch.setattr("kemono_library.web.download_attachment", fake_download)
+    monkeypatch.setattr("kemono_library.web.download_creator_icon", fake_icon_download)
+
+    client = app.test_client()
+    client.post("/creators", data={"name": "Creator A"}, follow_redirects=False)
+
+    start = client.post(
+        "/import/start",
+        data={
+            "creator_id": "1",
+            "series_id": "",
+            "service": "fanbox",
+            "user_id": "70479526",
+            "post_id": "200",
+            "selected_attachment": ["0", "1"],
+        },
+    )
+    assert start.status_code == 200
+    start_payload = start.get_json()
+    assert isinstance(start_payload, dict)
+    status_url = start_payload.get("status_url")
+    assert isinstance(status_url, str)
+
+    final_status: dict | None = None
+    for _ in range(150):
+        status_response = client.get(status_url)
+        assert status_response.status_code == 200
+        status_payload = status_response.get_json()
+        assert isinstance(status_payload, dict)
+        if status_payload.get("status") == "completed":
+            final_status = status_payload
+            break
+        if status_payload.get("status") == "failed":
+            raise AssertionError(status_payload.get("error"))
+        time.sleep(0.01)
+
+    assert final_status is not None
+    assert final_status["redirect_url"] == "/posts/1"
+    assert final_status["total"] == 2
+    assert final_status["completed"] == 2
 
 
 def test_served_files_are_inline_not_forced_download(tmp_path):
