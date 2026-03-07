@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import html
 import re
+from pathlib import Path
+from urllib.parse import urlparse
 from urllib.parse import urlencode
 
 import bleach
@@ -76,8 +78,9 @@ def render_post_content(
         protocols=ALLOWED_PROTOCOLS,
         strip=True,
     )
+    with_inline_media = _expand_empty_image_links(safe_html)
     return _rewrite_kemono_links(
-        safe_html,
+        with_inline_media,
         current_service=current_service,
         current_user_id=current_user_id,
         current_post_id=current_post_id,
@@ -114,6 +117,36 @@ def _rewrite_kemono_links(
         link["href"] = f"/links/resolve?{urlencode(query)}"
         link["title"] = "Open local copy or import this linked post"
     return str(soup)
+
+
+def _expand_empty_image_links(html_content: str) -> str:
+    soup = BeautifulSoup(html_content, "html.parser")
+    for link in soup.find_all("a"):
+        href = link.get("href")
+        if not href:
+            continue
+        if link.find("img") is not None:
+            continue
+        if link.get_text(strip=True):
+            continue
+        if not _looks_like_image_url(href):
+            continue
+
+        filename = Path(urlparse(href).path).name
+        alt_text = filename or "inline image"
+        image = soup.new_tag("img", src=href, alt=alt_text, title=alt_text)
+        link.replace_with(image)
+    return str(soup)
+
+
+def _looks_like_image_url(url: str) -> bool:
+    parsed = urlparse(url)
+    ext = Path(parsed.path.lower()).suffix
+    if ext in {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"}:
+        return True
+    if parsed.netloc.lower().endswith("fanbox.cc") and "/image/" in parsed.path.lower():
+        return True
+    return False
 
 
 def _looks_like_html(content: str) -> bool:
