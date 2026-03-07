@@ -122,11 +122,20 @@ def extract_attachments(post_payload: dict[str, Any]) -> list[AttachmentCandidat
     if isinstance(nested_post, dict):
         sources.append(nested_post)
     declared_non_inline_names = _collect_declared_media_names(sources, post_payload)
+    content = _first_content(sources)
+    unnamed_attachment_aliases = _build_unnamed_attachment_aliases(sources, content)
 
     for source in sources:
         file_item = source.get("file")
         if isinstance(file_item, dict):
-            _append_attachment(candidates, seen, file_item, default_name="main-file", kind="thumbnail")
+            _append_attachment(
+                candidates,
+                seen,
+                file_item,
+                default_name="main-file",
+                kind="thumbnail",
+                name_aliases=unnamed_attachment_aliases,
+            )
 
         shared_file = source.get("shared_file")
         if isinstance(shared_file, dict):
@@ -136,6 +145,7 @@ def extract_attachments(post_payload: dict[str, Any]) -> list[AttachmentCandidat
                 shared_file,
                 default_name="shared-file",
                 kind="shared_file",
+                name_aliases=unnamed_attachment_aliases,
             )
 
         attachments = source.get("attachments")
@@ -148,6 +158,7 @@ def extract_attachments(post_payload: dict[str, Any]) -> list[AttachmentCandidat
                         item,
                         default_name="attachment",
                         kind="attachment",
+                        name_aliases=unnamed_attachment_aliases,
                     )
 
     videos = post_payload.get("videos")
@@ -185,7 +196,6 @@ def extract_attachments(post_payload: dict[str, Any]) -> list[AttachmentCandidat
                         kind="embed_media",
                     )
 
-    content = _first_content(sources)
     inline_name_keys: set[str] = set()
     if content:
         inline_name_keys = _collect_inline_name_keys(content)
@@ -258,6 +268,7 @@ def _append_attachment(
     item: dict[str, Any],
     default_name: str,
     kind: str,
+    name_aliases: dict[str, str] | None = None,
 ) -> None:
     raw_path = item.get("path") or item.get("url")
     if not isinstance(raw_path, str) or not raw_path.strip():
@@ -270,6 +281,8 @@ def _append_attachment(
     raw_name = item.get("name")
     if isinstance(raw_name, str) and raw_name.strip():
         name = raw_name.strip()
+    elif name_aliases and absolute_url in name_aliases:
+        name = name_aliases[absolute_url]
     else:
         name = Path(urlparse(absolute_url).path).name or default_name
 
@@ -377,6 +390,67 @@ def _first_content(sources: list[dict[str, Any]]) -> str | None:
         if isinstance(content, str) and content.strip():
             return content
     return None
+
+
+def _build_unnamed_attachment_aliases(sources: list[dict[str, Any]], content: str | None) -> dict[str, str]:
+    if not content:
+        return {}
+
+    soup = BeautifulSoup(content, "html.parser")
+    inline_filenames: list[str] = []
+    seen_inline_names: set[str] = set()
+    url_attrs = (
+        ("img", "src"),
+        ("source", "src"),
+        ("video", "src"),
+        ("audio", "src"),
+        ("a", "href"),
+    )
+    for tag_name, attr in url_attrs:
+        for node in soup.find_all(tag_name):
+            raw_url = node.get(attr)
+            if not isinstance(raw_url, str) or not raw_url.strip():
+                continue
+            absolute_url = to_absolute_kemono_url(raw_url.strip())
+            if tag_name == "a" and not _looks_like_downloadable_url(absolute_url):
+                continue
+            if tag_name != "a" and not _looks_like_media_url(absolute_url):
+                continue
+            filename = Path(urlparse(absolute_url).path).name
+            normalized = filename.lower()
+            if not filename or normalized in seen_inline_names:
+                continue
+            seen_inline_names.add(normalized)
+            inline_filenames.append(filename)
+
+    if len(inline_filenames) != 1:
+        return {}
+
+    unnamed_attachment_urls: list[str] = []
+    seen_attachment_urls: set[str] = set()
+    for source in sources:
+        attachments = source.get("attachments")
+        if not isinstance(attachments, list):
+            continue
+        for item in attachments:
+            if not isinstance(item, dict):
+                continue
+            raw_name = item.get("name")
+            if isinstance(raw_name, str) and raw_name.strip():
+                continue
+            raw_path = item.get("path") or item.get("url")
+            if not isinstance(raw_path, str) or not raw_path.strip():
+                continue
+            absolute_url = _resolve_attachment_url(item, raw_path)
+            if absolute_url in seen_attachment_urls:
+                continue
+            seen_attachment_urls.add(absolute_url)
+            unnamed_attachment_urls.append(absolute_url)
+
+    if len(unnamed_attachment_urls) != 1:
+        return {}
+
+    return {unnamed_attachment_urls[0]: inline_filenames[0]}
 
 
 def _looks_like_downloadable_url(url: str) -> bool:

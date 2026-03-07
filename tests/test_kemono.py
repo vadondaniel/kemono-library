@@ -236,6 +236,29 @@ def test_extract_attachments_skips_inline_when_name_declared_in_api_attachments(
     assert any(item.kind == "attachment" for item in items)
 
 
+def test_extract_attachments_aliases_single_unnamed_attachment_to_single_inline_filename():
+    payload = {
+        "post": {
+            "file": {
+                "name": "e0ba6fda-8a0b-403c-88e5-9ceb9998fb8e.jpg",
+                "path": "/34/1c/341cd3e2247f877f64c0a513fee2937ff51991ac0c345657c7228a90ec752045.jpg",
+            },
+            "attachments": [
+                {"path": "/de/29/de29e172fef8fde94aeac3170bb40855d3d8b153e09377eb26cf02910ac4db2e.jpg"}
+            ],
+            "content": (
+                '<a href="https://downloads.fanbox.cc/images/post/1566363/'
+                'n5tyt6OGwuxG51nInjj0kMcW.jpeg" rel="noopener noreferrer"></a>'
+            ),
+        }
+    }
+    items = extract_attachments(payload)
+    matching = [item for item in items if item.name == "n5tyt6OGwuxG51nInjj0kMcW.jpeg"]
+    assert len(matching) == 1
+    assert matching[0].remote_url == "https://kemono.cr/de/29/de29e172fef8fde94aeac3170bb40855d3d8b153e09377eb26cf02910ac4db2e.jpg"
+    assert matching[0].kind == "inline_media"
+
+
 def test_extract_attachments_collects_videos_and_embed_media():
     payload = {
         "videos": [
