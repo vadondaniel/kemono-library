@@ -136,6 +136,29 @@ class LibraryDB:
         with self._connect() as conn:
             return conn.execute("SELECT * FROM creators WHERE id = ?", (creator_id,)).fetchone()
 
+    def update_creator(
+        self,
+        creator_id: int,
+        *,
+        name: str,
+        description: str | None = None,
+        tags_text: str | None = None,
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE creators
+                SET name = ?, description = ?, tags_text = ?
+                WHERE id = ?
+                """,
+                (
+                    name.strip(),
+                    self._normalize_optional_text(description),
+                    self._normalize_optional_text(tags_text),
+                    creator_id,
+                ),
+            )
+
     def list_post_ids_for_creator(self, creator_id: int) -> list[int]:
         with self._connect() as conn:
             rows = conn.execute(
@@ -581,6 +604,8 @@ class LibraryDB:
         required = {
             "icon_remote_url": "TEXT",
             "icon_local_path": "TEXT",
+            "description": "TEXT",
+            "tags_text": "TEXT",
         }
         for column, column_type in required.items():
             if column not in existing_columns:

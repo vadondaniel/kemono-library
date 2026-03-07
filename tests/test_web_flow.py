@@ -592,6 +592,108 @@ def test_series_metadata_update_flow(tmp_path):
     assert updated["tags_text"] == "tag one, tag two"
 
 
+def test_creator_edit_flow_updates_metadata(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+
+    creator_id = db.create_creator("Creator Before")
+    client = app.test_client()
+
+    edit_get = client.get(f"/creators/{creator_id}/edit")
+    assert edit_get.status_code == 200
+    assert b"Edit Creator" in edit_get.data
+    assert b"Creator Before" in edit_get.data
+
+    edit_post = client.post(
+        f"/creators/{creator_id}/edit",
+        data={
+            "name": "Creator After",
+            "description": "Creator description",
+            "tags_text": "tag-a, tag-b",
+        },
+        follow_redirects=False,
+    )
+    assert edit_post.status_code == 302
+    assert edit_post.headers["Location"].endswith(f"/creators/{creator_id}")
+
+    updated = db.get_creator(creator_id)
+    assert updated is not None
+    assert updated["name"] == "Creator After"
+    assert updated["description"] == "Creator description"
+    assert updated["tags_text"] == "tag-a, tag-b"
+
+
+def test_creator_edit_duplicate_name_is_rejected(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+
+    creator_id = db.create_creator("Creator A")
+    db.create_creator("Creator B")
+
+    response = app.test_client().post(
+        f"/creators/{creator_id}/edit",
+        data={"name": "Creator B", "description": "", "tags_text": ""},
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith(f"/creators/{creator_id}/edit")
+    unchanged = db.get_creator(creator_id)
+    assert unchanged is not None
+    assert unchanged["name"] == "Creator A"
+
+
+def test_creator_description_and_tags_show_only_on_all_posts_view(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+
+    creator_id = db.create_creator("Profile Creator")
+    db.update_creator(
+        creator_id,
+        name="Profile Creator",
+        description="**Bold line**\n\nSecond line",
+        tags_text="tag-a, tag-b",
+    )
+    series_id = db.create_series(creator_id, "Folder One")
+
+    client = app.test_client()
+    root = client.get(f"/creators/{creator_id}")
+    assert root.status_code == 200
+    assert b'class="creator-profile-meta"' in root.data
+    assert b"<strong>Bold line</strong>" in root.data
+    assert b"Second line" in root.data
+    assert b"creator-profile-tag" in root.data
+    assert b"tag-a" in root.data
+    assert b"tag-b" in root.data
+
+    folder = client.get(f"/creators/{creator_id}?series_id={series_id}")
+    assert folder.status_code == 200
+    assert b'class="creator-profile-meta"' not in folder.data
+
+
 def test_delete_post_removes_files_and_record(tmp_path):
     app = create_app(
         {

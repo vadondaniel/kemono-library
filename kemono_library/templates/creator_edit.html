@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h1>Edit Creator</h1>
+  <p><a href="{{ url_for('creator_detail', creator_id=creator['id']) }}">Back to creator</a></p>
+
+  <form method="post" class="form">
+    <label for="name">Creator name</label>
+    <input id="name" name="name" required value="{{ creator['name'] }}">
+
+    <label for="description">Description</label>
+    <textarea id="description" name="description" rows="4" placeholder="Optional description">{{ creator['description'] or '' }}</textarea>
+
+    <label for="tags_text">Tags</label>
+    <input id="tags_text" name="tags_text" value="{{ creator['tags_text'] or '' }}" placeholder="tag one, tag two">
+
+    <button type="submit">Save creator</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Danger zone</h2>
+  <form method="post" action="{{ url_for('delete_creator', creator_id=creator['id']) }}" class="inline-form" onsubmit="return confirm('Delete this creator and all imported posts?');">
+    <button type="submit" class="button-ghost button-danger-quiet">Delete creator</button>
+  </form>
+</section>
+{% endblock %}

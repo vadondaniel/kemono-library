@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import html
 import json
 import re
 import shutil
+import sqlite3
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+import bleach
 from flask import Flask, flash, redirect, render_template, request, send_from_directory, url_for
+from markupsafe import Markup
 
 from .db import LibraryDB
 from .kemono import (
@@ -47,6 +51,10 @@ def create_app(test_config: dict | None = None) -> Flask:
     def format_datetime_filter(value: Any) -> str:
         return _format_datetime_for_display(value)
 
+    @app.template_filter("render_markdown")
+    def render_markdown_filter(value: Any) -> Markup:
+        return _render_markdown_snippet(value)
+
     @app.get("/")
     def index():
         creators = db.list_creators()
@@ -62,6 +70,34 @@ def create_app(test_config: dict | None = None) -> Flask:
         creator_id = db.create_creator(name)
         flash("Creator saved.", "success")
         return redirect(url_for("creator_detail", creator_id=creator_id))
+
+    @app.route("/creators/<int:creator_id>/edit", methods=["GET", "POST"])
+    def edit_creator(creator_id: int):
+        creator = db.get_creator(creator_id)
+        if not creator:
+            return ("Creator not found", 404)
+
+        if request.method == "POST":
+            name = request.form.get("name", "").strip()
+            description = request.form.get("description", "")
+            tags_text = request.form.get("tags_text", "")
+            if not name:
+                flash("Creator name is required.", "error")
+                return redirect(url_for("edit_creator", creator_id=creator_id))
+            try:
+                db.update_creator(
+                    creator_id,
+                    name=name,
+                    description=description,
+                    tags_text=tags_text,
+                )
+            except sqlite3.IntegrityError:
+                flash("Creator name already exists.", "error")
+                return redirect(url_for("edit_creator", creator_id=creator_id))
+            flash("Creator updated.", "success")
+            return redirect(url_for("creator_detail", creator_id=creator_id))
+
+        return render_template("creator_edit.html", creator=creator)
 
     @app.get("/creators/<int:creator_id>")
     def creator_detail(creator_id: int):
@@ -828,3 +864,33 @@ def _format_datetime_for_display(value: Any) -> str:
     except ValueError:
         return cleaned
     return parsed.strftime("%Y-%m-%d %H:%M")
+
+
+def _render_markdown_snippet(value: Any) -> Markup:
+    if not isinstance(value, str):
+        return Markup("")
+    cleaned = value.strip()
+    if not cleaned:
+        return Markup("")
+
+    escaped = html.escape(cleaned).replace("\r\n", "\n")
+
+    escaped = re.sub(
+        r"\[([^\]]+)\]\((https?://[^\s)]+)\)",
+        r'<a href="\2" target="_blank" rel="noopener noreferrer">\1</a>',
+        escaped,
+    )
+    escaped = re.sub(r"\*\*([^*\n]+)\*\*", r"<strong>\1</strong>", escaped)
+    escaped = re.sub(r"\*([^*\n]+)\*", r"<em>\1</em>", escaped)
+    escaped = re.sub(r"`([^`\n]+)`", r"<code>\1</code>", escaped)
+
+    blocks = [part.strip() for part in re.split(r"\n{2,}", escaped) if part.strip()]
+    rendered = "".join(f"<p>{block.replace(chr(10), '<br>')}</p>" for block in blocks)
+    safe = bleach.clean(
+        rendered,
+        tags=["p", "br", "strong", "em", "code", "a"],
+        attributes={"a": ["href", "target", "rel"]},
+        protocols=["http", "https"],
+        strip=True,
+    )
+    return Markup(safe)
