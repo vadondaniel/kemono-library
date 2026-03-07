@@ -45,3 +45,35 @@
 
   apply(currentSetting(), false);
 })();
+
+(() => {
+  const selectors = [
+    "details.series-create-disclosure",
+    "details.series-edit-disclosure",
+    "details.action-menu-disclosure",
+  ];
+  const all = () => Array.from(document.querySelectorAll(selectors.join(",")));
+
+  document.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof Node)) {
+      return;
+    }
+    for (const details of all()) {
+      if (details.hasAttribute("open") && !details.contains(target)) {
+        details.removeAttribute("open");
+      }
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") {
+      return;
+    }
+    for (const details of all()) {
+      if (details.hasAttribute("open")) {
+        details.removeAttribute("open");
+      }
+    }
+  });
+})();

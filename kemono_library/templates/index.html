@@ -1,69 +1,89 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="panel">
-  <h1>Your Local Library</h1>
-  <p>Create creators first, then import Kemono posts into them.</p>
+<section class="panel home-hero">
+  <div class="home-hero-copy">
+    <h1>Local Kemono Archive</h1>
+    <p>Organize creators, keep series tidy, and jump back into saved posts without chasing links again.</p>
+  </div>
+  <div class="home-hero-tools">
+    <details class="series-create-disclosure home-tool-disclosure">
+      <summary class="button-link button-ghost series-create-toggle">New creator</summary>
+      <div class="series-create-popover home-tool-popover">
+        <form method="post" action="{{ url_for('create_creator') }}" class="form series-create-form">
+          <label for="creator-name-home">Creator name</label>
+          <input id="creator-name-home" name="name" required placeholder="Example Artist">
+          <div class="series-edit-actions">
+            <button type="submit">Create</button>
+          </div>
+        </form>
+      </div>
+    </details>
+    <details class="series-create-disclosure home-tool-disclosure">
+      <summary class="button-link button-ghost series-create-toggle">Quick import</summary>
+      <div class="series-create-popover home-tool-popover">
+        <form method="get" action="{{ url_for('import_form') }}" class="form series-create-form">
+          <label for="quick-url-home">Post URL</label>
+          <input id="quick-url-home" name="url" placeholder="https://kemono.cr/fanbox/user/.../post/...">
+          <div class="series-edit-actions">
+            <button type="submit">Open Import</button>
+          </div>
+        </form>
+      </div>
+    </details>
+  </div>
 </section>
 
-<section class="grid two-col">
-  <article class="panel">
-    <h2>Create Creator</h2>
-    <form method="post" action="{{ url_for('create_creator') }}" class="form">
-      <label for="creator-name">Creator name</label>
-      <input id="creator-name" name="name" required placeholder="Example Artist">
-      <button type="submit">Save Creator</button>
-    </form>
-  </article>
-
-  <article class="panel">
-    <h2>Quick Import</h2>
-    <form method="get" action="{{ url_for('import_form') }}" class="form">
-      <label for="quick-url">Post URL</label>
-      <input id="quick-url" name="url" placeholder="https://kemono.cr/fanbox/user/.../post/...">
-      <button type="submit">Open Import</button>
-    </form>
-  </article>
-</section>
-
-<section class="grid two-col">
-  <article class="panel">
-    <h2>Creators</h2>
+<section class="home-main-grid">
+  <article class="panel home-creators-panel">
+    <div class="section-head">
+      <div>
+        <h2>Creators</h2>
+        <small>{{ creators|length }} total</small>
+      </div>
+    </div>
     {% if creators %}
-      <ul class="list">
+      <div class="home-creator-grid">
         {% for creator in creators %}
-          <li>
+          <a class="home-creator-card" href="{{ url_for('creator_detail', creator_id=creator['id']) }}">
             <span class="creator-line">
               {% if creator['icon_local_path'] %}
-                <img class="creator-icon" src="{{ url_for('serve_creator_icon', relative_path=creator['icon_local_path']) }}" alt="{{ creator['name'] }} icon" loading="lazy">
+                <img class="creator-icon creator-icon-lg" src="{{ url_for('serve_creator_icon', relative_path=creator['icon_local_path']) }}" alt="{{ creator['name'] }} icon" loading="lazy">
               {% elif creator['icon_remote_url'] %}
-                <img class="creator-icon" src="{{ creator['icon_remote_url'] }}" alt="{{ creator['name'] }} icon" loading="lazy" referrerpolicy="no-referrer">
+                <img class="creator-icon creator-icon-lg" src="{{ creator['icon_remote_url'] }}" alt="{{ creator['name'] }} icon" loading="lazy" referrerpolicy="no-referrer">
               {% else %}
-                <span class="creator-icon creator-icon-placeholder" aria-hidden="true"></span>
+                <span class="creator-icon creator-icon-lg creator-icon-placeholder" aria-hidden="true"></span>
               {% endif %}
-              <a href="{{ url_for('creator_detail', creator_id=creator['id']) }}">{{ creator['name'] }}</a>
+              <strong>{{ creator['name'] }}</strong>
             </span>
             <small>{{ creator['post_count'] }} posts</small>
-          </li>
+          </a>
         {% endfor %}
-      </ul>
+      </div>
     {% else %}
-      <p>No creators yet.</p>
+      <p class="creator-empty">No creators yet. Start by creating one above.</p>
     {% endif %}
   </article>
 
-  <article class="panel">
-    <h2>Recent Posts</h2>
+  <article class="panel home-recent-panel">
+    <div class="section-head">
+      <div>
+        <h2>Recent Posts</h2>
+        <small>Latest imported entries</small>
+      </div>
+    </div>
     {% if recent_posts %}
-      <ul class="list">
+      <div class="home-recent-list">
         {% for post in recent_posts %}
-          <li>
-            <a href="{{ url_for('post_detail', post_id=post['id']) }}">{{ post['title'] }}</a>
-            <small>{{ post['creator_name'] }}{% if post['series_name'] %} / {{ post['series_name'] }}{% endif %}</small>
-          </li>
+          <a class="home-recent-item" href="{{ url_for('post_detail', post_id=post['id']) }}">
+            <strong>{{ post['title'] }}</strong>
+            <small>
+              {{ post['creator_name'] }}{% if post['series_name'] %} / {{ post['series_name'] }}{% endif %}
+            </small>
+          </a>
         {% endfor %}
-      </ul>
+      </div>
     {% else %}
-      <p>No imported posts yet.</p>
+      <p class="creator-empty">No imported posts yet.</p>
     {% endif %}
   </article>
 </section>

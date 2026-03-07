@@ -531,6 +531,104 @@ small {
   gap: 0.5rem;
 }
 
+.home-hero {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(260px, 1fr) auto;
+  align-items: stretch;
+  background:
+    radial-gradient(560px 220px at 92% -10%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 70%),
+    radial-gradient(420px 160px at 8% -10%, color-mix(in srgb, var(--bg-radial-a) 58%, transparent), transparent 75%),
+    var(--card);
+}
+
+.home-hero-copy h1 {
+  margin: 0;
+}
+
+.home-hero-copy p {
+  margin: 0.45rem 0 0;
+  color: var(--muted);
+  max-width: 60ch;
+}
+
+.home-hero-tools {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: flex-start;
+}
+
+.home-tool-disclosure {
+  align-items: flex-end;
+}
+
+.home-tool-popover {
+  min-width: min(420px, 88vw);
+}
+
+.home-main-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr);
+  align-items: start;
+}
+
+.home-creator-grid {
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.home-creator-card {
+  border: 1px solid var(--border);
+  border-radius: 0.74rem;
+  background: color-mix(in srgb, var(--card-solid) 94%, transparent);
+  padding: 0.6rem 0.68rem;
+  text-decoration: none;
+  color: var(--text);
+  display: grid;
+  gap: 0.28rem;
+}
+
+.home-creator-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.home-creator-card strong {
+  line-height: 1.2;
+}
+
+.home-recent-list {
+  display: grid;
+  gap: 0.56rem;
+}
+
+.home-recent-item {
+  border: 1px solid var(--border);
+  border-radius: 0.7rem;
+  padding: 0.56rem 0.64rem;
+  background: color-mix(in srgb, var(--card-solid) 93%, transparent);
+  text-decoration: none;
+  color: var(--text);
+  display: grid;
+  gap: 0.2rem;
+}
+
+.home-recent-item:hover {
+  border-color: var(--accent);
+}
+
+.home-recent-item strong {
+  line-height: 1.25;
+}
+
+.home-recent-item small {
+  color: var(--muted);
+}
+
 .creator-title {
   display: flex;
   align-items: center;
@@ -1139,6 +1237,22 @@ small {
   }
 
   .creator-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .home-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .home-hero-tools {
+    justify-content: flex-start;
+  }
+
+  .home-main-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .home-creator-grid {
     grid-template-columns: 1fr;
   }
 
