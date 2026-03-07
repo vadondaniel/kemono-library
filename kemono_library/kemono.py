@@ -149,10 +149,45 @@ def extract_attachments(post_payload: dict[str, Any]) -> list[AttachmentCandidat
                         kind="attachment",
                     )
 
+    videos = post_payload.get("videos")
+    if isinstance(videos, list):
+        for item in videos:
+            if isinstance(item, dict):
+                _append_attachment(
+                    candidates,
+                    seen,
+                    item,
+                    default_name="video",
+                    kind="video",
+                )
+            elif isinstance(item, str) and item.strip():
+                _append_url_attachment(
+                    candidates,
+                    seen,
+                    to_absolute_kemono_url(item.strip()),
+                    name=Path(urlparse(item.strip()).path).name or "video",
+                    kind="video",
+                )
+
+    embed = nested_post.get("embed") if isinstance(nested_post, dict) else None
+    if isinstance(embed, dict):
+        for key in ("url", "src", "thumbnail", "thumbnail_url", "image"):
+            value = embed.get(key)
+            if isinstance(value, str) and value.strip():
+                absolute = to_absolute_kemono_url(value.strip())
+                if _looks_like_downloadable_url(absolute):
+                    _append_url_attachment(
+                        candidates,
+                        seen,
+                        absolute,
+                        name=Path(urlparse(absolute).path).name or "embed-media",
+                        kind="embed_media",
+                    )
+
     content = _first_content(sources)
     if content:
         _append_inline_content_attachments(candidates, seen, content)
-    return _dedupe_candidates(candidates)
+    return _dedupe_non_inline_by_name(candidates)
 
 
 def sanitize_filename(filename: str) -> str:
@@ -162,7 +197,17 @@ def sanitize_filename(filename: str) -> str:
 
 def download_attachment(remote_url: str, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with requests.get(remote_url, stream=True, timeout=60) as response:
+    with requests.get(
+        remote_url,
+        stream=True,
+        timeout=60,
+        headers={
+            "Accept": "*/*",
+            "User-Agent": KEMONO_API_HEADERS["User-Agent"],
+            "Referer": KEMONO_BASE + "/",
+            "Origin": KEMONO_BASE,
+        },
+    ) as response:
         response.raise_for_status()
         with destination.open("wb") as handle:
             for chunk in response.iter_content(chunk_size=65536):
@@ -181,7 +226,7 @@ def _append_attachment(
     if not isinstance(raw_path, str) or not raw_path.strip():
         return
 
-    absolute_url = to_absolute_kemono_url(raw_path)
+    absolute_url = _resolve_attachment_url(item, raw_path)
     if absolute_url in seen:
         return
 
@@ -201,6 +246,11 @@ def _append_inline_content_attachments(
     content: str,
 ) -> None:
     soup = BeautifulSoup(content, "html.parser")
+    existing_non_inline_names = {
+        sanitize_filename(item.name).lower()
+        for item in out
+        if item.kind != "inline_media"
+    }
     url_attrs = (
         ("img", "src"),
         ("source", "src"),
@@ -220,7 +270,10 @@ def _append_inline_content_attachments(
                 continue
             if tag_name != "a" and not _looks_like_media_url(absolute_url):
                 continue
-            filename = Path(urlparse(absolute_url).path).name or f"inline-{inline_counter}"
+            filename = _infer_inline_name(node, absolute_url) or f"inline-{inline_counter}"
+            normalized_name = sanitize_filename(filename).lower()
+            if normalized_name in existing_non_inline_names:
+                continue
             inline_counter += 1
             _append_url_attachment(
                 out,
@@ -314,33 +367,74 @@ def _extend_unique_attachment_dicts(target: list[dict[str, Any]], value: Any) ->
         seen_urls.add(absolute_url)
 
 
-def _dedupe_candidates(candidates: list[AttachmentCandidate]) -> list[AttachmentCandidate]:
-    # Prefer API-declared files over inline links when names collide.
-    kind_priority = {"file": 4, "shared_file": 3, "attachment": 2, "inline_media": 1}
-    chosen_by_key: dict[str, tuple[int, AttachmentCandidate]] = {}
-    order: list[str] = []
+def _resolve_attachment_url(item: dict[str, Any], raw_path: str) -> str:
+    if raw_path.startswith("http://") or raw_path.startswith("https://"):
+        return raw_path
+
+    server = item.get("server")
+    if isinstance(server, str) and server.startswith(("http://", "https://")):
+        if raw_path.startswith("/"):
+            return f"{server.rstrip('/')}{raw_path}"
+        return f"{server.rstrip('/')}/{raw_path.lstrip('/')}"
+    return to_absolute_kemono_url(raw_path)
+
+
+def _dedupe_non_inline_by_name(candidates: list[AttachmentCandidate]) -> list[AttachmentCandidate]:
+    seen_urls: set[str] = set()
+    ordered_keys: list[str] = []
+    chosen_by_key: dict[str, AttachmentCandidate] = {}
 
     for candidate in candidates:
-        key = _candidate_identity_key(candidate)
-        if key not in chosen_by_key:
-            chosen_by_key[key] = (kind_priority.get(candidate.kind, 0), candidate)
-            order.append(key)
+        if candidate.remote_url in seen_urls:
+            continue
+        seen_urls.add(candidate.remote_url)
+
+        key = _candidate_name_key(candidate)
+        existing = chosen_by_key.get(key)
+        if existing is None:
+            chosen_by_key[key] = candidate
+            ordered_keys.append(key)
             continue
 
-        existing_priority, existing_candidate = chosen_by_key[key]
-        incoming_priority = kind_priority.get(candidate.kind, 0)
-        if incoming_priority > existing_priority:
-            chosen_by_key[key] = (incoming_priority, candidate)
-        elif incoming_priority == existing_priority and len(candidate.remote_url) < len(existing_candidate.remote_url):
-            # If same type, prefer shorter URL (usually canonical).
-            chosen_by_key[key] = (incoming_priority, candidate)
+        if _candidate_priority(candidate) > _candidate_priority(existing):
+            chosen_by_key[key] = candidate
 
-    return [chosen_by_key[key][1] for key in order]
+    return [chosen_by_key[key] for key in ordered_keys]
 
 
-def _candidate_identity_key(candidate: AttachmentCandidate) -> str:
-    cleaned_name = sanitize_filename(candidate.name).lower()
-    if cleaned_name and cleaned_name not in {"file", "attachment", "main-file", "shared-file"}:
-        return f"name:{cleaned_name}"
-    parsed = urlparse(candidate.remote_url)
-    return f"url:{parsed.netloc.lower()}{parsed.path.lower()}"
+def _infer_inline_name(node: Any, absolute_url: str) -> str:
+    fallback = Path(urlparse(absolute_url).path).name
+    if getattr(node, "name", None) != "a":
+        return fallback
+
+    text = node.get_text(" ", strip=True)
+    if not text:
+        return fallback
+
+    # If anchor text is a label like "Break Room", treat it as filename stem.
+    # Keep URL extension so it can dedupe with API attachment names.
+    suffix = Path(urlparse(absolute_url).path).suffix
+    if suffix and not Path(text).suffix:
+        return f"{text}{suffix}"
+    return text
+
+
+def _candidate_name_key(candidate: AttachmentCandidate) -> str:
+    normalized = sanitize_filename(candidate.name).lower()
+    if normalized:
+        return f"name:{normalized}"
+    return f"url:{candidate.remote_url.lower()}"
+
+
+def _candidate_priority(candidate: AttachmentCandidate) -> int:
+    # Deduping preference by source reliability.
+    # User-facing rule: API attachment/file sources must beat inline links.
+    priorities = {
+        "attachment": 60,
+        "file": 55,
+        "shared_file": 50,
+        "video": 45,
+        "embed_media": 40,
+        "inline_media": 10,
+    }
+    return priorities.get(candidate.kind, 20)

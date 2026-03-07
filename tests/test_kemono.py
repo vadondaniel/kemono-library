@@ -36,6 +36,33 @@ def test_extract_attachments_collects_main_and_list():
     assert items[0].remote_url == "https://kemono.cr/data/abc/cover.png"
 
 
+def test_extract_attachments_ignores_previews():
+    payload = {
+        "previews": [
+            {
+                "type": "thumbnail",
+                "server": "https://n1.kemono.cr",
+                "name": "thumb.jpeg",
+                "path": "/aa/bb/thumb.jpg",
+            }
+        ]
+    }
+    items = extract_attachments(payload)
+    assert items == []
+
+
+def test_extract_attachments_ignores_multiple_previews():
+    payload = {
+        "previews": [
+            {"type": "thumbnail", "name": "thumb-1.jpg", "path": "/p/a.jpg"},
+            {"type": "thumbnail", "name": "thumb-2.jpg", "path": "/p/b.jpg"},
+            {"type": "sample", "name": "sample.jpg", "path": "/p/c.jpg"},
+        ]
+    }
+    items = extract_attachments(payload)
+    assert items == []
+
+
 def test_extract_attachments_collects_from_envelope_shape():
     payload = {
         "post": {
@@ -47,6 +74,38 @@ def test_extract_attachments_collects_from_envelope_shape():
     items = extract_attachments(payload)
     names = [item.name for item in items]
     assert names == ["top.zip", "main.jpg", "inside.txt"]
+
+
+def test_extract_attachments_dedupes_non_inline_same_filename():
+    payload = {
+        "post": {"attachments": [{"name": "dup.zip", "path": "/a/first.zip"}]},
+        "attachments": [{"name": "dup.zip", "path": "/b/second.zip"}],
+    }
+    items = extract_attachments(payload)
+    assert len(items) == 1
+    assert items[0].name == "dup.zip"
+
+
+def test_extract_attachments_file_used_for_cover_without_previews():
+    payload = {
+        "post": {"file": {"name": "same.jpg", "path": "/data/full/same.jpg"}},
+        "previews": [{"type": "thumbnail", "name": "same.jpg", "path": "/data/thumb/same.jpg"}],
+    }
+    items = extract_attachments(payload)
+    assert len(items) == 1
+    assert items[0].kind == "file"
+
+
+def test_extract_attachments_prefers_attachment_over_file_on_name_collision():
+    payload = {
+        "post": {
+            "file": {"name": "same.jpg", "path": "/data/full/same.jpg"},
+            "attachments": [{"name": "same.jpg", "path": "/data/att/same.jpg"}],
+        }
+    }
+    items = extract_attachments(payload)
+    assert len(items) == 1
+    assert items[0].kind == "attachment"
 
 
 def test_normalize_post_payload_unwraps_envelope():
@@ -124,3 +183,34 @@ def test_extract_attachments_dedupes_same_filename_between_sources():
     matching = [item for item in items if item.name == "same-name.jpeg"]
     assert len(matching) == 1
     assert matching[0].kind == "attachment"
+
+
+def test_extract_attachments_dedupes_inline_anchor_text_file_name():
+    payload = {
+        "post": {
+            "attachments": [{"name": "Break Room.zip", "path": "/be/0d/hash.zip"}],
+            "content": (
+                '<p><a href="https://downloads.fanbox.cc/files/post/10791194/'
+                'H9U6jEFTAYx8c4nanzHWqQWv.zip" rel="noopener noreferrer">Break Room</a></p>'
+            ),
+        }
+    }
+    items = extract_attachments(payload)
+    names = [item.name for item in items]
+    assert names.count("Break Room.zip") == 1
+    assert all(item.kind != "inline_media" for item in items)
+
+
+def test_extract_attachments_collects_videos_and_embed_media():
+    payload = {
+        "videos": [
+            {"name": "clip.mp4", "path": "/data/v/clip.mp4"},
+            "https://cdn.example/video2.webm",
+        ],
+        "post": {"embed": {"thumbnail_url": "https://cdn.example/thumb.jpg"}},
+    }
+    items = extract_attachments(payload)
+    urls = {item.remote_url: item.kind for item in items}
+    assert urls["https://kemono.cr/data/v/clip.mp4"] == "video"
+    assert urls["https://cdn.example/video2.webm"] == "video"
+    assert urls["https://cdn.example/thumb.jpg"] == "embed_media"

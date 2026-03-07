@@ -205,21 +205,21 @@ def _find_local_media_replacement(
     local_media_map: dict[str, str],
     local_media_by_name: dict[str, str],
 ) -> str | None:
-    direct = local_media_map.get(url)
-    if direct:
-        return direct
-
     parsed = urlparse(url)
-    normalized_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}" if parsed.scheme and parsed.netloc else parsed.path
-    direct_normalized = local_media_map.get(normalized_url)
-    if direct_normalized:
-        return direct_normalized
-
     filename = Path(parsed.path).name.lower()
     if filename:
         by_name = local_media_by_name.get(filename)
         if by_name:
             return by_name
+
+    direct = local_media_map.get(url)
+    if direct:
+        return direct
+
+    normalized_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}" if parsed.scheme and parsed.netloc else parsed.path
+    direct_normalized = local_media_map.get(normalized_url)
+    if direct_normalized:
+        return direct_normalized
 
     # FANBOX image links sometimes put source URL in query parameters.
     query = parse_qs(parsed.query)

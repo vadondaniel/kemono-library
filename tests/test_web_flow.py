@@ -75,3 +75,143 @@ def test_import_and_resolve_flow(tmp_path, monkeypatch):
     unresolved = client.get("/links/resolve?service=fanbox&post=100&user=70479526")
     assert unresolved.status_code == 302
     assert unresolved.headers["Location"].endswith("/posts/1")
+
+
+def test_served_files_are_inline_not_forced_download(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+        }
+    )
+    file_path = Path(app.config["FILES_DIR"]) / "post_1" / "img.jpg"
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    file_path.write_bytes(b"fakejpg")
+
+    client = app.test_client()
+    response = client.get("/files/post_1/img.jpg")
+
+    assert response.status_code == 200
+    disposition = response.headers.get("Content-Disposition", "")
+    assert "attachment" not in disposition.lower()
+
+
+def test_post_detail_maps_inline_alias_to_local_download(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+
+    creator_id = db.create_creator("Alias Creator")
+    metadata = {
+        "post": {
+            "content": (
+                '<p><a href="https://downloads.fanbox.cc/images/post/10791194/'
+                'vh5E4UKF5F5EUzIIXGjVkRkc.jpeg" rel="noopener noreferrer"></a></p>'
+            ),
+            "attachments": [
+                {"name": "eO8wzPLjankw59mg6YeTMzxN.jpeg", "path": "/c2/4f/hash.jpg"},
+                {"name": "vh5E4UKF5F5EUzIIXGjVkRkc.jpeg", "path": "/c2/4f/hash.jpg"},
+            ],
+        }
+    }
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="70479526",
+        external_post_id="999",
+        title="Alias Case",
+        content=metadata["post"]["content"],
+        metadata=metadata,
+        source_url="https://kemono.cr/fanbox/user/70479526/post/999",
+    )
+    db.replace_attachments(
+        post_id,
+        [
+            {
+                "name": "eO8wzPLjankw59mg6YeTMzxN.jpeg",
+                "remote_url": "https://kemono.cr/c2/4f/hash.jpg",
+                "local_path": f"post_{post_id}/eO8wzPLjankw59mg6YeTMzxN.jpeg",
+                "kind": "attachment",
+            }
+        ],
+    )
+
+    file_path = Path(app.config["FILES_DIR"]) / f"post_{post_id}" / "eO8wzPLjankw59mg6YeTMzxN.jpeg"
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    file_path.write_bytes(b"fakejpg")
+
+    client = app.test_client()
+    detail = client.get(f"/posts/{post_id}")
+    assert detail.status_code == 200
+    expected_local = f"/files/post_{post_id}/eO8wzPLjankw59mg6YeTMzxN.jpeg".encode()
+    assert b'href="' + expected_local + b'"' in detail.data
+    assert b'src="' + expected_local + b'"' in detail.data
+
+
+def test_post_detail_prefers_attachment_over_inline_same_name(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Priority Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="70479526",
+        external_post_id="1001",
+        title="Priority Case",
+        content=(
+            '<p><a href="https://downloads.fanbox.cc/images/post/10791194/'
+            'same-name.jpeg" rel="noopener noreferrer"></a></p>'
+        ),
+        metadata={
+            "post": {
+                "attachments": [{"name": "same-name.jpeg", "path": "/hashes/same-name.jpg"}]
+            }
+        },
+        source_url="https://kemono.cr/fanbox/user/70479526/post/1001",
+    )
+    db.replace_attachments(
+        post_id,
+        [
+            {
+                "name": "same-name.jpeg",
+                "remote_url": "https://downloads.fanbox.cc/images/post/10791194/same-name.jpeg",
+                "local_path": f"post_{post_id}/inline-same-name.jpeg",
+                "kind": "inline_media",
+            },
+            {
+                "name": "same-name.jpeg",
+                "remote_url": "https://kemono.cr/hashes/same-name.jpg",
+                "local_path": f"post_{post_id}/attachment-same-name.jpeg",
+                "kind": "attachment",
+            },
+        ],
+    )
+
+    files_root = Path(app.config["FILES_DIR"]) / f"post_{post_id}"
+    files_root.mkdir(parents=True, exist_ok=True)
+    (files_root / "inline-same-name.jpeg").write_bytes(b"inline")
+    (files_root / "attachment-same-name.jpeg").write_bytes(b"attachment")
+
+    client = app.test_client()
+    detail = client.get(f"/posts/{post_id}")
+    assert detail.status_code == 200
+    expected = f"/files/post_{post_id}/attachment-same-name.jpeg".encode()
+    assert b'href="' + expected + b'"' in detail.data
+    assert b'src="' + expected + b'"' in detail.data

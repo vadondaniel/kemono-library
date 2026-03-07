@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 
 from flask import Flask, flash, redirect, render_template, request, send_from_directory, url_for
@@ -214,25 +216,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         if not post:
             return ("Post not found", 404)
         attachments = db.list_attachments(post_id)
-        local_media_map: dict[str, str] = {}
-        local_media_by_name: dict[str, str] = {}
-        for attachment in attachments:
-            local_path = attachment["local_path"]
-            if not local_path:
-                continue
-            local_url = url_for("serve_file", relative_path=local_path)
-            remote_url = attachment["remote_url"]
-            local_media_map[remote_url] = local_url
-            parsed = urlparse(remote_url)
-            normalized_remote = (
-                f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
-                if parsed.scheme and parsed.netloc
-                else parsed.path
-            )
-            local_media_map[normalized_remote] = local_url
-            filename = Path(parsed.path).name.lower()
-            if filename and filename not in local_media_by_name:
-                local_media_by_name[filename] = local_url
+        local_media_map, local_media_by_name = _build_local_media_maps(post, attachments)
 
         rendered_content = render_post_content(
             post["content"],
@@ -318,7 +302,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     def serve_file(relative_path: str):
         # Keep compatibility with old Windows-stored paths using backslashes.
         safe_relative = relative_path.replace("\\", "/")
-        return send_from_directory(app.config["FILES_DIR"], safe_relative, as_attachment=True)
+        return send_from_directory(app.config["FILES_DIR"], safe_relative, as_attachment=False)
 
     return app
 
@@ -336,3 +320,161 @@ def _next_available_destination(root: Path, filename: str) -> Path:
         if not candidate.exists():
             return candidate
         index += 1
+
+
+def _build_local_media_maps(
+    post: Any,
+    attachments: list[Any],
+) -> tuple[dict[str, str], dict[str, str]]:
+    local_media_map: dict[str, str] = {}
+    local_media_by_name: dict[str, str] = {}
+    local_media_by_path_key: dict[str, str] = {}
+    local_media_map_priority: dict[str, int] = {}
+    local_media_by_name_priority: dict[str, int] = {}
+    local_media_by_path_key_priority: dict[str, int] = {}
+
+    for attachment in attachments:
+        local_path = attachment["local_path"]
+        if not local_path:
+            continue
+
+        local_url = url_for("serve_file", relative_path=local_path)
+        remote_url = attachment["remote_url"]
+        kind_priority = _media_kind_priority(attachment["kind"])
+        _assign_preferred(
+            local_media_map,
+            local_media_map_priority,
+            remote_url,
+            local_url,
+            kind_priority,
+        )
+        parsed = urlparse(remote_url)
+        normalized_remote = (
+            f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+            if parsed.scheme and parsed.netloc
+            else parsed.path
+        )
+        _assign_preferred(
+            local_media_map,
+            local_media_map_priority,
+            normalized_remote,
+            local_url,
+            kind_priority,
+        )
+
+        filename = Path(parsed.path).name.lower()
+        if filename:
+            _assign_preferred(
+                local_media_by_name,
+                local_media_by_name_priority,
+                filename,
+                local_url,
+                kind_priority,
+            )
+
+        path_key = _remote_path_key(remote_url)
+        if path_key:
+            _assign_preferred(
+                local_media_by_path_key,
+                local_media_by_path_key_priority,
+                path_key,
+                local_url,
+                kind_priority,
+            )
+
+    metadata = _safe_load_metadata(post["metadata_json"])
+    for entry in _iter_metadata_media_entries(metadata):
+        name = entry.get("name")
+        raw_path = entry.get("path") or entry.get("url")
+        if not isinstance(name, str) or not name.strip():
+            continue
+        if not isinstance(raw_path, str) or not raw_path.strip():
+            continue
+
+        alias_name_key = name.strip().lower()
+        path_key = _remote_path_key(raw_path)
+        if not path_key:
+            continue
+        local_url = local_media_by_path_key.get(path_key)
+        if local_url:
+            path_priority = local_media_by_path_key_priority.get(path_key, 0)
+            _assign_preferred(
+                local_media_by_name,
+                local_media_by_name_priority,
+                alias_name_key,
+                local_url,
+                path_priority,
+            )
+
+    return local_media_map, local_media_by_name
+
+
+def _safe_load_metadata(raw_metadata: str | None) -> dict[str, Any]:
+    if not isinstance(raw_metadata, str) or not raw_metadata.strip():
+        return {}
+    try:
+        loaded = json.loads(raw_metadata)
+    except json.JSONDecodeError:
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def _iter_metadata_media_entries(metadata: dict[str, Any]) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    sources: list[dict[str, Any]] = [metadata]
+    nested_post = metadata.get("post")
+    if isinstance(nested_post, dict):
+        sources.append(nested_post)
+
+    for source in sources:
+        file_item = source.get("file")
+        if isinstance(file_item, dict):
+            entries.append(file_item)
+
+        shared_file = source.get("shared_file")
+        if isinstance(shared_file, dict):
+            entries.append(shared_file)
+
+        attachments_list = source.get("attachments")
+        if isinstance(attachments_list, list):
+            for item in attachments_list:
+                if isinstance(item, dict):
+                    entries.append(item)
+    return entries
+
+
+def _remote_path_key(raw_path_or_url: str) -> str:
+    parsed = urlparse(raw_path_or_url)
+    path = parsed.path if parsed.path else raw_path_or_url
+    cleaned = path.strip()
+    return cleaned.lower() if cleaned else ""
+
+
+def _media_kind_priority(kind: Any) -> int:
+    if not isinstance(kind, str):
+        return 0
+    order = {
+        "file": 50,
+        "attachment": 45,
+        "shared_file": 40,
+        "video": 35,
+        "embed_media": 30,
+        "thumbnail": 20,
+        "inline_media": 10,
+    }
+    return order.get(kind, 5)
+
+
+def _assign_preferred(
+    target_map: dict[str, str],
+    target_priority: dict[str, int],
+    key: str,
+    value: str,
+    priority: int,
+) -> None:
+    if not key:
+        return
+    existing_priority = target_priority.get(key)
+    if existing_priority is None or priority > existing_priority:
+        target_map[key] = value
+        target_priority[key] = priority
