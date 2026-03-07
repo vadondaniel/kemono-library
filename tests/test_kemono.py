@@ -201,6 +201,24 @@ def test_extract_attachments_dedupes_inline_anchor_text_file_name():
     assert all(item.kind != "inline_media" for item in items)
 
 
+def test_extract_attachments_skips_inline_when_name_declared_in_api_attachments():
+    payload = {
+        "post": {
+            "attachments": [
+                {"name": "eO8wzPLjankw59mg6YeTMzxN.jpeg", "path": "/c2/4f/shared.jpg"},
+                {"name": "vh5E4UKF5F5EUzIIXGjVkRkc.jpeg", "path": "/c2/4f/shared.jpg"},
+            ],
+            "content": (
+                '<a href="https://downloads.fanbox.cc/images/post/10791194/'
+                'vh5E4UKF5F5EUzIIXGjVkRkc.jpeg" rel="noopener noreferrer"></a>'
+            ),
+        }
+    }
+    items = extract_attachments(payload)
+    assert all(item.kind != "inline_media" for item in items)
+    assert any(item.kind == "attachment" for item in items)
+
+
 def test_extract_attachments_collects_videos_and_embed_media():
     payload = {
         "videos": [

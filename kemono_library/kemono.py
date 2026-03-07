@@ -121,6 +121,7 @@ def extract_attachments(post_payload: dict[str, Any]) -> list[AttachmentCandidat
     nested_post = post_payload.get("post")
     if isinstance(nested_post, dict):
         sources.append(nested_post)
+    declared_non_inline_names = _collect_declared_media_names(sources, post_payload)
 
     for source in sources:
         file_item = source.get("file")
@@ -186,7 +187,12 @@ def extract_attachments(post_payload: dict[str, Any]) -> list[AttachmentCandidat
 
     content = _first_content(sources)
     if content:
-        _append_inline_content_attachments(candidates, seen, content)
+        _append_inline_content_attachments(
+            candidates,
+            seen,
+            content,
+            reserved_names=declared_non_inline_names,
+        )
     return _dedupe_non_inline_by_name(candidates)
 
 
@@ -244,6 +250,8 @@ def _append_inline_content_attachments(
     out: list[AttachmentCandidate],
     seen: set[str],
     content: str,
+    *,
+    reserved_names: set[str] | None = None,
 ) -> None:
     soup = BeautifulSoup(content, "html.parser")
     existing_non_inline_names = {
@@ -251,6 +259,8 @@ def _append_inline_content_attachments(
         for item in out
         if item.kind != "inline_media"
     }
+    if reserved_names:
+        existing_non_inline_names.update(reserved_names)
     url_attrs = (
         ("img", "src"),
         ("source", "src"),
@@ -438,3 +448,44 @@ def _candidate_priority(candidate: AttachmentCandidate) -> int:
         "inline_media": 10,
     }
     return priorities.get(candidate.kind, 20)
+
+
+def _collect_declared_media_names(
+    sources: list[dict[str, Any]],
+    root_payload: dict[str, Any],
+) -> set[str]:
+    names: set[str] = set()
+
+    def add_name(value: Any) -> None:
+        if isinstance(value, str) and value.strip():
+            names.add(sanitize_filename(value).lower())
+
+    for source in sources:
+        file_item = source.get("file")
+        if isinstance(file_item, dict):
+            add_name(file_item.get("name"))
+
+        shared_file = source.get("shared_file")
+        if isinstance(shared_file, dict):
+            add_name(shared_file.get("name"))
+
+        attachments = source.get("attachments")
+        if isinstance(attachments, list):
+            for item in attachments:
+                if isinstance(item, dict):
+                    add_name(item.get("name"))
+
+    videos = root_payload.get("videos")
+    if isinstance(videos, list):
+        for item in videos:
+            if isinstance(item, dict):
+                add_name(item.get("name"))
+
+    nested_post = root_payload.get("post")
+    if isinstance(nested_post, dict):
+        embed = nested_post.get("embed")
+        if isinstance(embed, dict):
+            for key in ("name", "title"):
+                add_name(embed.get(key))
+
+    return names
