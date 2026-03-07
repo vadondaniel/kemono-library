@@ -32,6 +32,8 @@ class LibraryDB:
                     name TEXT NOT NULL UNIQUE,
                     service TEXT,
                     external_user_id TEXT,
+                    icon_remote_url TEXT,
+                    icon_local_path TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
 
@@ -101,6 +103,7 @@ class LibraryDB:
                 );
                 """
             )
+            self._ensure_creator_columns(conn)
             self._ensure_post_columns(conn)
 
     def create_creator(self, name: str) -> int:
@@ -140,6 +143,23 @@ class LibraryDB:
                 WHERE id = ?
                 """,
                 (service, external_user_id, creator_id),
+            )
+
+    def update_creator_icon(
+        self,
+        creator_id: int,
+        *,
+        icon_remote_url: str | None,
+        icon_local_path: str | None,
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE creators
+                SET icon_remote_url = ?, icon_local_path = ?
+                WHERE id = ?
+                """,
+                (icon_remote_url, icon_local_path, creator_id),
             )
 
     def create_series(self, creator_id: int, name: str) -> int:
@@ -439,3 +459,16 @@ class LibraryDB:
         for column, column_type in required.items():
             if column not in existing_columns:
                 conn.execute(f"ALTER TABLE posts ADD COLUMN {column} {column_type}")
+
+    def _ensure_creator_columns(self, conn: sqlite3.Connection) -> None:
+        existing_columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(creators)").fetchall()
+        }
+        required = {
+            "icon_remote_url": "TEXT",
+            "icon_local_path": "TEXT",
+        }
+        for column, column_type in required.items():
+            if column not in existing_columns:
+                conn.execute(f"ALTER TABLE creators ADD COLUMN {column} {column_type}")

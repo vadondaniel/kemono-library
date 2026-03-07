@@ -1,7 +1,16 @@
 {% extends "base.html" %}
 {% block content %}
 <section class="panel">
-  <h1>{{ creator['name'] }}</h1>
+  <h1 class="creator-title">
+    {% if creator['icon_local_path'] %}
+      <img class="creator-icon creator-icon-lg" src="{{ url_for('serve_creator_icon', relative_path=creator['icon_local_path']) }}" alt="{{ creator['name'] }} icon" loading="lazy">
+    {% elif creator['icon_remote_url'] %}
+      <img class="creator-icon creator-icon-lg" src="{{ creator['icon_remote_url'] }}" alt="{{ creator['name'] }} icon" loading="lazy" referrerpolicy="no-referrer">
+    {% else %}
+      <span class="creator-icon creator-icon-lg creator-icon-placeholder" aria-hidden="true"></span>
+    {% endif %}
+    {{ creator['name'] }}
+  </h1>
   <p>
     {% if creator['service'] and creator['external_user_id'] %}
       Linked source: {{ creator['service'] }}/{{ creator['external_user_id'] }}

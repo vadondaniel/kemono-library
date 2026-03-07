@@ -221,6 +221,34 @@ def download_attachment(remote_url: str, destination: Path) -> None:
                     handle.write(chunk)
 
 
+def creator_icon_url(service: str, user_id: str) -> str:
+    return f"https://img.kemono.cr/icons/{service}/{user_id}"
+
+
+def download_creator_icon(service: str, user_id: str, icons_root: Path) -> tuple[str, Path | None]:
+    remote_url = creator_icon_url(service, user_id)
+    response = requests.get(
+        remote_url,
+        timeout=25,
+        headers={
+            "Accept": "image/*,*/*;q=0.8",
+            "User-Agent": KEMONO_API_HEADERS["User-Agent"],
+            "Referer": KEMONO_BASE + "/",
+            "Origin": KEMONO_BASE,
+        },
+    )
+    if response.status_code != 200 or not response.content:
+        return remote_url, None
+
+    extension = _image_extension_from_content_type(response.headers.get("content-type"))
+    destination = icons_root / f"{service}_{user_id}{extension}"
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes(response.content)
+    if destination.stat().st_size <= 0:
+        return remote_url, None
+    return remote_url, destination
+
+
 def _append_attachment(
     out: list[AttachmentCandidate],
     seen: set[str],
@@ -489,3 +517,19 @@ def _collect_declared_media_names(
                 add_name(embed.get(key))
 
     return names
+
+
+def _image_extension_from_content_type(content_type: str | None) -> str:
+    if not isinstance(content_type, str):
+        return ".img"
+    normalized = content_type.split(";")[0].strip().lower()
+    mapping = {
+        "image/jpeg": ".jpg",
+        "image/jpg": ".jpg",
+        "image/png": ".png",
+        "image/webp": ".webp",
+        "image/gif": ".gif",
+        "image/svg+xml": ".svg",
+        "image/avif": ".avif",
+    }
+    return mapping.get(normalized, ".img")

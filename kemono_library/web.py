@@ -11,7 +11,9 @@ from flask import Flask, flash, redirect, render_template, request, send_from_di
 from .db import LibraryDB
 from .kemono import (
     KemonoPostRef,
+    creator_icon_url,
     download_attachment,
+    download_creator_icon,
     extract_attachments,
     fetch_post_json,
     normalize_post_payload,
@@ -28,6 +30,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         SECRET_KEY="dev-local-secret",
         DATABASE=str(Path(app.root_path).parent / "data" / "library.db"),
         FILES_DIR=str(Path(app.root_path).parent / "data" / "files"),
+        ICONS_DIR=str(Path(app.root_path).parent / "data" / "icons"),
     )
     if test_config:
         app.config.update(test_config)
@@ -35,6 +38,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     db = LibraryDB(app.config["DATABASE"])
     db.init_schema()
     Path(app.config["FILES_DIR"]).mkdir(parents=True, exist_ok=True)
+    Path(app.config["ICONS_DIR"]).mkdir(parents=True, exist_ok=True)
     app.db = db  # type: ignore[attr-defined]
 
     @app.get("/")
@@ -168,6 +172,13 @@ def create_app(test_config: dict | None = None) -> Flask:
         payload = normalize_post_payload(raw_payload)
 
         db.attach_creator_external(creator_id, service=service, external_user_id=user_id)
+        _ensure_creator_icon(
+            db,
+            icons_base=Path(app.config["ICONS_DIR"]),
+            creator_id=creator_id,
+            service=service,
+            user_id=user_id,
+        )
         all_attachments = extract_attachments(raw_payload)
         selected_indices = set(request.form.getlist("selected_attachment"))
         selected_attachments = [
@@ -346,6 +357,11 @@ def create_app(test_config: dict | None = None) -> Flask:
         safe_relative = relative_path.replace("\\", "/")
         return send_from_directory(app.config["FILES_DIR"], safe_relative, as_attachment=False)
 
+    @app.get("/creator-icons/<path:relative_path>")
+    def serve_creator_icon(relative_path: str):
+        safe_relative = relative_path.replace("\\", "/")
+        return send_from_directory(app.config["ICONS_DIR"], safe_relative, as_attachment=False)
+
     return app
 
 
@@ -371,6 +387,41 @@ def _build_existing_file_indexes(
 
 def _is_valid_file(path: Path | None) -> bool:
     return bool(path and path.exists() and path.is_file() and path.stat().st_size > 0)
+
+
+def _ensure_creator_icon(
+    db: LibraryDB,
+    *,
+    icons_base: Path,
+    creator_id: int,
+    service: str,
+    user_id: str,
+) -> None:
+    creator = db.get_creator(creator_id)
+    if not creator:
+        return
+
+    current_remote = creator["icon_remote_url"]
+    current_local = creator["icon_local_path"]
+    expected_remote = creator_icon_url(service, user_id)
+    if isinstance(current_local, str) and current_local.strip():
+        local_abs = icons_base / current_local
+        if _is_valid_file(local_abs):
+            if current_remote != expected_remote:
+                db.update_creator_icon(
+                    creator_id,
+                    icon_remote_url=expected_remote,
+                    icon_local_path=current_local,
+                )
+            return
+
+    remote_url, local_abs = download_creator_icon(service, user_id, icons_base)
+    local_rel = local_abs.relative_to(icons_base).as_posix() if local_abs else None
+    db.update_creator_icon(
+        creator_id,
+        icon_remote_url=remote_url,
+        icon_local_path=local_rel,
+    )
 
 
 def _build_local_media_maps(

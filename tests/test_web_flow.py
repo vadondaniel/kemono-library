@@ -10,6 +10,7 @@ def test_import_and_resolve_flow(tmp_path, monkeypatch):
             "SECRET_KEY": "test",
             "DATABASE": str(tmp_path / "test.db"),
             "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
         }
     )
 
@@ -50,8 +51,15 @@ def test_import_and_resolve_flow(tmp_path, monkeypatch):
         Path(destination).parent.mkdir(parents=True, exist_ok=True)
         Path(destination).write_bytes(b"ok")
 
+    def fake_icon_download(service, user_id, icons_root):  # noqa: ARG001
+        destination = Path(icons_root) / f"{service}_{user_id}.jpg"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"icon")
+        return (f"https://img.kemono.cr/icons/{service}/{user_id}", destination)
+
     monkeypatch.setattr("kemono_library.web.fetch_post_json", fake_fetch)
     monkeypatch.setattr("kemono_library.web.download_attachment", fake_download)
+    monkeypatch.setattr("kemono_library.web.download_creator_icon", fake_icon_download)
 
     client = app.test_client()
 
@@ -94,6 +102,9 @@ def test_import_and_resolve_flow(tmp_path, monkeypatch):
     assert post["thumbnail_name"] == "cover.jpg"
     assert post["thumbnail_remote_url"] == "https://kemono.cr/data/x/cover.jpg"
     assert post["thumbnail_local_path"] == "post_1/cover.jpg"
+    creator = app.db.get_creator(1)  # type: ignore[attr-defined]
+    assert creator["icon_remote_url"] == "https://img.kemono.cr/icons/fanbox/70479526"
+    assert creator["icon_local_path"] == "fanbox_70479526.jpg"
     tags = app.db.list_tags(1)  # type: ignore[attr-defined]
     previews = app.db.list_previews(1)  # type: ignore[attr-defined]
     assert [row["tag"] for row in tags] == ["alpha", "beta"]
@@ -118,6 +129,7 @@ def test_served_files_are_inline_not_forced_download(tmp_path):
             "SECRET_KEY": "test",
             "DATABASE": str(tmp_path / "test.db"),
             "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
         }
     )
     file_path = Path(app.config["FILES_DIR"]) / "post_1" / "img.jpg"
@@ -139,6 +151,7 @@ def test_reimport_reuses_existing_file_without_duplicate_suffix(tmp_path, monkey
             "SECRET_KEY": "test",
             "DATABASE": str(tmp_path / "test.db"),
             "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
         }
     )
 
@@ -163,8 +176,15 @@ def test_reimport_reuses_existing_file_without_duplicate_suffix(tmp_path, monkey
         Path(destination).parent.mkdir(parents=True, exist_ok=True)
         Path(destination).write_bytes(b"ok")
 
+    def fake_icon_download(service, user_id, icons_root):  # noqa: ARG001
+        destination = Path(icons_root) / f"{service}_{user_id}.jpg"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"icon")
+        return (f"https://img.kemono.cr/icons/{service}/{user_id}", destination)
+
     monkeypatch.setattr("kemono_library.web.fetch_post_json", fake_fetch)
     monkeypatch.setattr("kemono_library.web.download_attachment", fake_download)
+    monkeypatch.setattr("kemono_library.web.download_creator_icon", fake_icon_download)
 
     client = app.test_client()
     client.post("/creators", data={"name": "Creator A"}, follow_redirects=False)
@@ -200,6 +220,7 @@ def test_post_detail_maps_inline_alias_to_local_download(tmp_path):
             "SECRET_KEY": "test",
             "DATABASE": str(tmp_path / "test.db"),
             "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
         }
     )
     db = app.db  # type: ignore[attr-defined]
@@ -259,6 +280,7 @@ def test_post_detail_prefers_attachment_over_inline_same_name(tmp_path):
             "SECRET_KEY": "test",
             "DATABASE": str(tmp_path / "test.db"),
             "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
         }
     )
     db = app.db  # type: ignore[attr-defined]
@@ -319,6 +341,7 @@ def test_edit_page_prettifies_html_content(tmp_path):
             "SECRET_KEY": "test",
             "DATABASE": str(tmp_path / "test.db"),
             "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
         }
     )
     db = app.db  # type: ignore[attr-defined]

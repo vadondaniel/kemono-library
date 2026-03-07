@@ -435,6 +435,40 @@ small {
   color: var(--text);
 }
 
+.creator-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.creator-title {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.creator-icon {
+  width: 1.45rem;
+  height: 1.45rem;
+  border-radius: 999px;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--card-solid) 88%, transparent);
+  flex: 0 0 auto;
+}
+
+.creator-icon-lg {
+  width: 2rem;
+  height: 2rem;
+}
+
+.creator-icon-placeholder {
+  display: inline-block;
+  background:
+    radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--accent) 28%, transparent), transparent 52%),
+    color-mix(in srgb, var(--card-solid) 86%, transparent);
+}
+
 @media (max-width: 720px) {
   .site-header {
     padding: 0.75rem 0.8rem;
