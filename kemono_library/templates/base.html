@@ -3,16 +3,30 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script>
+    (function () {
+      var key = "kemono-theme";
+      var saved = localStorage.getItem(key);
+      var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+      var theme = saved === "light" || saved === "dark" || saved === "auto" ? saved : "auto";
+      var resolved = theme === "auto" ? (prefersDark ? "dark" : "light") : theme;
+      document.documentElement.setAttribute("data-theme", resolved);
+      document.documentElement.setAttribute("data-theme-setting", theme);
+    })();
+  </script>
   <title>{{ title or "Kemono Library" }}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
   <header class="site-header">
     <a class="brand" href="{{ url_for('index') }}">Kemono Library</a>
-    <nav>
-      <a href="{{ url_for('index') }}">Home</a>
-      <a href="{{ url_for('import_form') }}">Import Post</a>
-    </nav>
+    <div class="header-actions">
+      <nav>
+        <a href="{{ url_for('index') }}">Home</a>
+        <a href="{{ url_for('import_form') }}">Import Post</a>
+      </nav>
+      <button id="theme-toggle" type="button" class="theme-toggle" aria-label="Switch color theme">Theme: Auto</button>
+    </div>
   </header>
 
   <main class="container">
@@ -27,5 +41,6 @@
     {% endwith %}
     {% block content %}{% endblock %}
   </main>
+  <script src="{{ url_for('static', filename='theme.js') }}"></script>
 </body>
 </html>
