@@ -121,3 +121,23 @@ def test_render_rewrites_www_fanbox_creator_post_link():
         '/links/resolve?service=fanbox&amp;post=9187463&amp;from_post=1&amp;user=70479526&amp;assumed_from_context=1'
         in rendered
     )
+
+
+def test_render_groups_fanbox_promo_insert_block():
+    content = (
+        '<h3><a href="https://www.fanbox.cc/@tetetoroort/posts/10230546" '
+        'rel="noopener noreferrer">【+3カット】猫のお嫁さん</a></h3>'
+        '<p><img src="https://pixiv.pximg.net/c/1200x630_90_a2_g5/fanbox/public/images/post/10230546/cover/KfCD8SrNbG42RVD2idgCGqm2.jpeg"></p>'
+        "<p>あともう少しで人型に戻る期日だったのに、ヤバそうなガールフレンドに見つかってしまうゆめちゃん。</p>"
+    )
+    rendered = render_post_content(
+        content,
+        current_service="fanbox",
+        current_user_id="70479526",
+        current_post_id=1,
+    )
+    assert '<section class="post-promo-insert">' in rendered
+    assert (
+        '/links/resolve?service=fanbox&amp;post=10230546&amp;from_post=1&amp;user=70479526&amp;assumed_from_context=1'
+        in rendered
+    )

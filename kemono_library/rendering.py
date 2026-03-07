@@ -9,6 +9,7 @@ from urllib.parse import urlencode
 
 import bleach
 from bs4 import BeautifulSoup
+from bs4 import NavigableString
 from bleach.linkifier import Linker
 from bleach.linkifier import URL_RE
 
@@ -96,8 +97,9 @@ def render_post_content(
     )
     linkified = _linkify_urls(with_local_media)
     with_inline_media = _expand_empty_image_links(linkified)
+    with_grouped_promos = _group_promo_inserts(with_inline_media)
     return _rewrite_kemono_links(
-        with_inline_media,
+        with_grouped_promos,
         current_service=current_service,
         current_user_id=current_user_id,
         current_post_id=current_post_id,
@@ -185,6 +187,92 @@ def _expand_empty_image_links(html_content: str) -> str:
         rel_values.update({"noopener", "noreferrer"})
         link["rel"] = sorted(rel_values)
     return str(soup)
+
+
+def _group_promo_inserts(html_content: str) -> str:
+    soup = BeautifulSoup(html_content, "html.parser")
+    headings = list(soup.find_all("h3"))
+    for heading in headings:
+        if not _is_promo_heading(heading):
+            continue
+
+        image_block = _next_nonempty_tag_sibling(heading)
+        if image_block is None or image_block.name != "p" or not _is_image_only_paragraph(image_block):
+            continue
+
+        teaser_block = _next_nonempty_tag_sibling(image_block)
+        if teaser_block is None or teaser_block.name != "p" or not teaser_block.get_text(" ", strip=True):
+            continue
+
+        container = soup.new_tag("section")
+        container["class"] = ["post-promo-insert"]
+        _append_class(image_block, "post-promo-image")
+        _append_class(teaser_block, "post-promo-teaser")
+        heading.insert_before(container)
+        container.append(heading.extract())
+        container.append(image_block.extract())
+        container.append(teaser_block.extract())
+    return str(soup)
+
+
+def _is_promo_heading(node: object) -> bool:
+    if getattr(node, "name", None) != "h3":
+        return False
+    link = node.find("a", href=True)
+    if link is None:
+        return False
+    href = link.get("href")
+    if not isinstance(href, str):
+        return False
+    return _parse_supported_post_link(href) is not None
+
+
+def _next_nonempty_tag_sibling(node: object):
+    sibling = getattr(node, "next_sibling", None)
+    while sibling is not None:
+        if isinstance(sibling, NavigableString):
+            if sibling.strip():
+                return None
+            sibling = sibling.next_sibling
+            continue
+        if getattr(sibling, "name", None):
+            return sibling
+        sibling = getattr(sibling, "next_sibling", None)
+    return None
+
+
+def _is_image_only_paragraph(node: object) -> bool:
+    if getattr(node, "name", None) != "p":
+        return False
+    for child in getattr(node, "children", []):
+        if isinstance(child, NavigableString):
+            if child.strip():
+                return False
+            continue
+        child_name = getattr(child, "name", None)
+        if child_name == "img":
+            continue
+        if child_name == "a":
+            img = child.find("img")
+            if img is None:
+                return False
+            if child.get_text(" ", strip=True):
+                return False
+            continue
+        return False
+    return node.find("img") is not None
+
+
+def _append_class(node: object, class_name: str) -> None:
+    if not hasattr(node, "attrs"):
+        return
+    classes = node.get("class")
+    if isinstance(classes, list):
+        if class_name not in classes:
+            classes.append(class_name)
+        node["class"] = classes
+        return
+    node["class"] = [class_name]
 
 
 def _looks_like_image_url(url: str) -> bool:
