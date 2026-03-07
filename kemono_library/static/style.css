@@ -1082,7 +1082,7 @@ small {
 .creator-post-list {
   display: grid;
   gap: 0.72rem;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
 }
 
 .creator-post-card {
