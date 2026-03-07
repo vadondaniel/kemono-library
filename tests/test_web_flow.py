@@ -366,3 +366,227 @@ def test_edit_page_prettifies_html_content(tmp_path):
     assert b"&lt;p&gt;" in response.data
     assert b"&lt;strong&gt;" in response.data
     assert b"Hello" in response.data
+
+
+def test_creator_folder_filter_and_sort_modes(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+
+    creator_id = db.create_creator("Folder Creator")
+    main_series_id = db.create_series(creator_id, "Main Series")
+    side_series_id = db.create_series(creator_id, "Side Series")
+
+    db.upsert_post(
+        creator_id=creator_id,
+        series_id=main_series_id,
+        service="fanbox",
+        external_user_id="user-1",
+        external_post_id="100",
+        title="Beta Post",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/user-1/post/100",
+        published_at="2025-01-02T00:00:00",
+    )
+    db.upsert_post(
+        creator_id=creator_id,
+        series_id=side_series_id,
+        service="fanbox",
+        external_user_id="user-1",
+        external_post_id="101",
+        title="Alpha Post",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/user-1/post/101",
+        published_at="2025-01-01T00:00:00",
+    )
+    db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="user-1",
+        external_post_id="102",
+        title="Gamma Post",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/user-1/post/102",
+        published_at="2025-01-03T00:00:00",
+    )
+
+    client = app.test_client()
+
+    title_sorted = client.get(f"/creators/{creator_id}?sort=title&direction=asc")
+    assert title_sorted.status_code == 200
+    title_html = title_sorted.data.decode("utf-8")
+    assert title_html.index("Alpha Post") < title_html.index("Beta Post") < title_html.index("Gamma Post")
+
+    unsorted_only = client.get(f"/creators/{creator_id}?folder=unsorted")
+    assert unsorted_only.status_code == 200
+    unsorted_html = unsorted_only.data.decode("utf-8")
+    assert "Gamma Post" in unsorted_html
+    assert "Alpha Post" not in unsorted_html
+    assert "Beta Post" not in unsorted_html
+
+    series_only = client.get(f"/creators/{creator_id}?series_id={main_series_id}")
+    assert series_only.status_code == 200
+    series_html = series_only.data.decode("utf-8")
+    assert "Beta Post" in series_html
+    assert "Alpha Post" not in series_html
+    assert "Gamma Post" not in series_html
+
+    published_desc = client.get(f"/creators/{creator_id}?sort=published&direction=desc")
+    assert published_desc.status_code == 200
+    published_desc_html = published_desc.data.decode("utf-8")
+    assert published_desc_html.index("Gamma Post") < published_desc_html.index("Beta Post") < published_desc_html.index(
+        "Alpha Post"
+    )
+
+
+def test_series_folder_tile_uses_first_entry_thumbnail(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+
+    creator_id = db.create_creator("Series Thumb Creator")
+    series_id = db.create_series(creator_id, "Main Arc")
+
+    db.upsert_post(
+        creator_id=creator_id,
+        series_id=series_id,
+        service="fanbox",
+        external_user_id="user-1",
+        external_post_id="301",
+        title="Older",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/user-1/post/301",
+        thumbnail_local_path="post_301/old.jpg",
+        published_at="2025-01-01T00:00:00",
+    )
+    db.upsert_post(
+        creator_id=creator_id,
+        series_id=series_id,
+        service="fanbox",
+        external_user_id="user-1",
+        external_post_id="302",
+        title="Newer",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/user-1/post/302",
+        thumbnail_local_path="post_302/new.jpg",
+        published_at="2025-01-02T00:00:00",
+    )
+
+    series_rows = db.list_series(creator_id)
+    assert len(series_rows) == 1
+    assert series_rows[0]["cover_thumbnail_local_path"] == "post_302/new.jpg"
+
+    client = app.test_client()
+    response = client.get(f"/creators/{creator_id}")
+    assert response.status_code == 200
+    assert b'class="folder-tile-thumb"' in response.data
+    assert b"/files/post_302/new.jpg" in response.data
+
+
+def test_creator_import_context_and_series_folder_metadata_mode(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+
+    creator_id = db.create_creator("Context Creator")
+    series_id = db.create_series(
+        creator_id,
+        "Folder A",
+        description="Folder description",
+        tags_text="tag-a, tag-b",
+    )
+    db.upsert_post(
+        creator_id=creator_id,
+        series_id=series_id,
+        service="fanbox",
+        external_user_id="uid-1",
+        external_post_id="700",
+        title="One",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/uid-1/post/700",
+        published_at="2025-01-01T00:00:00",
+    )
+
+    client = app.test_client()
+
+    root = client.get(f"/creators/{creator_id}")
+    assert root.status_code == 200
+    expected_root_import = f'href="/import?creator_id={creator_id}"'.encode()
+    assert b'class="button-link button-ghost creator-import-action"' in root.data
+    assert expected_root_import in root.data
+    assert b"Import here" not in root.data
+    assert b'class="folder-explorer-grid"' in root.data
+
+    folder = client.get(f"/creators/{creator_id}?series_id={series_id}")
+    assert folder.status_code == 200
+    expected_import = f'href="/import?creator_id={creator_id}&amp;series_id={series_id}"'.encode()
+    assert b'class="button-link button-ghost creator-import-action"' in folder.data
+    assert expected_import in folder.data
+    assert b'class="series-meta-title"' in folder.data
+    assert b'Folder A' in folder.data
+    assert b'Folder description' in folder.data
+    assert b'tag-a' in folder.data
+    assert b'tag-b' in folder.data
+    assert b'Series Details' not in folder.data
+    assert b'Series / Folder A' not in folder.data
+    assert b'folder-explorer-grid' not in folder.data
+
+
+def test_series_metadata_update_flow(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+
+    creator_id = db.create_creator("Meta Creator")
+    series_id = db.create_series(creator_id, "Before")
+
+    response = app.test_client().post(
+        f"/creators/{creator_id}/series/{series_id}",
+        data={
+            "name": "After",
+            "description": "Updated description",
+            "tags_text": "tag one, tag two",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    updated = next(row for row in db.list_series(creator_id) if int(row["id"]) == series_id)
+    assert updated["name"] == "After"
+    assert updated["description"] == "Updated description"
+    assert updated["tags_text"] == "tag one, tag two"

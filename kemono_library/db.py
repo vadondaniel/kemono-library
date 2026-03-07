@@ -41,6 +41,8 @@ class LibraryDB:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     creator_id INTEGER NOT NULL,
                     name TEXT NOT NULL,
+                    description TEXT,
+                    tags_text TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE (creator_id, name),
                     FOREIGN KEY (creator_id) REFERENCES creators(id) ON DELETE CASCADE
@@ -104,6 +106,7 @@ class LibraryDB:
                 """
             )
             self._ensure_creator_columns(conn)
+            self._ensure_series_columns(conn)
             self._ensure_post_columns(conn)
 
     def create_creator(self, name: str) -> int:
@@ -162,15 +165,29 @@ class LibraryDB:
                 (icon_remote_url, icon_local_path, creator_id),
             )
 
-    def create_series(self, creator_id: int, name: str) -> int:
+    def create_series(
+        self,
+        creator_id: int,
+        name: str,
+        *,
+        description: str | None = None,
+        tags_text: str | None = None,
+    ) -> int:
         with self._connect() as conn:
             cursor = conn.execute(
                 """
-                INSERT INTO series (creator_id, name)
-                VALUES (?, ?)
-                ON CONFLICT(creator_id, name) DO NOTHING
+                INSERT INTO series (creator_id, name, description, tags_text)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(creator_id, name) DO UPDATE SET
+                    description = excluded.description,
+                    tags_text = excluded.tags_text
                 """,
-                (creator_id, name.strip()),
+                (
+                    creator_id,
+                    name.strip(),
+                    self._normalize_optional_text(description),
+                    self._normalize_optional_text(tags_text),
+                ),
             )
             if cursor.lastrowid:
                 return int(cursor.lastrowid)
@@ -180,12 +197,55 @@ class LibraryDB:
             ).fetchone()
             return int(row["id"])
 
+    def update_series(
+        self,
+        series_id: int,
+        *,
+        name: str,
+        description: str | None = None,
+        tags_text: str | None = None,
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE series
+                SET name = ?, description = ?, tags_text = ?
+                WHERE id = ?
+                """,
+                (
+                    name.strip(),
+                    self._normalize_optional_text(description),
+                    self._normalize_optional_text(tags_text),
+                    series_id,
+                ),
+            )
+
     def list_series(self, creator_id: int) -> list[sqlite3.Row]:
         with self._connect() as conn:
             rows = conn.execute(
                 """
                 SELECT s.*,
-                       (SELECT COUNT(*) FROM posts p WHERE p.series_id = s.id) AS post_count
+                       (SELECT COUNT(*) FROM posts p WHERE p.series_id = s.id) AS post_count,
+                       (
+                           SELECT p.thumbnail_local_path
+                           FROM posts p
+                           WHERE p.series_id = s.id
+                           ORDER BY
+                               CASE WHEN p.published_at IS NULL OR p.published_at = '' THEN 1 ELSE 0 END ASC,
+                               p.published_at DESC,
+                               p.id DESC
+                           LIMIT 1
+                       ) AS cover_thumbnail_local_path,
+                       (
+                           SELECT p.thumbnail_remote_url
+                           FROM posts p
+                           WHERE p.series_id = s.id
+                           ORDER BY
+                               CASE WHEN p.published_at IS NULL OR p.published_at = '' THEN 1 ELSE 0 END ASC,
+                               p.published_at DESC,
+                               p.id DESC
+                           LIMIT 1
+                       ) AS cover_thumbnail_remote_url
                 FROM series s
                 WHERE s.creator_id = ?
                 ORDER BY s.name COLLATE NOCASE
@@ -361,17 +421,52 @@ class LibraryDB:
             ).fetchall()
             return list(rows)
 
-    def list_posts_for_creator(self, creator_id: int) -> list[sqlite3.Row]:
+    def list_posts_for_creator(
+        self,
+        creator_id: int,
+        *,
+        series_id: int | None = None,
+        unsorted_only: bool = False,
+        sort_by: str = "published",
+        sort_direction: str = "desc",
+    ) -> list[sqlite3.Row]:
+        normalized_sort = sort_by.lower().strip()
+        if normalized_sort not in {"published", "title"}:
+            normalized_sort = "published"
+
+        normalized_direction = sort_direction.lower().strip()
+        if normalized_direction not in {"asc", "desc"}:
+            normalized_direction = "desc"
+
+        if normalized_sort == "title":
+            order_sql = f"LOWER(p.title) {normalized_direction.upper()}, p.id {normalized_direction.upper()}"
+        else:
+            # Keep posts with no publish date at the end regardless of direction.
+            order_sql = (
+                f"CASE WHEN p.published_at IS NULL OR p.published_at = '' THEN 1 ELSE 0 END ASC, "
+                f"p.published_at {normalized_direction.upper()}, "
+                f"p.id {normalized_direction.upper()}"
+            )
+
+        where_clauses = ["p.creator_id = ?"]
+        params: list[object] = [creator_id]
+        if series_id is not None:
+            where_clauses.append("p.series_id = ?")
+            params.append(series_id)
+        elif unsorted_only:
+            where_clauses.append("p.series_id IS NULL")
+
+        where_sql = " AND ".join(where_clauses)
         with self._connect() as conn:
             rows = conn.execute(
-                """
+                f"""
                 SELECT p.*, s.name AS series_name
                 FROM posts p
                 LEFT JOIN series s ON s.id = p.series_id
-                WHERE p.creator_id = ?
-                ORDER BY p.updated_at DESC, p.id DESC
+                WHERE {where_sql}
+                ORDER BY {order_sql}
                 """,
-                (creator_id,),
+                params,
             ).fetchall()
             return list(rows)
 
@@ -472,3 +567,23 @@ class LibraryDB:
         for column, column_type in required.items():
             if column not in existing_columns:
                 conn.execute(f"ALTER TABLE creators ADD COLUMN {column} {column_type}")
+
+    def _ensure_series_columns(self, conn: sqlite3.Connection) -> None:
+        existing_columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(series)").fetchall()
+        }
+        required = {
+            "description": "TEXT",
+            "tags_text": "TEXT",
+        }
+        for column, column_type in required.items():
+            if column not in existing_columns:
+                conn.execute(f"ALTER TABLE series ADD COLUMN {column} {column_type}")
+
+    @staticmethod
+    def _normalize_optional_text(value: str | None) -> str | None:
+        if not isinstance(value, str):
+            return None
+        cleaned = value.strip()
+        return cleaned or None

@@ -1,59 +1,198 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="panel">
-  <h1 class="creator-title">
-    {% if creator['icon_local_path'] %}
-      <img class="creator-icon creator-icon-lg" src="{{ url_for('serve_creator_icon', relative_path=creator['icon_local_path']) }}" alt="{{ creator['name'] }} icon" loading="lazy">
-    {% elif creator['icon_remote_url'] %}
-      <img class="creator-icon creator-icon-lg" src="{{ creator['icon_remote_url'] }}" alt="{{ creator['name'] }} icon" loading="lazy" referrerpolicy="no-referrer">
-    {% else %}
-      <span class="creator-icon creator-icon-lg creator-icon-placeholder" aria-hidden="true"></span>
+{% if selected_series %}
+  {% set sort_published_url = url_for('creator_detail', creator_id=creator['id'], series_id=selected_series['id'], sort='published', direction=sort_direction) %}
+  {% set sort_title_url = url_for('creator_detail', creator_id=creator['id'], series_id=selected_series['id'], sort='title', direction=sort_direction) %}
+  {% set direction_desc_url = url_for('creator_detail', creator_id=creator['id'], series_id=selected_series['id'], sort=sort_by, direction='desc') %}
+  {% set direction_asc_url = url_for('creator_detail', creator_id=creator['id'], series_id=selected_series['id'], sort=sort_by, direction='asc') %}
+  {% set import_post_url = url_for('import_form', creator_id=creator['id'], series_id=selected_series['id']) %}
+{% else %}
+  {% set sort_published_url = url_for('creator_detail', creator_id=creator['id'], sort='published', direction=sort_direction) %}
+  {% set sort_title_url = url_for('creator_detail', creator_id=creator['id'], sort='title', direction=sort_direction) %}
+  {% set direction_desc_url = url_for('creator_detail', creator_id=creator['id'], sort=sort_by, direction='desc') %}
+  {% set direction_asc_url = url_for('creator_detail', creator_id=creator['id'], sort=sort_by, direction='asc') %}
+  {% set import_post_url = url_for('import_form', creator_id=creator['id']) %}
+{% endif %}
+
+<section class="panel creator-hero">
+  <div class="creator-hero-main">
+    <div class="creator-hero-avatar">
+      {% if creator['icon_local_path'] %}
+        <img class="creator-icon creator-icon-xl" src="{{ url_for('serve_creator_icon', relative_path=creator['icon_local_path']) }}" alt="{{ creator['name'] }} icon" loading="lazy">
+      {% elif creator['icon_remote_url'] %}
+        <img class="creator-icon creator-icon-xl" src="{{ creator['icon_remote_url'] }}" alt="{{ creator['name'] }} icon" loading="lazy" referrerpolicy="no-referrer">
+      {% else %}
+        <span class="creator-icon creator-icon-xl creator-icon-placeholder" aria-hidden="true"></span>
+      {% endif %}
+    </div>
+    <div class="creator-hero-copy">
+      <h1 class="creator-title">{{ creator['name'] }}</h1>
+      <div class="creator-meta-row">
+        <span class="creator-meta-pill">
+          {% if creator['service'] %}{{ creator['service']|upper }}{% else %}UNLINKED{% endif %}
+        </span>
+        <span class="creator-meta-pill">
+          {% if creator['external_user_id'] %}User {{ creator['external_user_id'] }}{% else %}No external user{% endif %}
+        </span>
+      </div>
+    </div>
+    {% if selected_series %}
+      <div class="creator-hero-actions">
+        <a class="button-link button-ghost" href="{{ url_for('creator_detail', creator_id=creator['id'], sort=sort_by, direction=sort_direction) }}">Back to all posts</a>
+      </div>
     {% endif %}
-    {{ creator['name'] }}
-  </h1>
-  <p>
-    {% if creator['service'] and creator['external_user_id'] %}
-      Linked source: {{ creator['service'] }}/{{ creator['external_user_id'] }}
-    {% else %}
-      No source user linked yet. It will be detected during import.
-    {% endif %}
-  </p>
-  <a class="button-link" href="{{ url_for('import_form', creator_id=creator['id']) }}">Import into this creator</a>
+  </div>
+
 </section>
 
-<section class="grid two-col">
-  <article class="panel">
-    <h2>Series / Groups</h2>
-    <form method="post" action="{{ url_for('create_series', creator_id=creator['id']) }}" class="form">
-      <label for="series-name">New series name</label>
-      <input id="series-name" name="name" required placeholder="Main Story Arc">
-      <button type="submit">Add Series</button>
-    </form>
-
-    {% if series_list %}
-      <ul class="list">
-        {% for series in series_list %}
-          <li>{{ series['name'] }} <small>{{ series['post_count'] }} posts</small></li>
-        {% endfor %}
-      </ul>
+<section class="creator-layout">
+  <article class="panel creator-series-panel">
+    {% if selected_series %}
+      <div class="series-meta-head">
+        <h2 class="series-meta-title">{{ selected_series['name'] }}</h2>
+        <div class="series-meta-actions">
+          <details class="series-edit-disclosure">
+            <summary class="button-link button-ghost series-edit-toggle">Edit</summary>
+            <div class="series-edit-popover">
+              <form method="post" action="{{ url_for('update_series', creator_id=creator['id'], series_id=selected_series['id']) }}" class="form series-edit-form">
+                <label for="series-name">Folder name</label>
+                <input id="series-name" name="name" required value="{{ selected_series['name'] }}">
+                <label for="series-description">Description</label>
+                <textarea id="series-description" name="description" rows="4" placeholder="Optional description">{{ selected_series['description'] or '' }}</textarea>
+                <label for="series-tags">Tags</label>
+                <input id="series-tags" name="tags_text" value="{{ selected_series['tags_text'] or '' }}" placeholder="tag one, tag two">
+                <div class="series-edit-actions">
+                  <button type="submit">Save metadata</button>
+                </div>
+              </form>
+            </div>
+          </details>
+          <a class="button-link button-ghost creator-import-action" href="{{ import_post_url }}">Import</a>
+        </div>
+      </div>
+      {% if selected_series['description'] %}
+        <p class="series-meta-description">{{ selected_series['description'] }}</p>
+      {% endif %}
+      {% if selected_series['tags_text'] %}
+        <div class="series-tag-list">
+          {% for tag in selected_series['tags_text'].split(',') %}
+            {% set normalized_tag = tag.strip() %}
+            {% if normalized_tag %}
+              <span class="series-tag">{{ normalized_tag }}</span>
+            {% endif %}
+          {% endfor %}
+      </div>
+      {% endif %}
     {% else %}
-      <p>No series yet.</p>
+      <div class="section-head">
+        <div>
+          <h2>All Posts</h2>
+          <small>{{ series_list|length }} series</small>
+        </div>
+        <div class="section-head-actions">
+          <details class="series-create-disclosure">
+            <summary class="button-link button-ghost series-create-toggle">New</summary>
+            <div class="series-create-popover">
+              <form method="post" action="{{ url_for('create_series', creator_id=creator['id']) }}" class="form series-create-form">
+                <label for="series-name">Series name</label>
+                <input id="series-name" name="name" required placeholder="Main Story Arc">
+                <label for="series-description">Description</label>
+                <textarea id="series-description" name="description" rows="4" placeholder="Optional description"></textarea>
+                <label for="series-tags">Tags</label>
+                <input id="series-tags" name="tags_text" placeholder="tag one, tag two">
+                <div class="series-edit-actions">
+                  <button type="submit">Create</button>
+                </div>
+              </form>
+            </div>
+          </details>
+          <a class="button-link button-ghost creator-import-action" href="{{ import_post_url }}">Import</a>
+        </div>
+      </div>
+
+      <div class="folder-explorer-grid">
+        {% for series in series_list %}
+          <div class="folder-tile-wrap">
+            <a class="folder-tile {% if selected_series and selected_series['id'] == series['id'] %}is-active{% endif %}" href="{{ url_for('creator_detail', creator_id=creator['id'], series_id=series['id'], sort=sort_by, direction=sort_direction) }}">
+              {% if series['cover_thumbnail_local_path'] %}
+                <img
+                  class="folder-tile-thumb"
+                  src="{{ url_for('serve_file', relative_path=series['cover_thumbnail_local_path']) }}"
+                  alt="{{ series['name'] }} thumbnail"
+                  loading="lazy"
+                >
+              {% elif series['cover_thumbnail_remote_url'] %}
+                <img
+                  class="folder-tile-thumb"
+                  src="{{ series['cover_thumbnail_remote_url'] }}"
+                  alt="{{ series['name'] }} thumbnail"
+                  loading="lazy"
+                  referrerpolicy="no-referrer"
+                >
+              {% else %}
+                <span class="folder-tile-icon" aria-hidden="true"></span>
+              {% endif %}
+              <strong class="folder-tile-name">{{ series['name'] }}</strong>
+              <span class="folder-tile-meta">{{ series['post_count'] }} posts</span>
+            </a>
+          </div>
+        {% endfor %}
+      </div>
+
+      {% if not series_list %}
+        <p class="creator-empty">No series yet. Create one to keep arcs grouped.</p>
+      {% endif %}
     {% endif %}
   </article>
 
-  <article class="panel">
-    <h2>Posts</h2>
+  <article class="panel creator-posts-panel">
+    <div class="post-toolbar">
+      <small>{{ posts|length }} posts</small>
+      <div class="creator-sort-bar">
+        <div class="creator-sort-group">
+          <span>Sort</span>
+          <a class="sort-chip {% if sort_by == 'published' %}is-active{% endif %}" href="{{ sort_published_url }}">Publish date</a>
+          <a class="sort-chip {% if sort_by == 'title' %}is-active{% endif %}" href="{{ sort_title_url }}">Alphabetical</a>
+        </div>
+        <div class="creator-sort-group">
+          <span>Order</span>
+          <a class="sort-chip {% if sort_direction == 'desc' %}is-active{% endif %}" href="{{ direction_desc_url }}">Descending</a>
+          <a class="sort-chip {% if sort_direction == 'asc' %}is-active{% endif %}" href="{{ direction_asc_url }}">Ascending</a>
+        </div>
+      </div>
+    </div>
+
     {% if posts %}
-      <ul class="list">
+      <div class="creator-post-list">
         {% for post in posts %}
-          <li>
-            <a href="{{ url_for('post_detail', post_id=post['id']) }}">{{ post['title'] }}</a>
-            <small>{% if post['series_name'] %}{{ post['series_name'] }}{% else %}Unsorted{% endif %}</small>
-          </li>
+          <article class="creator-post-card">
+            <a class="creator-post-thumb" href="{{ url_for('post_detail', post_id=post['id']) }}">
+              {% if post['published_at'] %}
+                <time class="creator-post-published" datetime="{{ post['published_at'] }}">{{ post['published_at']|format_datetime }}</time>
+              {% endif %}
+              {% if post['thumbnail_local_path'] %}
+                <img src="{{ url_for('serve_file', relative_path=post['thumbnail_local_path']) }}" alt="{{ post['title'] }}" loading="lazy">
+              {% elif post['thumbnail_remote_url'] %}
+                <img src="{{ post['thumbnail_remote_url'] }}" alt="{{ post['title'] }}" loading="lazy" referrerpolicy="no-referrer">
+              {% else %}
+                <span class="creator-post-thumb-fallback" aria-hidden="true">No preview</span>
+              {% endif %}
+            </a>
+            <div class="creator-post-body">
+              <h3><a href="{{ url_for('post_detail', post_id=post['id']) }}">{{ post['title'] }}</a></h3>
+              <p class="creator-post-meta">
+                {% if not selected_series %}
+                  <span class="creator-post-badge">
+                    {% if post['series_name'] %}{{ post['series_name'] }}{% else %}Unsorted{% endif %}
+                  </span>
+                {% endif %}
+              </p>
+            </div>
+          </article>
         {% endfor %}
-      </ul>
+      </div>
     {% else %}
-      <p>No posts imported yet.</p>
+      <p class="creator-empty">No posts in this folder yet.</p>
     {% endif %}
   </article>
 </section>

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -41,6 +42,10 @@ def create_app(test_config: dict | None = None) -> Flask:
     Path(app.config["ICONS_DIR"]).mkdir(parents=True, exist_ok=True)
     app.db = db  # type: ignore[attr-defined]
 
+    @app.template_filter("format_datetime")
+    def format_datetime_filter(value: Any) -> str:
+        return _format_datetime_for_display(value)
+
     @app.get("/")
     def index():
         creators = db.list_creators()
@@ -63,12 +68,49 @@ def create_app(test_config: dict | None = None) -> Flask:
         if not creator:
             return ("Creator not found", 404)
         series_list = db.list_series(creator_id)
-        posts = db.list_posts_for_creator(creator_id)
+        series_by_id = {int(series["id"]): series for series in series_list}
+
+        requested_series_id = request.args.get("series_id", type=int)
+        folder = request.args.get("folder", "").strip().lower()
+        sort_by = request.args.get("sort", "published").strip().lower()
+        sort_direction = request.args.get("direction", "desc").strip().lower()
+
+        if sort_by not in {"published", "title"}:
+            sort_by = "published"
+        if sort_direction not in {"asc", "desc"}:
+            sort_direction = "desc"
+
+        selected_series_id: int | None = None
+        unsorted_only = False
+        active_folder = "all"
+        if folder == "unsorted":
+            unsorted_only = True
+            active_folder = "unsorted"
+        elif requested_series_id is not None and requested_series_id in series_by_id:
+            selected_series_id = requested_series_id
+            active_folder = "series"
+
+        posts = db.list_posts_for_creator(
+            creator_id,
+            series_id=selected_series_id,
+            unsorted_only=unsorted_only,
+            sort_by=sort_by,
+            sort_direction=sort_direction,
+        )
+        all_posts = db.list_posts_for_creator(
+            creator_id,
+            sort_by="published",
+            sort_direction="desc",
+        )
         return render_template(
             "creator_detail.html",
             creator=creator,
             series_list=series_list,
             posts=posts,
+            selected_series=series_by_id.get(selected_series_id) if selected_series_id is not None else None,
+            active_folder=active_folder,
+            sort_by=sort_by,
+            sort_direction=sort_direction,
         )
 
     @app.post("/creators/<int:creator_id>/series")
@@ -77,12 +119,45 @@ def create_app(test_config: dict | None = None) -> Flask:
         if not creator:
             return ("Creator not found", 404)
         name = request.form.get("name", "").strip()
+        description = request.form.get("description", "")
+        tags_text = request.form.get("tags_text", "")
         if not name:
             flash("Series/group name is required.", "error")
             return redirect(url_for("creator_detail", creator_id=creator_id))
-        db.create_series(creator_id, name)
+        db.create_series(
+            creator_id,
+            name,
+            description=description,
+            tags_text=tags_text,
+        )
         flash("Series saved.", "success")
         return redirect(url_for("creator_detail", creator_id=creator_id))
+
+    @app.post("/creators/<int:creator_id>/series/<int:series_id>")
+    def update_series(creator_id: int, series_id: int):
+        creator = db.get_creator(creator_id)
+        if not creator:
+            return ("Creator not found", 404)
+
+        series = next((row for row in db.list_series(creator_id) if int(row["id"]) == series_id), None)
+        if not series:
+            return ("Series not found", 404)
+
+        name = request.form.get("name", "").strip()
+        description = request.form.get("description", "")
+        tags_text = request.form.get("tags_text", "")
+        if not name:
+            flash("Series/group name is required.", "error")
+            return redirect(url_for("creator_detail", creator_id=creator_id, series_id=series_id))
+
+        db.update_series(
+            series_id,
+            name=name,
+            description=description,
+            tags_text=tags_text,
+        )
+        flash("Series updated.", "success")
+        return redirect(url_for("creator_detail", creator_id=creator_id, series_id=series_id))
 
     @app.get("/import")
     def import_form():
@@ -694,3 +769,18 @@ def _prettify_content_for_edit(content: str | None) -> str:
     # Do not normalize internal whitespace, so snippets like <p><br></p>
     # remain structurally untouched.
     return re.sub(r"(</[^>]+>)\s*(<[^/][^>]*>)", r"\1\n\2", raw).strip()
+
+
+def _format_datetime_for_display(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    cleaned = value.strip()
+    if not cleaned:
+        return ""
+
+    normalized = cleaned[:-1] + "+00:00" if cleaned.endswith("Z") else cleaned
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return cleaned
+    return parsed.strftime("%Y-%m-%d %H:%M")
