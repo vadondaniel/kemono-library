@@ -53,6 +53,10 @@ class LibraryDB:
                     external_post_id TEXT NOT NULL,
                     title TEXT NOT NULL,
                     content TEXT,
+                    published_at TEXT,
+                    edited_at TEXT,
+                    next_external_post_id TEXT,
+                    prev_external_post_id TEXT,
                     metadata_json TEXT NOT NULL,
                     source_url TEXT NOT NULL,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -73,8 +77,28 @@ class LibraryDB:
                     UNIQUE (post_id, remote_url),
                     FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
                 );
+
+                CREATE TABLE IF NOT EXISTS post_tags (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    post_id INTEGER NOT NULL,
+                    tag TEXT NOT NULL,
+                    UNIQUE (post_id, tag),
+                    FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS post_previews (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    post_id INTEGER NOT NULL,
+                    preview_type TEXT,
+                    server TEXT NOT NULL DEFAULT '',
+                    name TEXT,
+                    path TEXT NOT NULL,
+                    UNIQUE (post_id, path, server),
+                    FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
+                );
                 """
             )
+            self._ensure_post_columns(conn)
 
     def create_creator(self, name: str) -> int:
         with self._connect() as conn:
@@ -158,20 +182,29 @@ class LibraryDB:
         content: str,
         metadata: dict,
         source_url: str,
+        published_at: str | None = None,
+        edited_at: str | None = None,
+        next_external_post_id: str | None = None,
+        prev_external_post_id: str | None = None,
     ) -> int:
         with self._connect() as conn:
             conn.execute(
                 """
                 INSERT INTO posts (
                     creator_id, series_id, service, external_user_id, external_post_id,
-                    title, content, metadata_json, source_url
+                    title, content, published_at, edited_at, next_external_post_id,
+                    prev_external_post_id, metadata_json, source_url
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(service, external_user_id, external_post_id) DO UPDATE SET
                     creator_id = excluded.creator_id,
                     series_id = excluded.series_id,
                     title = excluded.title,
                     content = excluded.content,
+                    published_at = excluded.published_at,
+                    edited_at = excluded.edited_at,
+                    next_external_post_id = excluded.next_external_post_id,
+                    prev_external_post_id = excluded.prev_external_post_id,
                     metadata_json = excluded.metadata_json,
                     source_url = excluded.source_url,
                     updated_at = CURRENT_TIMESTAMP
@@ -184,6 +217,10 @@ class LibraryDB:
                     external_post_id,
                     title,
                     content,
+                    published_at,
+                    edited_at,
+                    next_external_post_id,
+                    prev_external_post_id,
                     json.dumps(metadata, ensure_ascii=True),
                     source_url,
                 ),
@@ -215,6 +252,60 @@ class LibraryDB:
                         attachment["kind"],
                     ),
                 )
+
+    def replace_tags(self, post_id: int, tags: list[str]) -> None:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM post_tags WHERE post_id = ?", (post_id,))
+            deduped = []
+            seen: set[str] = set()
+            for tag in tags:
+                normalized = tag.strip()
+                if not normalized or normalized in seen:
+                    continue
+                seen.add(normalized)
+                deduped.append(normalized)
+            for tag in deduped:
+                conn.execute(
+                    "INSERT INTO post_tags (post_id, tag) VALUES (?, ?)",
+                    (post_id, tag),
+                )
+
+    def list_tags(self, post_id: int) -> list[sqlite3.Row]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM post_tags WHERE post_id = ? ORDER BY tag COLLATE NOCASE",
+                (post_id,),
+            ).fetchall()
+            return list(rows)
+
+    def replace_previews(self, post_id: int, previews: list[dict]) -> None:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM post_previews WHERE post_id = ?", (post_id,))
+            for preview in previews:
+                path = str(preview.get("path", "")).strip()
+                if not path:
+                    continue
+                conn.execute(
+                    """
+                    INSERT INTO post_previews (post_id, preview_type, server, name, path)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        post_id,
+                        str(preview.get("type", "")).strip() or None,
+                        str(preview.get("server", "")).strip(),
+                        str(preview.get("name", "")).strip() or None,
+                        path,
+                    ),
+                )
+
+    def list_previews(self, post_id: int) -> list[sqlite3.Row]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM post_previews WHERE post_id = ? ORDER BY id",
+                (post_id,),
+            ).fetchall()
+            return list(rows)
 
     def list_recent_posts(self, limit: int = 25) -> list[sqlite3.Row]:
         with self._connect() as conn:
@@ -300,3 +391,18 @@ class LibraryDB:
                 """,
                 (service, external_post_id),
             ).fetchone()
+
+    def _ensure_post_columns(self, conn: sqlite3.Connection) -> None:
+        existing_columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(posts)").fetchall()
+        }
+        required = {
+            "published_at": "TEXT",
+            "edited_at": "TEXT",
+            "next_external_post_id": "TEXT",
+            "prev_external_post_id": "TEXT",
+        }
+        for column, column_type in required.items():
+            if column not in existing_columns:
+                conn.execute(f"ALTER TABLE posts ADD COLUMN {column} {column_type}")

@@ -175,6 +175,10 @@ def create_app(test_config: dict | None = None) -> Flask:
 
         title = payload.get("title") or f"{service}:{post_id}"
         content = payload.get("content") or ""
+        published_at = _optional_str(payload.get("published"))
+        edited_at = _optional_str(payload.get("edited"))
+        next_external_post_id = _optional_str(payload.get("next"))
+        prev_external_post_id = _optional_str(payload.get("prev"))
         source_url = post_ref.canonical_url
         local_post_id = db.upsert_post(
             creator_id=creator_id,
@@ -186,6 +190,10 @@ def create_app(test_config: dict | None = None) -> Flask:
             content=str(content),
             metadata=raw_payload,
             source_url=source_url,
+            published_at=published_at,
+            edited_at=edited_at,
+            next_external_post_id=next_external_post_id,
+            prev_external_post_id=prev_external_post_id,
         )
 
         download_root = Path(app.config["FILES_DIR"]) / f"post_{local_post_id}"
@@ -220,6 +228,8 @@ def create_app(test_config: dict | None = None) -> Flask:
                 }
             )
         db.replace_attachments(local_post_id, saved)
+        db.replace_tags(local_post_id, _extract_tags(payload))
+        db.replace_previews(local_post_id, _extract_previews(raw_payload))
 
         flash("Post imported into local library.", "success")
         return redirect(url_for("post_detail", post_id=local_post_id))
@@ -506,6 +516,49 @@ def _assign_preferred(
     if existing_priority is None or priority > existing_priority:
         target_map[key] = value
         target_priority[key] = priority
+
+
+def _optional_str(value: Any) -> str | None:
+    if isinstance(value, str):
+        cleaned = value.strip()
+        return cleaned or None
+    return None
+
+
+def _extract_tags(payload: dict[str, Any]) -> list[str]:
+    tags = payload.get("tags")
+    if not isinstance(tags, list):
+        return []
+    out: list[str] = []
+    for item in tags:
+        if isinstance(item, str):
+            normalized = item.strip()
+            if normalized:
+                out.append(normalized)
+    return out
+
+
+def _extract_previews(raw_payload: dict[str, Any]) -> list[dict[str, str]]:
+    previews = raw_payload.get("previews")
+    if not isinstance(previews, list):
+        return []
+
+    out: list[dict[str, str]] = []
+    for item in previews:
+        if not isinstance(item, dict):
+            continue
+        path = _optional_str(item.get("path"))
+        if not path:
+            continue
+        out.append(
+            {
+                "type": _optional_str(item.get("type")) or "",
+                "server": _optional_str(item.get("server")) or "",
+                "name": _optional_str(item.get("name")) or "",
+                "path": path,
+            }
+        )
+    return out
 
 
 def _prettify_content_for_edit(content: str | None) -> str:

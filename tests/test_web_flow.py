@@ -20,8 +20,21 @@ def test_import_and_resolve_flow(tmp_path, monkeypatch):
             "user": "70479526",
             "file": {"name": "cover.jpg", "path": "/data/x/cover.jpg"},
             "attachments": [],
+            "published": "2025-10-25T12:00:00",
+            "edited": "2025-10-25T12:00:00",
+            "next": "200",
+            "prev": "050",
+            "tags": ["alpha", "beta"],
         },
         "attachments": [],
+        "previews": [
+            {
+                "type": "thumbnail",
+                "server": "https://n1.kemono.cr",
+                "name": "cover-thumb.jpg",
+                "path": "/x/y/thumb.jpg",
+            }
+        ],
     }
 
     def fake_fetch(ref, fallback_user_id=None):  # noqa: ARG001
@@ -67,10 +80,22 @@ def test_import_and_resolve_flow(tmp_path, monkeypatch):
     assert commit.headers["Location"].endswith("/posts/1")
     attachments = app.db.list_attachments(1)  # type: ignore[attr-defined]
     assert attachments[0]["local_path"] == "post_1/cover.jpg"
+    post = app.db.get_post(1)  # type: ignore[attr-defined]
+    assert post["published_at"] == "2025-10-25T12:00:00"
+    assert post["edited_at"] == "2025-10-25T12:00:00"
+    assert post["next_external_post_id"] == "200"
+    assert post["prev_external_post_id"] == "050"
+    tags = app.db.list_tags(1)  # type: ignore[attr-defined]
+    previews = app.db.list_previews(1)  # type: ignore[attr-defined]
+    assert [row["tag"] for row in tags] == ["alpha", "beta"]
+    assert len(previews) == 1
+    assert previews[0]["name"] == "cover-thumb.jpg"
 
     detail = client.get("/posts/1")
     assert detail.status_code == 200
     assert b"/links/resolve?service=fanbox&amp;post=101" in detail.data
+    assert b"Published:" in detail.data
+    assert b"2025-10-25T12:00:00" in detail.data
 
     unresolved = client.get("/links/resolve?service=fanbox&post=100&user=70479526")
     assert unresolved.status_code == 302
