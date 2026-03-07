@@ -345,6 +345,39 @@ def test_post_detail_maps_inline_alias_to_local_download(tmp_path):
     assert b'src="' + expected_local + b'"' in detail.data
 
 
+def test_post_detail_series_name_links_to_series_view(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+
+    creator_id = db.create_creator("Series Link Creator")
+    series_id = db.create_series(creator_id, "Folder A")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=series_id,
+        service="fanbox",
+        external_user_id="12345",
+        external_post_id="1000",
+        title="Series Linked Post",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/12345/post/1000",
+    )
+
+    detail = app.test_client().get(f"/posts/{post_id}")
+    assert detail.status_code == 200
+    expected_series_link = f'href="/creators/{creator_id}?series_id={series_id}"'.encode()
+    assert expected_series_link in detail.data
+    assert b">Folder A</a>" in detail.data
+
+
 def test_post_detail_prefers_attachment_over_inline_same_name(tmp_path):
     app = create_app(
         {

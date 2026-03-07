@@ -6,7 +6,7 @@
     <strong>Creator:</strong>
     <a href="{{ url_for('creator_detail', creator_id=post['creator_id']) }}">{{ post['creator_name'] }}</a>
     {% if post['series_name'] %}
-      / {{ post['series_name'] }}
+      / <a href="{{ url_for('creator_detail', creator_id=post['creator_id'], series_id=post['series_id']) }}">{{ post['series_name'] }}</a>
     {% endif %}
   </p>
   <p>
