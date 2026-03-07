@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h1>{{ post['title'] }}</h1>
+  <p>
+    <strong>Creator:</strong>
+    <a href="{{ url_for('creator_detail', creator_id=post['creator_id']) }}">{{ post['creator_name'] }}</a>
+    {% if post['series_name'] %}
+      / {{ post['series_name'] }}
+    {% endif %}
+  </p>
+  <p>
+    <strong>Original:</strong>
+    <a href="{{ post['source_url'] }}" target="_blank" rel="noopener">{{ post['source_url'] }}</a>
+  </p>
+  <p>
+    <a class="button-link" href="{{ url_for('edit_post', post_id=post['id']) }}">Edit Post</a>
+  </p>
+</section>
+
+<section class="panel post-content">
+  {{ rendered_content | safe }}
+</section>
+
+<section class="panel">
+  <h2>Saved Files</h2>
+  {% if attachments %}
+    <ul class="list">
+      {% for file in attachments %}
+        <li>
+          {% if file['local_path'] %}
+            <a href="{{ url_for('serve_file', relative_path=file['local_path']) }}">{{ file['name'] }}</a>
+          {% else %}
+            {{ file['name'] }}
+          {% endif %}
+          <small>{{ file['kind'] }}</small>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p>No files downloaded for this post.</p>
+  {% endif %}
+</section>
+{% endblock %}

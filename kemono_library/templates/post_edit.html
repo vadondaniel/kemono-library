@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h1>Edit Post</h1>
+  <form method="post" class="form">
+    <label for="title">Title</label>
+    <input id="title" name="title" required value="{{ post['title'] }}">
+
+    <label for="series_id">Series</label>
+    <select id="series_id" name="series_id">
+      <option value="">No series</option>
+      {% for series in series_list %}
+        <option value="{{ series['id'] }}" {% if post['series_id'] and post['series_id'] == series['id'] %}selected{% endif %}>{{ series['name'] }}</option>
+      {% endfor %}
+    </select>
+
+    <label for="content">Content (HTML/plain text)</label>
+    <textarea id="content" name="content" rows="18">{{ post['content'] }}</textarea>
+
+    <button type="submit">Save Changes</button>
+  </form>
+</section>
+{% endblock %}

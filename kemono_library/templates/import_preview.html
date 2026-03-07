@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h1>Import Preview</h1>
+  <p><strong>Creator:</strong> {{ creator['name'] }}</p>
+  <p><strong>Source:</strong> <a href="{{ post_ref.canonical_url }}" target="_blank" rel="noopener">{{ post_ref.canonical_url }}</a></p>
+  <p><strong>Title:</strong> {{ payload.get('title') or '(untitled)' }}</p>
+</section>
+
+<section class="panel">
+  <h2>Choose Files To Save</h2>
+  <form method="post" action="{{ url_for('import_commit') }}" class="form">
+    <input type="hidden" name="creator_id" value="{{ creator_id }}">
+    <input type="hidden" name="series_id" value="{{ series_id or '' }}">
+    <input type="hidden" name="service" value="{{ post_ref.service }}">
+    <input type="hidden" name="user_id" value="{{ post_ref.user_id }}">
+    <input type="hidden" name="post_id" value="{{ post_ref.post_id }}">
+
+    {% if attachments %}
+      <ul class="list">
+        {% for attachment in attachments %}
+          <li>
+            <label>
+              <input type="checkbox" name="selected_attachment" value="{{ loop.index0 }}" checked>
+              {{ attachment.name }} <small>({{ attachment.kind }})</small>
+            </label>
+            <div><small>{{ attachment.remote_url }}</small></div>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p>No file attachments detected for this post. Post body + metadata will still be saved.</p>
+    {% endif %}
+
+    <button type="submit">Import Post</button>
+  </form>
+</section>
+{% endblock %}

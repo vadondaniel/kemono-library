@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h1>{{ creator['name'] }}</h1>
+  <p>
+    {% if creator['service'] and creator['external_user_id'] %}
+      Linked source: {{ creator['service'] }}/{{ creator['external_user_id'] }}
+    {% else %}
+      No source user linked yet. It will be detected during import.
+    {% endif %}
+  </p>
+  <a class="button-link" href="{{ url_for('import_form', creator_id=creator['id']) }}">Import into this creator</a>
+</section>
+
+<section class="grid two-col">
+  <article class="panel">
+    <h2>Series / Groups</h2>
+    <form method="post" action="{{ url_for('create_series', creator_id=creator['id']) }}" class="form">
+      <label for="series-name">New series name</label>
+      <input id="series-name" name="name" required placeholder="Main Story Arc">
+      <button type="submit">Add Series</button>
+    </form>
+
+    {% if series_list %}
+      <ul class="list">
+        {% for series in series_list %}
+          <li>{{ series['name'] }} <small>{{ series['post_count'] }} posts</small></li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p>No series yet.</p>
+    {% endif %}
+  </article>
+
+  <article class="panel">
+    <h2>Posts</h2>
+    {% if posts %}
+      <ul class="list">
+        {% for post in posts %}
+          <li>
+            <a href="{{ url_for('post_detail', post_id=post['id']) }}">{{ post['title'] }}</a>
+            <small>{% if post['series_name'] %}{{ post['series_name'] }}{% else %}Unsorted{% endif %}</small>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p>No posts imported yet.</p>
+    {% endif %}
+  </article>
+</section>
+{% endblock %}

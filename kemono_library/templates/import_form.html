@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h1>Import Kemono Post</h1>
+  <form method="post" action="{{ url_for('import_preview') }}" class="form">
+    <label for="post-url">Kemono post URL</label>
+    <input id="post-url" name="post_url" required value="{{ prefill_url }}" placeholder="https://kemono.cr/fanbox/user/70479526/post/10791194">
+
+    <label for="creator-id">Creator</label>
+    <select id="creator-id" name="creator_id" required>
+      <option value="">Select creator</option>
+      {% for creator in creators %}
+        <option value="{{ creator['id'] }}" {% if selected_creator and selected_creator == creator['id'] %}selected{% endif %}>
+          {{ creator['name'] }}
+        </option>
+      {% endfor %}
+    </select>
+
+    <label for="series-id">Series (optional)</label>
+    <select id="series-id" name="series_id">
+      <option value="">No series</option>
+      {% for series in series_list %}
+        <option value="{{ series['id'] }}" {% if selected_series and selected_series == series['id'] %}selected{% endif %}>{{ series['name'] }}</option>
+      {% endfor %}
+    </select>
+
+    <button type="submit">Preview Import</button>
+  </form>
+</section>
+{% endblock %}
