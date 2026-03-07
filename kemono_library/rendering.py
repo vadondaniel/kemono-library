@@ -191,6 +191,7 @@ def _rewrite_local_media_urls(
                 continue
             replacement = _find_local_media_replacement(
                 raw_url.strip(),
+                node=node,
                 local_media_map=local_media_map,
                 local_media_by_name=local_media_by_name,
             )
@@ -202,6 +203,7 @@ def _rewrite_local_media_urls(
 def _find_local_media_replacement(
     url: str,
     *,
+    node: object | None,
     local_media_map: dict[str, str],
     local_media_by_name: dict[str, str],
 ) -> str | None:
@@ -221,15 +223,36 @@ def _find_local_media_replacement(
     if direct_normalized:
         return direct_normalized
 
+    alias_name = _anchor_alias_name(node, parsed.path)
+    if alias_name:
+        by_alias = local_media_by_name.get(alias_name)
+        if by_alias:
+            return by_alias
+
     # FANBOX image links sometimes put source URL in query parameters.
     query = parse_qs(parsed.query)
     for values in query.values():
         for candidate in values:
             nested = _find_local_media_replacement(
                 candidate,
+                node=node,
                 local_media_map=local_media_map,
                 local_media_by_name=local_media_by_name,
             )
             if nested:
                 return nested
     return None
+
+
+def _anchor_alias_name(node: object | None, path: str) -> str | None:
+    if node is None or getattr(node, "name", None) != "a":
+        return None
+    text = getattr(node, "get_text", lambda *_args, **_kwargs: "")(" ", strip=True)
+    if not isinstance(text, str) or not text.strip():
+        return None
+
+    suffix = Path(path).suffix
+    label = text.strip().lower()
+    if suffix and not Path(label).suffix:
+        return f"{label}{suffix.lower()}"
+    return label

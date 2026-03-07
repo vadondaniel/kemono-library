@@ -53,3 +53,22 @@ def test_render_rewrites_inline_media_to_local_url_by_name():
     )
     assert 'href="/files/post_1/eO8wzPLjankw59mg6YeTMzxN.jpeg"' in rendered
     assert 'src="/files/post_1/eO8wzPLjankw59mg6YeTMzxN.jpeg"' in rendered
+
+
+def test_render_rewrites_file_link_using_anchor_text_alias():
+    content = (
+        '<p><a href="https://downloads.fanbox.cc/files/post/10791194/H9U6jEFTAYx8c4nanzHWqQWv.zip" '
+        'rel="noopener noreferrer">Break Room</a></p>'
+    )
+    rendered = render_post_content(
+        content,
+        current_service="fanbox",
+        current_user_id="70479526",
+        current_post_id=1,
+        local_media_map={
+            "https://kemono.cr/be/0d/be0d1fe75e8e5786732a20e5a0ac9f013e0848a86cb7f7b752c887f4c9ea06ad.zip": "/files/post_1/Break_Room.zip"
+        },
+        local_media_by_name={"break room.zip": "/files/post_1/Break_Room.zip"},
+    )
+    assert 'href="/files/post_1/Break_Room.zip"' in rendered
+    assert ">Break Room<" in rendered
