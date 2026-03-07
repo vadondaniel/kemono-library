@@ -33,7 +33,13 @@ def test_import_and_resolve_flow(tmp_path, monkeypatch):
                 "server": "https://n1.kemono.cr",
                 "name": "cover-thumb.jpg",
                 "path": "/x/y/thumb.jpg",
-            }
+            },
+            {
+                "type": "thumbnail",
+                "server": "https://n1.kemono.cr",
+                "name": "cover-thumb-alias.jpg",
+                "path": "/x/y/thumb.jpg",
+            },
         ],
     }
 

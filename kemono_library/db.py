@@ -294,19 +294,25 @@ class LibraryDB:
     def replace_previews(self, post_id: int, previews: list[dict]) -> None:
         with self._connect() as conn:
             conn.execute("DELETE FROM post_previews WHERE post_id = ?", (post_id,))
+            seen_keys: set[tuple[str, str]] = set()
             for preview in previews:
                 path = str(preview.get("path", "")).strip()
                 if not path:
                     continue
+                server = str(preview.get("server", "")).strip()
+                dedupe_key = (server, path)
+                if dedupe_key in seen_keys:
+                    continue
+                seen_keys.add(dedupe_key)
                 conn.execute(
                     """
-                    INSERT INTO post_previews (post_id, preview_type, server, name, path)
+                    INSERT OR IGNORE INTO post_previews (post_id, preview_type, server, name, path)
                     VALUES (?, ?, ?, ?, ?)
                     """,
                     (
                         post_id,
                         str(preview.get("type", "")).strip() or None,
-                        str(preview.get("server", "")).strip(),
+                        server,
                         str(preview.get("name", "")).strip() or None,
                         path,
                     ),
