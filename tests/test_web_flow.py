@@ -213,6 +213,78 @@ def test_reimport_reuses_existing_file_without_duplicate_suffix(tmp_path, monkey
     assert attachments[0]["local_path"] == "post_1/cover.jpg"
 
 
+def test_import_commit_applies_metadata_overrides(tmp_path, monkeypatch):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+
+    payload = {
+        "post": {
+            "title": "Source Title",
+            "content": "Source content",
+            "user": "70479526",
+            "attachments": [],
+            "published": "2025-10-25T12:00:00",
+            "edited": "2025-10-26T12:00:00",
+            "next": "200",
+            "prev": "050",
+            "tags": ["alpha", "beta"],
+        },
+        "attachments": [],
+    }
+
+    def fake_fetch(ref, fallback_user_id=None):  # noqa: ARG001
+        return payload
+
+    def fake_icon_download(service, user_id, icons_root):  # noqa: ARG001
+        destination = Path(icons_root) / f"{service}_{user_id}.jpg"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"icon")
+        return (f"https://img.kemono.cr/icons/{service}/{user_id}", destination)
+
+    monkeypatch.setattr("kemono_library.web.fetch_post_json", fake_fetch)
+    monkeypatch.setattr("kemono_library.web.download_creator_icon", fake_icon_download)
+
+    client = app.test_client()
+    client.post("/creators", data={"name": "Creator A"}, follow_redirects=False)
+
+    commit = client.post(
+        "/import/commit",
+        data={
+            "creator_id": "1",
+            "series_id": "",
+            "service": "fanbox",
+            "user_id": "70479526",
+            "post_id": "100",
+            "title": "Manual Title",
+            "content": "Manual content",
+            "published_at": "2024-01-01T03:04:05",
+            "edited_at": "",
+            "next_external_post_id": "999",
+            "prev_external_post_id": "",
+            "tags_text": "one, two, one",
+        },
+        follow_redirects=False,
+    )
+    assert commit.status_code == 302
+
+    post = app.db.get_post(1)  # type: ignore[attr-defined]
+    assert post["title"] == "Manual Title"
+    assert post["content"] == "Manual content"
+    assert post["published_at"] == "2024-01-01T03:04:05"
+    assert post["edited_at"] is None
+    assert post["next_external_post_id"] == "999"
+    assert post["prev_external_post_id"] is None
+    tags = app.db.list_tags(1)  # type: ignore[attr-defined]
+    assert [row["tag"] for row in tags] == ["one", "two"]
+
+
 def test_post_detail_maps_inline_alias_to_local_download(tmp_path):
     app = create_app(
         {

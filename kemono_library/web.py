@@ -321,13 +321,29 @@ def create_app(test_config: dict | None = None) -> Flask:
             candidate for idx, candidate in enumerate(all_attachments) if str(idx) in selected_indices
         ]
 
-        title = payload.get("title") or f"{service}:{post_id}"
-        content = payload.get("content") or ""
+        title = _resolve_import_title(request.form.get("title"), payload.get("title"), service=service, post_id=post_id)
+        content = _resolve_import_content(request.form.get("content"), payload.get("content"))
         thumbnail_name, thumbnail_remote_url = _extract_thumbnail_from_payload(payload, raw_payload)
-        published_at = _optional_str(payload.get("published"))
-        edited_at = _optional_str(payload.get("edited"))
-        next_external_post_id = _optional_str(payload.get("next"))
-        prev_external_post_id = _optional_str(payload.get("prev"))
+        published_at = _resolve_import_optional_metadata(
+            request.form.get("published_at"),
+            payload.get("published"),
+            field_present="published_at" in request.form,
+        )
+        edited_at = _resolve_import_optional_metadata(
+            request.form.get("edited_at"),
+            payload.get("edited"),
+            field_present="edited_at" in request.form,
+        )
+        next_external_post_id = _resolve_import_optional_metadata(
+            request.form.get("next_external_post_id"),
+            payload.get("next"),
+            field_present="next_external_post_id" in request.form,
+        )
+        prev_external_post_id = _resolve_import_optional_metadata(
+            request.form.get("prev_external_post_id"),
+            payload.get("prev"),
+            field_present="prev_external_post_id" in request.form,
+        )
         source_url = post_ref.canonical_url
         local_post_id = db.upsert_post(
             creator_id=creator_id,
@@ -388,7 +404,9 @@ def create_app(test_config: dict | None = None) -> Flask:
                 thumbnail_remote_url=thumbnail_remote_url,
             ),
         )
-        db.replace_tags(local_post_id, _extract_tags(payload))
+        tags_text = request.form.get("tags_text")
+        tags = _parse_tags_text(tags_text) if tags_text is not None else _extract_tags(payload)
+        db.replace_tags(local_post_id, tags)
         db.replace_previews(local_post_id, _extract_previews(raw_payload))
 
         flash("Post imported into local library.", "success")
@@ -814,6 +832,50 @@ def _extract_tags(payload: dict[str, Any]) -> list[str]:
             if normalized:
                 out.append(normalized)
     return out
+
+
+def _parse_tags_text(raw_tags: str | None) -> list[str]:
+    if raw_tags is None:
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    for part in raw_tags.split(","):
+        tag = part.strip()
+        if not tag or tag in seen:
+            continue
+        seen.add(tag)
+        out.append(tag)
+    return out
+
+
+def _resolve_import_title(
+    requested_title: str | None,
+    payload_title: Any,
+    *,
+    service: str,
+    post_id: str,
+) -> str:
+    if isinstance(requested_title, str) and requested_title.strip():
+        return requested_title.strip()
+    fallback = _optional_str(payload_title)
+    return fallback or f"{service}:{post_id}"
+
+
+def _resolve_import_content(requested_content: str | None, payload_content: Any) -> str:
+    if isinstance(requested_content, str):
+        return requested_content
+    return str(payload_content) if isinstance(payload_content, str) else ""
+
+
+def _resolve_import_optional_metadata(
+    requested_value: str | None,
+    payload_value: Any,
+    *,
+    field_present: bool,
+) -> str | None:
+    if field_present:
+        return _optional_str(requested_value)
+    return _optional_str(payload_value)
 
 
 def _extract_previews(raw_payload: dict[str, Any]) -> list[dict[str, str]]:

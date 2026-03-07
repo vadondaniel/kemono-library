@@ -1,87 +1,125 @@
 {% extends "base.html" %}
 {% block content %}
+<form method="post" action="{{ url_for('import_commit') }}" id="file-selection-form">
 <section class="panel">
   <h1>Import Preview</h1>
   <p><strong>Creator:</strong> {{ creator['name'] }}</p>
   <p><strong>Source:</strong> <a href="{{ post_ref.canonical_url }}" target="_blank" rel="noopener">{{ post_ref.canonical_url }}</a></p>
-  <p><strong>Title:</strong> {{ payload.get('title') or '(untitled)' }}</p>
+  <div class="import-preview-title-row">
+    <p><strong>Title:</strong> {{ payload.get('title') or '(untitled)' }}</p>
+    <details class="series-create-disclosure import-meta-disclosure">
+      <summary class="button-link button-ghost series-create-toggle">Post metadata</summary>
+      <div class="series-create-popover import-meta-popover">
+        <div class="import-meta-grid">
+          <div class="import-meta-field import-meta-span-full">
+            <label for="meta-title">Title</label>
+            <input id="meta-title" name="title" value="{{ payload.get('title') or '' }}" placeholder="Post title">
+          </div>
+          <div class="import-meta-field import-meta-span-full">
+            <label for="meta-content">Content</label>
+            <textarea id="meta-content" name="content" rows="7" placeholder="Post content">{{ payload.get('content') or '' }}</textarea>
+          </div>
+          <div class="import-meta-field">
+            <label for="meta-published">Published</label>
+            <input id="meta-published" name="published_at" value="{{ payload.get('published') or '' }}" placeholder="2025-10-25T12:00:00">
+          </div>
+          <div class="import-meta-field">
+            <label for="meta-edited">Edited</label>
+            <input id="meta-edited" name="edited_at" value="{{ payload.get('edited') or '' }}" placeholder="2025-10-25T12:00:00">
+          </div>
+          <div class="import-meta-field">
+            <label for="meta-next">Next post id</label>
+            <input id="meta-next" name="next_external_post_id" value="{{ payload.get('next') or '' }}" placeholder="Optional">
+          </div>
+          <div class="import-meta-field">
+            <label for="meta-prev">Previous post id</label>
+            <input id="meta-prev" name="prev_external_post_id" value="{{ payload.get('prev') or '' }}" placeholder="Optional">
+          </div>
+          <div class="import-meta-field import-meta-span-full">
+            <label for="meta-tags">Tags (comma separated)</label>
+            <input id="meta-tags" name="tags_text" value="{{ (payload.get('tags') or []) | join(', ') }}" placeholder="tag one, tag two">
+          </div>
+        </div>
+      </div>
+    </details>
+  </div>
+
+  <input type="hidden" name="creator_id" value="{{ creator_id }}">
+  <input type="hidden" name="series_id" value="{{ series_id or '' }}">
+  <input type="hidden" name="service" value="{{ post_ref.service }}">
+  <input type="hidden" name="user_id" value="{{ post_ref.user_id }}">
+  <input type="hidden" name="post_id" value="{{ post_ref.post_id }}">
+
 </section>
 
 <section class="panel">
   <h2>Choose Files To Save</h2>
-  <form method="post" action="{{ url_for('import_commit') }}" class="form import-selection-form" id="file-selection-form">
-    <input type="hidden" name="creator_id" value="{{ creator_id }}">
-    <input type="hidden" name="series_id" value="{{ series_id or '' }}">
-    <input type="hidden" name="service" value="{{ post_ref.service }}">
-    <input type="hidden" name="user_id" value="{{ post_ref.user_id }}">
-    <input type="hidden" name="post_id" value="{{ post_ref.post_id }}">
-
-    {% if attachments %}
-      <div class="import-toolbar">
-        <input id="file-search" type="search" placeholder="Filter files by name or URL">
-        <div class="import-toolbar-buttons">
-          <button type="button" class="button-ghost" data-select-action="all">Select all</button>
-          <button type="button" class="button-ghost" data-select-action="visible">Select visible</button>
-          <button type="button" class="button-ghost" data-select-action="none">Clear all</button>
-        </div>
+  {% if attachments %}
+    <div class="import-toolbar">
+      <input id="file-search" type="search" placeholder="Filter files by name or URL">
+      <div class="import-toolbar-buttons">
+        <button type="button" class="button-ghost" data-select-action="all">Select all</button>
+        <button type="button" class="button-ghost" data-select-action="visible">Select visible</button>
+        <button type="button" class="button-ghost" data-select-action="none">Clear all</button>
       </div>
+    </div>
 
-      <div id="kind-filters" class="kind-filters" aria-label="File type filters"></div>
+    <div id="kind-filters" class="kind-filters" aria-label="File type filters"></div>
 
-      <div class="file-grid" id="file-grid">
-        {% for attachment in attachments %}
-          {% set lowered_url = attachment.remote_url|lower %}
-          {% set is_image = lowered_url.endswith('.jpg') or lowered_url.endswith('.jpeg') or lowered_url.endswith('.png') or lowered_url.endswith('.gif') or lowered_url.endswith('.webp') or lowered_url.endswith('.bmp') or lowered_url.endswith('.svg') %}
-          {% set is_video = lowered_url.endswith('.mp4') or lowered_url.endswith('.webm') or lowered_url.endswith('.m4v') or lowered_url.endswith('.mov') %}
-          {% set is_audio = lowered_url.endswith('.mp3') or lowered_url.endswith('.wav') or lowered_url.endswith('.ogg') or lowered_url.endswith('.flac') %}
-          <label
-            class="file-card"
-            data-file-card
-            data-kind="{{ attachment.kind }}"
-            data-name="{{ attachment.name|lower }}"
-            data-url="{{ attachment.remote_url|lower }}"
-          >
-            <div class="file-card-check">
-              <input class="file-check" type="checkbox" name="selected_attachment" value="{{ loop.index0 }}" checked>
-              <span class="file-kind">{{ attachment.kind }}</span>
-            </div>
-            <div class="file-preview {% if is_image %}is-image{% endif %}">
-              {% if is_image %}
-                <img
-                  src="{{ attachment.remote_url }}"
-                  alt="{{ attachment.name }}"
-                  loading="lazy"
-                  referrerpolicy="no-referrer"
-                  onerror="this.style.display='none'; this.parentElement.classList.add('is-broken');"
-                >
-              {% elif is_video %}
-                <span class="file-preview-fallback">Video</span>
-              {% elif is_audio %}
-                <span class="file-preview-fallback">Audio</span>
-              {% else %}
-                <span class="file-preview-fallback">File</span>
-              {% endif %}
-            </div>
-            <div class="file-meta">
-              <div class="file-name">{{ attachment.name }}</div>
-              <div class="file-url">{{ attachment.remote_url }}</div>
-            </div>
-          </label>
-        {% endfor %}
+    <div class="file-grid" id="file-grid">
+      {% for attachment in attachments %}
+        {% set lowered_url = attachment.remote_url|lower %}
+        {% set is_image = lowered_url.endswith('.jpg') or lowered_url.endswith('.jpeg') or lowered_url.endswith('.png') or lowered_url.endswith('.gif') or lowered_url.endswith('.webp') or lowered_url.endswith('.bmp') or lowered_url.endswith('.svg') %}
+        {% set is_video = lowered_url.endswith('.mp4') or lowered_url.endswith('.webm') or lowered_url.endswith('.m4v') or lowered_url.endswith('.mov') %}
+        {% set is_audio = lowered_url.endswith('.mp3') or lowered_url.endswith('.wav') or lowered_url.endswith('.ogg') or lowered_url.endswith('.flac') %}
+        <label
+          class="file-card"
+          data-file-card
+          data-kind="{{ attachment.kind }}"
+          data-name="{{ attachment.name|lower }}"
+          data-url="{{ attachment.remote_url|lower }}"
+        >
+          <div class="file-card-check">
+            <input class="file-check" type="checkbox" name="selected_attachment" value="{{ loop.index0 }}" checked>
+            <span class="file-kind">{{ attachment.kind }}</span>
+          </div>
+          <div class="file-preview {% if is_image %}is-image{% endif %}">
+            {% if is_image %}
+              <img
+                src="{{ attachment.remote_url }}"
+                alt="{{ attachment.name }}"
+                loading="lazy"
+                referrerpolicy="no-referrer"
+                onerror="this.style.display='none'; this.parentElement.classList.add('is-broken');"
+              >
+            {% elif is_video %}
+              <span class="file-preview-fallback">Video</span>
+            {% elif is_audio %}
+              <span class="file-preview-fallback">Audio</span>
+            {% else %}
+              <span class="file-preview-fallback">File</span>
+            {% endif %}
+          </div>
+          <div class="file-meta">
+            <div class="file-name">{{ attachment.name }}</div>
+            <div class="file-url">{{ attachment.remote_url }}</div>
+          </div>
+        </label>
+      {% endfor %}
+    </div>
+
+    <div class="import-action-bar">
+      <div class="import-summary">
+        Selected <strong id="selected-count">0</strong> of <strong id="total-count">0</strong>
+        <span id="visible-count-wrap">(<span id="visible-count">0</span> visible)</span>
       </div>
-
-      <div class="import-action-bar">
-        <div class="import-summary">
-          Selected <strong id="selected-count">0</strong> of <strong id="total-count">0</strong>
-          <span id="visible-count-wrap">(<span id="visible-count">0</span> visible)</span>
-        </div>
-        <button type="submit">Import Selected Files</button>
-      </div>
-    {% else %}
-      <p>No file attachments detected for this post. Post body + metadata will still be saved.</p>
-      <button type="submit">Import Post Content Only</button>
-    {% endif %}
-  </form>
+      <button type="submit">Import Selected Files</button>
+    </div>
+  {% else %}
+    <p>No file attachments detected for this post. Post body + metadata will still be saved.</p>
+    <button type="submit">Import Post Content Only</button>
+  {% endif %}
 </section>
+</form>
 <script src="{{ url_for('static', filename='import_preview.js') }}"></script>
 {% endblock %}
