@@ -1,5 +1,6 @@
 from pathlib import Path
 import time
+from bs4 import BeautifulSoup
 
 from kemono_library.web import create_app
 
@@ -718,6 +719,15 @@ def test_creator_folder_filter_and_sort_modes(tmp_path):
     )
 
     client = app.test_client()
+    root = client.get(f"/creators/{creator_id}")
+    assert root.status_code == 200
+    soup = BeautifulSoup(root.data, "html.parser")
+    folder_names = [node.get_text(strip=True) for node in soup.select(".folder-explorer-grid .folder-tile-name")]
+    assert "Unsorted" not in folder_names
+    filter_links = [anchor.get("href") or "" for anchor in soup.select(".creator-sort-bar a")]
+    assert any("folder=unsorted" in href for href in filter_links)
+    assert any("All posts" in anchor.get_text(strip=True) for anchor in soup.select(".creator-sort-bar a"))
+    assert any("Unsorted" in anchor.get_text(strip=True) for anchor in soup.select(".creator-sort-bar a"))
 
     title_sorted = client.get(f"/creators/{creator_id}?sort=title&direction=asc")
     assert title_sorted.status_code == 200
@@ -744,6 +754,41 @@ def test_creator_folder_filter_and_sort_modes(tmp_path):
     assert published_desc_html.index("Gamma Post") < published_desc_html.index("Beta Post") < published_desc_html.index(
         "Alpha Post"
     )
+
+
+def test_creator_does_not_show_unsorted_folder_tile_without_series(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+
+    creator_id = db.create_creator("No Series Creator")
+    db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="user-1",
+        external_post_id="300",
+        title="Lone Unsorted Post",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/user-1/post/300",
+        published_at="2025-01-03T00:00:00",
+    )
+
+    response = app.test_client().get(f"/creators/{creator_id}")
+    assert response.status_code == 200
+    soup = BeautifulSoup(response.data, "html.parser")
+    folder_names = [node.get_text(strip=True) for node in soup.select(".folder-explorer-grid .folder-tile-name")]
+    assert "Unsorted" not in folder_names
+    assert not any("folder=unsorted" in (anchor.get("href") or "") for anchor in soup.select(".folder-explorer-grid a"))
+    assert any("folder=unsorted" in (anchor.get("href") or "") for anchor in soup.select(".creator-sort-bar a"))
 
 
 def test_series_folder_tile_uses_first_entry_thumbnail(tmp_path):

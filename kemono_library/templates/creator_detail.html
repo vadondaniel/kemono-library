@@ -11,6 +11,8 @@
   {% set sort_title_url = url_for('creator_detail', creator_id=creator['id'], sort='title', direction=sort_direction) %}
   {% set direction_desc_url = url_for('creator_detail', creator_id=creator['id'], sort=sort_by, direction='desc') %}
   {% set direction_asc_url = url_for('creator_detail', creator_id=creator['id'], sort=sort_by, direction='asc') %}
+  {% set filter_all_url = url_for('creator_detail', creator_id=creator['id'], sort=sort_by, direction=sort_direction) %}
+  {% set filter_unsorted_url = url_for('creator_detail', creator_id=creator['id'], folder='unsorted', sort=sort_by, direction=sort_direction) %}
   {% set import_post_url = url_for('import_form', creator_id=creator['id']) %}
 {% endif %}
 
@@ -168,6 +170,13 @@
     <div class="post-toolbar">
       <small>{{ posts|length }} posts</small>
       <div class="creator-sort-bar">
+        {% if not selected_series %}
+          <div class="creator-sort-group">
+            <span>Filter</span>
+            <a class="sort-chip {% if active_folder == 'all' %}is-active{% endif %}" href="{{ filter_all_url }}">All posts</a>
+            <a class="sort-chip {% if active_folder == 'unsorted' %}is-active{% endif %}" href="{{ filter_unsorted_url }}">Unsorted</a>
+          </div>
+        {% endif %}
         <div class="creator-sort-group">
           <span>Sort</span>
           <a class="sort-chip {% if sort_by == 'published' %}is-active{% endif %}" href="{{ sort_published_url }}">Publish date</a>
