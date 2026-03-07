@@ -51,7 +51,12 @@ def test_extract_attachments_collects_from_envelope_shape():
 
 def test_normalize_post_payload_unwraps_envelope():
     payload = {
-        "post": {"title": "T", "content": "C", "user": "U"},
+        "post": {
+            "title": "T",
+            "content": "C",
+            "user": "U",
+            "attachments": [{"name": "inner", "path": "/data/inner.jpg"}],
+        },
         "attachments": [{"name": "a", "path": "/data/a"}],
         "previews": [{"id": 1}],
     }
@@ -60,6 +65,7 @@ def test_normalize_post_payload_unwraps_envelope():
     assert normalized["content"] == "C"
     assert normalized["user"] == "U"
     assert isinstance(normalized["attachments"], list)
+    assert len(normalized["attachments"]) == 2
     assert isinstance(normalized["previews"], list)
 
 
@@ -86,3 +92,20 @@ def test_fetch_post_json_uses_css_accept(monkeypatch):
 
     assert payload["title"] == "ok"
     assert captured_headers["Accept"] == "text/css"
+
+
+def test_extract_attachments_includes_inline_media():
+    payload = {
+        "post": {
+            "content": (
+                '<p><img src="/data/local/image-a.jpg"></p>'
+                '<a href="https://downloads.fanbox.cc/image/file-b.png">b</a>'
+                '<a href="https://kemono.cr/fanbox/post/111">not-media</a>'
+            )
+        }
+    }
+    items = extract_attachments(payload)
+    urls = [item.remote_url for item in items]
+    assert "https://kemono.cr/data/local/image-a.jpg" in urls
+    assert "https://downloads.fanbox.cc/image/file-b.png" in urls
+    assert "https://kemono.cr/fanbox/post/111" not in urls

@@ -65,6 +65,8 @@ def test_import_and_resolve_flow(tmp_path, monkeypatch):
     )
     assert commit.status_code == 302
     assert commit.headers["Location"].endswith("/posts/1")
+    attachments = app.db.list_attachments(1)  # type: ignore[attr-defined]
+    assert attachments[0]["local_path"] == "post_1/cover.jpg"
 
     detail = client.get("/posts/1")
     assert detail.status_code == 200

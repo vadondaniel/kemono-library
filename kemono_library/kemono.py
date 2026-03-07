@@ -8,6 +8,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 import requests
+from bs4 import BeautifulSoup
 
 KEMONO_BASE = "https://kemono.cr"
 KEMONO_HOSTS = {"kemono.cr"}
@@ -92,9 +93,11 @@ def normalize_post_payload(payload: dict[str, Any]) -> dict[str, Any]:
         return payload
 
     normalized = dict(post)
-    top_attachments = payload.get("attachments")
-    if isinstance(top_attachments, list):
-        normalized["attachments"] = top_attachments
+    merged_attachments: list[dict[str, Any]] = []
+    _extend_unique_attachment_dicts(merged_attachments, post.get("attachments"))
+    _extend_unique_attachment_dicts(merged_attachments, payload.get("attachments"))
+    if merged_attachments:
+        normalized["attachments"] = merged_attachments
 
     for key in ("previews", "videos", "props"):
         value = payload.get(key)
@@ -145,6 +148,10 @@ def extract_attachments(post_payload: dict[str, Any]) -> list[AttachmentCandidat
                         default_name="attachment",
                         kind="attachment",
                     )
+
+    content = _first_content(sources)
+    if content:
+        _append_inline_content_attachments(candidates, seen, content)
     return candidates
 
 
@@ -186,3 +193,122 @@ def _append_attachment(
 
     seen.add(absolute_url)
     out.append(AttachmentCandidate(name=name, remote_url=absolute_url, kind=kind))
+
+
+def _append_inline_content_attachments(
+    out: list[AttachmentCandidate],
+    seen: set[str],
+    content: str,
+) -> None:
+    soup = BeautifulSoup(content, "html.parser")
+    url_attrs = (
+        ("img", "src"),
+        ("source", "src"),
+        ("video", "src"),
+        ("audio", "src"),
+        ("a", "href"),
+    )
+
+    inline_counter = 1
+    for tag_name, attr in url_attrs:
+        for node in soup.find_all(tag_name):
+            raw_url = node.get(attr)
+            if not isinstance(raw_url, str) or not raw_url.strip():
+                continue
+            absolute_url = to_absolute_kemono_url(raw_url.strip())
+            if tag_name == "a" and not _looks_like_downloadable_url(absolute_url):
+                continue
+            if tag_name != "a" and not _looks_like_media_url(absolute_url):
+                continue
+            filename = Path(urlparse(absolute_url).path).name or f"inline-{inline_counter}"
+            inline_counter += 1
+            _append_url_attachment(
+                out,
+                seen,
+                absolute_url,
+                name=filename,
+                kind="inline_media",
+            )
+
+
+def _append_url_attachment(
+    out: list[AttachmentCandidate],
+    seen: set[str],
+    absolute_url: str,
+    *,
+    name: str,
+    kind: str,
+) -> None:
+    if absolute_url in seen:
+        return
+    seen.add(absolute_url)
+    out.append(AttachmentCandidate(name=name, remote_url=absolute_url, kind=kind))
+
+
+def _first_content(sources: list[dict[str, Any]]) -> str | None:
+    for source in sources:
+        content = source.get("content")
+        if isinstance(content, str) and content.strip():
+            return content
+    return None
+
+
+def _looks_like_downloadable_url(url: str) -> bool:
+    return _looks_like_media_url(url) or _looks_like_archive_url(url)
+
+
+def _looks_like_media_url(url: str) -> bool:
+    parsed = urlparse(url)
+    path = parsed.path.lower()
+    host = parsed.netloc.lower()
+    ext = Path(path).suffix.lower()
+    media_ext = {
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".gif",
+        ".webp",
+        ".bmp",
+        ".svg",
+        ".mp4",
+        ".webm",
+        ".m4v",
+        ".mov",
+        ".mp3",
+        ".wav",
+        ".ogg",
+        ".flac",
+    }
+    if ext in media_ext:
+        return True
+    if path.startswith("/data/"):
+        return True
+    if host.endswith("fanbox.cc") and "/image/" in path:
+        return True
+    return False
+
+
+def _looks_like_archive_url(url: str) -> bool:
+    ext = Path(urlparse(url).path.lower()).suffix
+    return ext in {".zip", ".rar", ".7z", ".tar", ".gz", ".pdf"}
+
+
+def _extend_unique_attachment_dicts(target: list[dict[str, Any]], value: Any) -> None:
+    if not isinstance(value, list):
+        return
+    seen_urls = {
+        to_absolute_kemono_url(item.get("path") or item.get("url"))
+        for item in target
+        if isinstance(item, dict) and isinstance(item.get("path") or item.get("url"), str)
+    }
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        raw_path = item.get("path") or item.get("url")
+        if not isinstance(raw_path, str) or not raw_path.strip():
+            continue
+        absolute_url = to_absolute_kemono_url(raw_path)
+        if absolute_url in seen_urls:
+            continue
+        target.append(item)
+        seen_urls.add(absolute_url)

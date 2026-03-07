@@ -125,7 +125,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             return redirect(url_for("import_form", url=raw_url, creator_id=creator_id))
 
         preview_ref = KemonoPostRef(service=post_ref.service, user_id=str(resolved_user_id), post_id=post_ref.post_id)
-        attachments = extract_attachments(payload)
+        attachments = extract_attachments(raw_payload)
 
         return render_template(
             "import_preview.html",
@@ -163,7 +163,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         payload = normalize_post_payload(raw_payload)
 
         db.attach_creator_external(creator_id, service=service, external_user_id=user_id)
-        all_attachments = extract_attachments(payload)
+        all_attachments = extract_attachments(raw_payload)
         selected_indices = set(request.form.getlist("selected_attachment"))
         selected_attachments = [
             candidate for idx, candidate in enumerate(all_attachments) if str(idx) in selected_indices
@@ -188,10 +188,10 @@ def create_app(test_config: dict | None = None) -> Flask:
         saved = []
         for candidate in selected_attachments:
             filename = sanitize_filename(candidate.name)
-            destination = download_root / filename
+            destination = _next_available_destination(download_root, filename)
             try:
                 download_attachment(candidate.remote_url, destination)
-                local_path = str(destination.relative_to(Path(app.config["FILES_DIR"])))
+                local_path = destination.relative_to(Path(app.config["FILES_DIR"])).as_posix()
             except Exception:  # noqa: BLE001
                 local_path = None
             saved.append(
@@ -293,6 +293,23 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     @app.get("/files/<path:relative_path>")
     def serve_file(relative_path: str):
-        return send_from_directory(app.config["FILES_DIR"], relative_path, as_attachment=True)
+        # Keep compatibility with old Windows-stored paths using backslashes.
+        safe_relative = relative_path.replace("\\", "/")
+        return send_from_directory(app.config["FILES_DIR"], safe_relative, as_attachment=True)
 
     return app
+
+
+def _next_available_destination(root: Path, filename: str) -> Path:
+    destination = root / filename
+    if not destination.exists():
+        return destination
+
+    stem = Path(filename).stem or "file"
+    suffix = Path(filename).suffix
+    index = 2
+    while True:
+        candidate = root / f"{stem}_{index}{suffix}"
+        if not candidate.exists():
+            return candidate
+        index += 1
