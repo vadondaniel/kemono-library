@@ -98,6 +98,67 @@ def test_served_files_are_inline_not_forced_download(tmp_path):
     assert "attachment" not in disposition.lower()
 
 
+def test_reimport_reuses_existing_file_without_duplicate_suffix(tmp_path, monkeypatch):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+        }
+    )
+
+    payload = {
+        "post": {
+            "title": "Post Reimport",
+            "content": "",
+            "user": "70479526",
+            "file": {"name": "cover.jpg", "path": "/data/x/cover.jpg"},
+            "attachments": [],
+        },
+        "attachments": [],
+    }
+
+    download_calls = {"count": 0}
+
+    def fake_fetch(ref, fallback_user_id=None):  # noqa: ARG001
+        return payload
+
+    def fake_download(remote_url, destination):  # noqa: ARG001
+        download_calls["count"] += 1
+        Path(destination).parent.mkdir(parents=True, exist_ok=True)
+        Path(destination).write_bytes(b"ok")
+
+    monkeypatch.setattr("kemono_library.web.fetch_post_json", fake_fetch)
+    monkeypatch.setattr("kemono_library.web.download_attachment", fake_download)
+
+    client = app.test_client()
+    client.post("/creators", data={"name": "Creator A"}, follow_redirects=False)
+
+    commit_data = {
+        "creator_id": "1",
+        "series_id": "",
+        "service": "fanbox",
+        "user_id": "70479526",
+        "post_id": "100",
+        "selected_attachment": "0",
+    }
+    first = client.post("/import/commit", data=commit_data, follow_redirects=False)
+    second = client.post("/import/commit", data=commit_data, follow_redirects=False)
+
+    assert first.status_code == 302
+    assert second.status_code == 302
+    assert download_calls["count"] == 1
+
+    files = sorted((Path(app.config["FILES_DIR"]) / "post_1").glob("cover*.jpg"))
+    assert len(files) == 1
+    assert files[0].name == "cover.jpg"
+
+    attachments = app.db.list_attachments(1)  # type: ignore[attr-defined]
+    assert len(attachments) == 1
+    assert attachments[0]["local_path"] == "post_1/cover.jpg"
+
+
 def test_post_detail_maps_inline_alias_to_local_download(tmp_path):
     app = create_app(
         {

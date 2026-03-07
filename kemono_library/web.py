@@ -188,14 +188,27 @@ def create_app(test_config: dict | None = None) -> Flask:
         )
 
         download_root = Path(app.config["FILES_DIR"]) / f"post_{local_post_id}"
+        files_base = Path(app.config["FILES_DIR"])
+        existing_rows = db.list_attachments(local_post_id)
+        existing_by_remote, existing_by_name = _build_existing_file_indexes(files_base, existing_rows)
+
         saved = []
         for candidate in selected_attachments:
             filename = sanitize_filename(candidate.name)
-            destination = _next_available_destination(download_root, filename)
-            try:
-                download_attachment(candidate.remote_url, destination)
-                local_path = destination.relative_to(Path(app.config["FILES_DIR"])).as_posix()
-            except Exception:  # noqa: BLE001
+            destination = (
+                existing_by_remote.get(candidate.remote_url)
+                or existing_by_name.get(filename)
+                or (download_root / filename)
+            )
+            needs_download = not _is_valid_file(destination)
+            if needs_download:
+                try:
+                    download_attachment(candidate.remote_url, destination)
+                except Exception:  # noqa: BLE001
+                    destination = None
+            if destination and _is_valid_file(destination):
+                local_path = destination.relative_to(files_base).as_posix()
+            else:
                 local_path = None
             saved.append(
                 {
@@ -307,19 +320,28 @@ def create_app(test_config: dict | None = None) -> Flask:
     return app
 
 
-def _next_available_destination(root: Path, filename: str) -> Path:
-    destination = root / filename
-    if not destination.exists():
-        return destination
+def _build_existing_file_indexes(
+    files_base: Path,
+    existing_rows: list[Any],
+) -> tuple[dict[str, Path], dict[str, Path]]:
+    by_remote: dict[str, Path] = {}
+    by_name: dict[str, Path] = {}
+    for row in existing_rows:
+        rel = row["local_path"]
+        if not rel:
+            continue
+        abs_path = files_base / rel
+        if not _is_valid_file(abs_path):
+            continue
+        by_remote[row["remote_url"]] = abs_path
+        normalized_name = sanitize_filename(row["name"])
+        if normalized_name and normalized_name not in by_name:
+            by_name[normalized_name] = abs_path
+    return by_remote, by_name
 
-    stem = Path(filename).stem or "file"
-    suffix = Path(filename).suffix
-    index = 2
-    while True:
-        candidate = root / f"{stem}_{index}{suffix}"
-        if not candidate.exists():
-            return candidate
-        index += 1
+
+def _is_valid_file(path: Path | None) -> bool:
+    return bool(path and path.exists() and path.is_file() and path.stat().st_size > 0)
 
 
 def _build_local_media_maps(
