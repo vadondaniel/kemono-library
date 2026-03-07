@@ -276,3 +276,36 @@ def test_post_detail_prefers_attachment_over_inline_same_name(tmp_path):
     expected = f"/files/post_{post_id}/attachment-same-name.jpeg".encode()
     assert b'href="' + expected + b'"' in detail.data
     assert b'src="' + expected + b'"' in detail.data
+
+
+def test_edit_page_prettifies_html_content(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Editor Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="123",
+        external_post_id="456",
+        title="Edit Me",
+        content="<p><strong>Hello</strong><br>World</p>",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/123/post/456",
+    )
+
+    client = app.test_client()
+    response = client.get(f"/posts/{post_id}/edit")
+
+    assert response.status_code == 200
+    assert b"<textarea id=\"content\" name=\"content\" rows=\"18\">" in response.data
+    assert b"&lt;p&gt;" in response.data
+    assert b"&lt;strong&gt;" in response.data
+    assert b"Hello" in response.data

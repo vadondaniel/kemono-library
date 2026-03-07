@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -262,7 +263,12 @@ def create_app(test_config: dict | None = None) -> Flask:
             db.update_post(post_id=post_id, title=title, content=content, series_id=series_id)
             flash("Post updated.", "success")
             return redirect(url_for("post_detail", post_id=post_id))
-        return render_template("post_edit.html", post=post, series_list=series_list)
+        return render_template(
+            "post_edit.html",
+            post=post,
+            series_list=series_list,
+            edit_content=_prettify_content_for_edit(post["content"]),
+        )
 
     @app.get("/links/resolve")
     def resolve_link():
@@ -500,3 +506,15 @@ def _assign_preferred(
     if existing_priority is None or priority > existing_priority:
         target_map[key] = value
         target_priority[key] = priority
+
+
+def _prettify_content_for_edit(content: str | None) -> str:
+    if not isinstance(content, str) or not content.strip():
+        return ""
+    raw = content.strip()
+    if not re.search(r"<[a-zA-Z][^>]*>", raw):
+        return content
+    # Keep formatting conservative: only split *sibling* adjacent tags.
+    # Do not normalize internal whitespace, so snippets like <p><br></p>
+    # remain structurally untouched.
+    return re.sub(r"(</[^>]+>)\s*(<[^/][^>]*>)", r"\1\n\2", raw).strip()
