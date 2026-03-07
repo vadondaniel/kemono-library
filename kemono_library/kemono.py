@@ -126,7 +126,7 @@ def extract_attachments(post_payload: dict[str, Any]) -> list[AttachmentCandidat
     for source in sources:
         file_item = source.get("file")
         if isinstance(file_item, dict):
-            _append_attachment(candidates, seen, file_item, default_name="main-file", kind="file")
+            _append_attachment(candidates, seen, file_item, default_name="main-file", kind="thumbnail")
 
         shared_file = source.get("shared_file")
         if isinstance(shared_file, dict):
@@ -186,14 +186,17 @@ def extract_attachments(post_payload: dict[str, Any]) -> list[AttachmentCandidat
                     )
 
     content = _first_content(sources)
+    inline_name_keys: set[str] = set()
     if content:
+        inline_name_keys = _collect_inline_name_keys(content)
         _append_inline_content_attachments(
             candidates,
             seen,
             content,
             reserved_names=declared_non_inline_names,
         )
-    return _dedupe_non_inline_by_name(candidates)
+    deduped = _dedupe_non_inline_by_name(candidates)
+    return _relabel_inline_kinds(deduped, inline_name_keys)
 
 
 def sanitize_filename(filename: str) -> str:
@@ -322,6 +325,38 @@ def _append_inline_content_attachments(
             )
 
 
+def _collect_inline_name_keys(content: str) -> set[str]:
+    soup = BeautifulSoup(content, "html.parser")
+    name_keys: set[str] = set()
+    url_attrs = (
+        ("img", "src"),
+        ("source", "src"),
+        ("video", "src"),
+        ("audio", "src"),
+        ("a", "href"),
+    )
+
+    for tag_name, attr in url_attrs:
+        for node in soup.find_all(tag_name):
+            raw_url = node.get(attr)
+            if not isinstance(raw_url, str) or not raw_url.strip():
+                continue
+            absolute_url = to_absolute_kemono_url(raw_url.strip())
+            if tag_name == "a" and not _looks_like_downloadable_url(absolute_url):
+                continue
+            if tag_name != "a" and not _looks_like_media_url(absolute_url):
+                continue
+
+            url_name = Path(urlparse(absolute_url).path).name
+            if url_name:
+                name_keys.add(sanitize_filename(url_name).lower())
+
+            inline_name = _infer_inline_name(node, absolute_url)
+            if inline_name:
+                name_keys.add(sanitize_filename(inline_name).lower())
+    return name_keys
+
+
 def _append_url_attachment(
     out: list[AttachmentCandidate],
     seen: set[str],
@@ -440,6 +475,37 @@ def _dedupe_non_inline_by_name(candidates: list[AttachmentCandidate]) -> list[At
     return [chosen_by_key[key] for key in ordered_keys]
 
 
+def _relabel_inline_kinds(
+    candidates: list[AttachmentCandidate],
+    inline_name_keys: set[str],
+) -> list[AttachmentCandidate]:
+    if not inline_name_keys:
+        return [
+            AttachmentCandidate(
+                name=item.name,
+                remote_url=item.remote_url,
+                kind="inline_only" if item.kind == "inline_media" else item.kind,
+            )
+            for item in candidates
+        ]
+
+    relabeled: list[AttachmentCandidate] = []
+    for item in candidates:
+        name_key = sanitize_filename(item.name).lower()
+        if item.kind == "inline_media":
+            relabeled.append(
+                AttachmentCandidate(name=item.name, remote_url=item.remote_url, kind="inline_only")
+            )
+            continue
+        if name_key and name_key in inline_name_keys:
+            relabeled.append(
+                AttachmentCandidate(name=item.name, remote_url=item.remote_url, kind="inline_media")
+            )
+            continue
+        relabeled.append(item)
+    return relabeled
+
+
 def _infer_inline_name(node: Any, absolute_url: str) -> str:
     fallback = Path(urlparse(absolute_url).path).name
     if getattr(node, "name", None) != "a":
@@ -470,11 +536,13 @@ def _candidate_priority(candidate: AttachmentCandidate) -> int:
     # User-facing rule: API attachment/file sources must beat inline links.
     priorities = {
         "attachment": 60,
+        "thumbnail": 55,
         "file": 55,
         "shared_file": 50,
         "video": 45,
         "embed_media": 40,
         "inline_media": 10,
+        "inline_only": 10,
     }
     return priorities.get(candidate.kind, 20)
 

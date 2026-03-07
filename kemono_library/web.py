@@ -731,11 +731,12 @@ def _media_kind_priority(kind: Any) -> int:
     order = {
         "file": 50,
         "attachment": 45,
+        "inline_media": 44,
         "shared_file": 40,
         "video": 35,
         "embed_media": 30,
         "thumbnail": 20,
-        "inline_media": 10,
+        "inline_only": 10,
     }
     return order.get(kind, 5)
 

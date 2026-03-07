@@ -93,7 +93,7 @@ def test_extract_attachments_file_used_for_cover_without_previews():
     }
     items = extract_attachments(payload)
     assert len(items) == 1
-    assert items[0].kind == "file"
+    assert items[0].kind == "thumbnail"
 
 
 def test_extract_attachments_prefers_attachment_over_file_on_name_collision():
@@ -168,6 +168,7 @@ def test_extract_attachments_includes_inline_media():
     assert "https://kemono.cr/data/local/image-a.jpg" in urls
     assert "https://downloads.fanbox.cc/image/file-b.png" in urls
     assert "https://kemono.cr/fanbox/post/111" not in urls
+    assert all(item.kind == "inline_only" for item in items)
 
 
 def test_extract_attachments_dedupes_same_filename_between_sources():
@@ -182,7 +183,7 @@ def test_extract_attachments_dedupes_same_filename_between_sources():
     items = extract_attachments(payload)
     matching = [item for item in items if item.name == "same-name.jpeg"]
     assert len(matching) == 1
-    assert matching[0].kind == "attachment"
+    assert matching[0].kind == "inline_media"
 
 
 def test_extract_attachments_dedupes_inline_anchor_text_file_name():
@@ -198,7 +199,7 @@ def test_extract_attachments_dedupes_inline_anchor_text_file_name():
     items = extract_attachments(payload)
     names = [item.name for item in items]
     assert names.count("Break Room.zip") == 1
-    assert all(item.kind != "inline_media" for item in items)
+    assert any(item.kind == "inline_media" for item in items)
 
 
 def test_extract_attachments_dedupes_inline_anchor_with_numeric_suffix_label():
@@ -214,7 +215,7 @@ def test_extract_attachments_dedupes_inline_anchor_with_numeric_suffix_label():
     items = extract_attachments(payload)
     names = [item.name for item in items]
     assert names.count("Artwork No.34.zip") == 1
-    assert all(item.kind != "inline_media" for item in items)
+    assert any(item.kind == "inline_media" for item in items)
 
 
 def test_extract_attachments_skips_inline_when_name_declared_in_api_attachments():
