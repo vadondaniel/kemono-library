@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,6 +11,16 @@ import requests
 
 KEMONO_BASE = "https://kemono.cr"
 KEMONO_HOSTS = {"kemono.cr", "kemono.su"}
+KEMONO_API_HEADERS = {
+    # Kemono API quirk: some endpoints expect this Accept value.
+    "Accept": "text/css, */*;q=0.1",
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
+    ),
+    "Referer": f"{KEMONO_BASE}/",
+    "Origin": KEMONO_BASE,
+}
 
 
 @dataclass(frozen=True)
@@ -59,9 +70,16 @@ def parse_kemono_post_url(raw_url: str) -> KemonoPostRef:
 
 
 def fetch_post_json(post_ref: KemonoPostRef, fallback_user_id: str | None = None) -> dict[str, Any]:
-    response = requests.get(post_ref.api_url(fallback_user_id=fallback_user_id), timeout=25)
+    response = requests.get(
+        post_ref.api_url(fallback_user_id=fallback_user_id),
+        timeout=25,
+        headers=KEMONO_API_HEADERS,
+    )
     response.raise_for_status()
-    payload = response.json()
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = json.loads(response.text)
     if not isinstance(payload, dict):
         raise ValueError("Unexpected API response. Expected JSON object.")
     return payload
