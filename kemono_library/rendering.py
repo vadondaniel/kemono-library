@@ -9,6 +9,8 @@ from urllib.parse import urlencode
 
 import bleach
 from bs4 import BeautifulSoup
+from bleach.linkifier import Linker
+from bleach.linkifier import URL_RE
 
 from .kemono import parse_kemono_post_url
 
@@ -50,6 +52,11 @@ ALLOWED_ATTRIBUTES = {
     "img": ["src", "alt", "title"],
 }
 ALLOWED_PROTOCOLS = ["http", "https", "mailto"]
+_CJK_FRIENDLY_URL_RE = re.compile(
+    URL_RE.pattern.replace(r"\b(?<![@.])", r"(?:^|(?<=[^A-Za-z0-9_@.]))", 1),
+    re.IGNORECASE | re.VERBOSE,
+)
+_URL_LINKER = Linker(url_re=_CJK_FRIENDLY_URL_RE)
 
 
 def render_post_content(
@@ -67,8 +74,9 @@ def render_post_content(
     content = raw_content.strip()
     if not _looks_like_html(content):
         escaped = html.escape(content).replace("\r\n", "\n").replace("\n", "<br>\n")
+        linkified = _linkify_urls(escaped)
         return _rewrite_kemono_links(
-            escaped,
+            linkified,
             current_service=current_service,
             current_user_id=current_user_id,
             current_post_id=current_post_id,
@@ -86,7 +94,8 @@ def render_post_content(
         local_media_map=local_media_map or {},
         local_media_by_name=local_media_by_name or {},
     )
-    with_inline_media = _expand_empty_image_links(with_local_media)
+    linkified = _linkify_urls(with_local_media)
+    with_inline_media = _expand_empty_image_links(linkified)
     return _rewrite_kemono_links(
         with_inline_media,
         current_service=current_service,
@@ -107,9 +116,8 @@ def _rewrite_kemono_links(
         href = link.get("href")
         if not href:
             continue
-        try:
-            ref = parse_kemono_post_url(href)
-        except ValueError:
+        ref = _parse_supported_post_link(href)
+        if not ref:
             continue
 
         query = {
@@ -125,6 +133,26 @@ def _rewrite_kemono_links(
         link["href"] = f"/links/resolve?{urlencode(query)}"
         link["title"] = "Open local copy or import this linked post"
     return str(soup)
+
+
+def _parse_supported_post_link(href: str):
+    try:
+        return parse_kemono_post_url(href)
+    except ValueError:
+        pass
+
+    parsed = urlparse(href)
+    host = parsed.netloc.lower()
+    if not host.endswith("fanbox.cc"):
+        return None
+    parts = [p for p in parsed.path.split("/") if p]
+    if len(parts) >= 2 and parts[0] == "posts":
+        post_id = parts[1]
+        if post_id.isdigit():
+            from .kemono import KemonoPostRef
+
+            return KemonoPostRef(service="fanbox", post_id=post_id, user_id=None)
+    return None
 
 
 def _expand_empty_image_links(html_content: str) -> str:
@@ -165,6 +193,10 @@ def _looks_like_image_url(url: str) -> bool:
 
 def _looks_like_html(content: str) -> bool:
     return bool(re.search(r"<[a-zA-Z][^>]*>", content))
+
+
+def _linkify_urls(html_content: str) -> str:
+    return _URL_LINKER.linkify(html_content)
 
 
 def _rewrite_local_media_urls(

@@ -89,3 +89,18 @@ def test_render_rewrites_file_link_alias_with_numeric_label_suffix():
     )
     assert 'href="/files/post_1/Artwork_No.34.zip"' in rendered
     assert ">Artwork No.34<" in rendered
+
+
+def test_render_linkifies_and_rewrites_plain_fanbox_post_url():
+    content = "<p>前のhttps://tetetoroort.fanbox.cc/posts/8644398</p>"
+    rendered = render_post_content(
+        content,
+        current_service="fanbox",
+        current_user_id="70479526",
+        current_post_id=1,
+    )
+    assert ">前の<a " in rendered
+    assert (
+        '/links/resolve?service=fanbox&amp;post=8644398&amp;from_post=1&amp;user=70479526&amp;assumed_from_context=1'
+        in rendered
+    )
