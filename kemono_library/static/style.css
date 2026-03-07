@@ -291,6 +291,10 @@ small {
   margin-top: 0.2rem;
 }
 
+.post-promo-insert .post-promo-teaser {
+  white-space: pre-wrap;
+}
+
 .post-promo-insert img {
   display: block;
   width: 100%;
