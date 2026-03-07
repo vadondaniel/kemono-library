@@ -85,6 +85,9 @@ def test_import_and_resolve_flow(tmp_path, monkeypatch):
     assert post["edited_at"] == "2025-10-25T12:00:00"
     assert post["next_external_post_id"] == "200"
     assert post["prev_external_post_id"] == "050"
+    assert post["thumbnail_name"] == "cover.jpg"
+    assert post["thumbnail_remote_url"] == "https://kemono.cr/data/x/cover.jpg"
+    assert post["thumbnail_local_path"] == "post_1/cover.jpg"
     tags = app.db.list_tags(1)  # type: ignore[attr-defined]
     previews = app.db.list_previews(1)  # type: ignore[attr-defined]
     assert [row["tag"] for row in tags] == ["alpha", "beta"]

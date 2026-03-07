@@ -17,6 +17,7 @@ from .kemono import (
     normalize_post_payload,
     parse_kemono_post_url,
     sanitize_filename,
+    to_absolute_kemono_url,
 )
 from .rendering import render_post_content
 
@@ -175,6 +176,7 @@ def create_app(test_config: dict | None = None) -> Flask:
 
         title = payload.get("title") or f"{service}:{post_id}"
         content = payload.get("content") or ""
+        thumbnail_name, thumbnail_remote_url = _extract_thumbnail_from_payload(payload, raw_payload)
         published_at = _optional_str(payload.get("published"))
         edited_at = _optional_str(payload.get("edited"))
         next_external_post_id = _optional_str(payload.get("next"))
@@ -190,6 +192,9 @@ def create_app(test_config: dict | None = None) -> Flask:
             content=str(content),
             metadata=raw_payload,
             source_url=source_url,
+            thumbnail_name=thumbnail_name,
+            thumbnail_remote_url=thumbnail_remote_url,
+            thumbnail_local_path=None,
             published_at=published_at,
             edited_at=edited_at,
             next_external_post_id=next_external_post_id,
@@ -228,6 +233,14 @@ def create_app(test_config: dict | None = None) -> Flask:
                 }
             )
         db.replace_attachments(local_post_id, saved)
+        db.update_post_thumbnail(
+            local_post_id,
+            _find_thumbnail_local_path(
+                saved,
+                thumbnail_name=thumbnail_name,
+                thumbnail_remote_url=thumbnail_remote_url,
+            ),
+        )
         db.replace_tags(local_post_id, _extract_tags(payload))
         db.replace_previews(local_post_id, _extract_previews(raw_payload))
 
@@ -522,6 +535,65 @@ def _optional_str(value: Any) -> str | None:
     if isinstance(value, str):
         cleaned = value.strip()
         return cleaned or None
+    return None
+
+
+def _extract_thumbnail_from_payload(
+    normalized_payload: dict[str, Any],
+    raw_payload: dict[str, Any],
+) -> tuple[str | None, str | None]:
+    file_item = normalized_payload.get("file")
+    if not isinstance(file_item, dict):
+        nested = raw_payload.get("post")
+        if isinstance(nested, dict):
+            file_item = nested.get("file")
+    if not isinstance(file_item, dict):
+        return None, None
+
+    name = _optional_str(file_item.get("name"))
+    raw_path = _optional_str(file_item.get("path") or file_item.get("url"))
+    server = _optional_str(file_item.get("server"))
+    remote_url = _resolve_media_url(raw_path, server)
+
+    if not name and remote_url:
+        parsed = urlparse(remote_url)
+        inferred = Path(parsed.path).name
+        name = inferred or None
+    return name, remote_url
+
+
+def _resolve_media_url(raw_path: str | None, server: str | None) -> str | None:
+    if not raw_path:
+        return None
+    if raw_path.startswith(("http://", "https://")):
+        return raw_path
+    if server and server.startswith(("http://", "https://")):
+        if raw_path.startswith("/"):
+            return f"{server.rstrip('/')}{raw_path}"
+        return f"{server.rstrip('/')}/{raw_path.lstrip('/')}"
+    return to_absolute_kemono_url(raw_path)
+
+
+def _find_thumbnail_local_path(
+    saved_attachments: list[dict[str, Any]],
+    *,
+    thumbnail_name: str | None,
+    thumbnail_remote_url: str | None,
+) -> str | None:
+    if thumbnail_remote_url:
+        for attachment in saved_attachments:
+            if attachment.get("remote_url") == thumbnail_remote_url and attachment.get("local_path"):
+                return str(attachment["local_path"])
+
+    if thumbnail_name:
+        normalized_thumbnail_name = sanitize_filename(thumbnail_name).lower()
+        for attachment in saved_attachments:
+            local = attachment.get("local_path")
+            name = attachment.get("name")
+            if not local or not isinstance(name, str):
+                continue
+            if sanitize_filename(name).lower() == normalized_thumbnail_name:
+                return str(local)
     return None
 
 

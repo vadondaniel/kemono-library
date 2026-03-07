@@ -53,6 +53,9 @@ class LibraryDB:
                     external_post_id TEXT NOT NULL,
                     title TEXT NOT NULL,
                     content TEXT,
+                    thumbnail_name TEXT,
+                    thumbnail_remote_url TEXT,
+                    thumbnail_local_path TEXT,
                     published_at TEXT,
                     edited_at TEXT,
                     next_external_post_id TEXT,
@@ -182,6 +185,9 @@ class LibraryDB:
         content: str,
         metadata: dict,
         source_url: str,
+        thumbnail_name: str | None = None,
+        thumbnail_remote_url: str | None = None,
+        thumbnail_local_path: str | None = None,
         published_at: str | None = None,
         edited_at: str | None = None,
         next_external_post_id: str | None = None,
@@ -192,15 +198,19 @@ class LibraryDB:
                 """
                 INSERT INTO posts (
                     creator_id, series_id, service, external_user_id, external_post_id,
-                    title, content, published_at, edited_at, next_external_post_id,
+                    title, content, thumbnail_name, thumbnail_remote_url, thumbnail_local_path,
+                    published_at, edited_at, next_external_post_id,
                     prev_external_post_id, metadata_json, source_url
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(service, external_user_id, external_post_id) DO UPDATE SET
                     creator_id = excluded.creator_id,
                     series_id = excluded.series_id,
                     title = excluded.title,
                     content = excluded.content,
+                    thumbnail_name = excluded.thumbnail_name,
+                    thumbnail_remote_url = excluded.thumbnail_remote_url,
+                    thumbnail_local_path = excluded.thumbnail_local_path,
                     published_at = excluded.published_at,
                     edited_at = excluded.edited_at,
                     next_external_post_id = excluded.next_external_post_id,
@@ -217,6 +227,9 @@ class LibraryDB:
                     external_post_id,
                     title,
                     content,
+                    thumbnail_name,
+                    thumbnail_remote_url,
+                    thumbnail_local_path,
                     published_at,
                     edited_at,
                     next_external_post_id,
@@ -368,6 +381,17 @@ class LibraryDB:
                 (title, content, series_id, post_id),
             )
 
+    def update_post_thumbnail(self, post_id: int, thumbnail_local_path: str | None) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE posts
+                SET thumbnail_local_path = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (thumbnail_local_path, post_id),
+            )
+
     def find_local_post(
         self, service: str, external_post_id: str, external_user_id: str | None = None
     ) -> sqlite3.Row | None:
@@ -398,6 +422,9 @@ class LibraryDB:
             for row in conn.execute("PRAGMA table_info(posts)").fetchall()
         }
         required = {
+            "thumbnail_name": "TEXT",
+            "thumbnail_remote_url": "TEXT",
+            "thumbnail_local_path": "TEXT",
             "published_at": "TEXT",
             "edited_at": "TEXT",
             "next_external_post_id": "TEXT",
