@@ -30,5 +30,26 @@ def test_render_turns_empty_image_anchor_into_img():
         current_user_id="70479526",
         current_post_id=1,
     )
+    assert "<a " in rendered
     assert "<img" in rendered
+    assert 'target="_blank"' in rendered
     assert 'src="https://downloads.fanbox.cc/images/post/10791194/eO8wzPLjankw59mg6YeTMzxN.jpeg"' in rendered
+
+
+def test_render_rewrites_inline_media_to_local_url_by_name():
+    content = (
+        '<a href="https://downloads.fanbox.cc/images/post/10791194/eO8wzPLjankw59mg6YeTMzxN.jpeg" '
+        'rel="noopener noreferrer"></a>'
+    )
+    rendered = render_post_content(
+        content,
+        current_service="fanbox",
+        current_user_id="70479526",
+        current_post_id=1,
+        local_media_map={
+            "https://kemono.cr/72/3a/723a7e8e7172e528627eb060371fb29a4afdc75e7fc97e78eafbe97196f9c2cc.jpg": "/files/post_1/eO8wzPLjankw59mg6YeTMzxN.jpeg"
+        },
+        local_media_by_name={"eo8wzpljankw59mg6yetmzxn.jpeg": "/files/post_1/eO8wzPLjankw59mg6YeTMzxN.jpeg"},
+    )
+    assert 'href="/files/post_1/eO8wzPLjankw59mg6YeTMzxN.jpeg"' in rendered
+    assert 'src="/files/post_1/eO8wzPLjankw59mg6YeTMzxN.jpeg"' in rendered

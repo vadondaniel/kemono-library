@@ -109,3 +109,18 @@ def test_extract_attachments_includes_inline_media():
     assert "https://kemono.cr/data/local/image-a.jpg" in urls
     assert "https://downloads.fanbox.cc/image/file-b.png" in urls
     assert "https://kemono.cr/fanbox/post/111" not in urls
+
+
+def test_extract_attachments_dedupes_same_filename_between_sources():
+    payload = {
+        "post": {
+            "attachments": [
+                {"name": "same-name.jpeg", "path": "/aa/bb/hash-1.jpg"},
+            ],
+            "content": '<a href="https://downloads.fanbox.cc/images/post/1/same-name.jpeg"></a>',
+        }
+    }
+    items = extract_attachments(payload)
+    matching = [item for item in items if item.name == "same-name.jpeg"]
+    assert len(matching) == 1
+    assert matching[0].kind == "attachment"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from urllib.parse import urlparse
 
 from flask import Flask, flash, redirect, render_template, request, send_from_directory, url_for
 
@@ -213,11 +214,33 @@ def create_app(test_config: dict | None = None) -> Flask:
         if not post:
             return ("Post not found", 404)
         attachments = db.list_attachments(post_id)
+        local_media_map: dict[str, str] = {}
+        local_media_by_name: dict[str, str] = {}
+        for attachment in attachments:
+            local_path = attachment["local_path"]
+            if not local_path:
+                continue
+            local_url = url_for("serve_file", relative_path=local_path)
+            remote_url = attachment["remote_url"]
+            local_media_map[remote_url] = local_url
+            parsed = urlparse(remote_url)
+            normalized_remote = (
+                f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+                if parsed.scheme and parsed.netloc
+                else parsed.path
+            )
+            local_media_map[normalized_remote] = local_url
+            filename = Path(parsed.path).name.lower()
+            if filename and filename not in local_media_by_name:
+                local_media_by_name[filename] = local_url
+
         rendered_content = render_post_content(
             post["content"],
             current_service=post["service"],
             current_user_id=post["external_user_id"],
             current_post_id=post_id,
+            local_media_map=local_media_map,
+            local_media_by_name=local_media_by_name,
         )
         return render_template(
             "post_detail.html",

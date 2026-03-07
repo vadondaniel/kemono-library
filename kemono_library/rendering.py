@@ -3,6 +3,7 @@ from __future__ import annotations
 import html
 import re
 from pathlib import Path
+from urllib.parse import parse_qs
 from urllib.parse import urlparse
 from urllib.parse import urlencode
 
@@ -57,6 +58,8 @@ def render_post_content(
     current_service: str,
     current_user_id: str,
     current_post_id: int,
+    local_media_map: dict[str, str] | None = None,
+    local_media_by_name: dict[str, str] | None = None,
 ) -> str:
     if not raw_content:
         return ""
@@ -78,7 +81,12 @@ def render_post_content(
         protocols=ALLOWED_PROTOCOLS,
         strip=True,
     )
-    with_inline_media = _expand_empty_image_links(safe_html)
+    with_local_media = _rewrite_local_media_urls(
+        safe_html,
+        local_media_map=local_media_map or {},
+        local_media_by_name=local_media_by_name or {},
+    )
+    with_inline_media = _expand_empty_image_links(with_local_media)
     return _rewrite_kemono_links(
         with_inline_media,
         current_service=current_service,
@@ -135,7 +143,13 @@ def _expand_empty_image_links(html_content: str) -> str:
         filename = Path(urlparse(href).path).name
         alt_text = filename or "inline image"
         image = soup.new_tag("img", src=href, alt=alt_text, title=alt_text)
-        link.replace_with(image)
+        link.clear()
+        link.append(image)
+        if not link.get("target"):
+            link["target"] = "_blank"
+        rel_values = set(link.get("rel", []))
+        rel_values.update({"noopener", "noreferrer"})
+        link["rel"] = sorted(rel_values)
     return str(soup)
 
 
@@ -151,3 +165,71 @@ def _looks_like_image_url(url: str) -> bool:
 
 def _looks_like_html(content: str) -> bool:
     return bool(re.search(r"<[a-zA-Z][^>]*>", content))
+
+
+def _rewrite_local_media_urls(
+    html_content: str,
+    *,
+    local_media_map: dict[str, str],
+    local_media_by_name: dict[str, str],
+) -> str:
+    if not local_media_map and not local_media_by_name:
+        return html_content
+
+    soup = BeautifulSoup(html_content, "html.parser")
+    url_attrs = (
+        ("img", "src"),
+        ("source", "src"),
+        ("video", "src"),
+        ("audio", "src"),
+        ("a", "href"),
+    )
+    for tag_name, attr in url_attrs:
+        for node in soup.find_all(tag_name):
+            raw_url = node.get(attr)
+            if not isinstance(raw_url, str) or not raw_url.strip():
+                continue
+            replacement = _find_local_media_replacement(
+                raw_url.strip(),
+                local_media_map=local_media_map,
+                local_media_by_name=local_media_by_name,
+            )
+            if replacement:
+                node[attr] = replacement
+    return str(soup)
+
+
+def _find_local_media_replacement(
+    url: str,
+    *,
+    local_media_map: dict[str, str],
+    local_media_by_name: dict[str, str],
+) -> str | None:
+    direct = local_media_map.get(url)
+    if direct:
+        return direct
+
+    parsed = urlparse(url)
+    normalized_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}" if parsed.scheme and parsed.netloc else parsed.path
+    direct_normalized = local_media_map.get(normalized_url)
+    if direct_normalized:
+        return direct_normalized
+
+    filename = Path(parsed.path).name.lower()
+    if filename:
+        by_name = local_media_by_name.get(filename)
+        if by_name:
+            return by_name
+
+    # FANBOX image links sometimes put source URL in query parameters.
+    query = parse_qs(parsed.query)
+    for values in query.values():
+        for candidate in values:
+            nested = _find_local_media_replacement(
+                candidate,
+                local_media_map=local_media_map,
+                local_media_by_name=local_media_by_name,
+            )
+            if nested:
+                return nested
+    return None

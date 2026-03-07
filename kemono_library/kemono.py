@@ -152,7 +152,7 @@ def extract_attachments(post_payload: dict[str, Any]) -> list[AttachmentCandidat
     content = _first_content(sources)
     if content:
         _append_inline_content_attachments(candidates, seen, content)
-    return candidates
+    return _dedupe_candidates(candidates)
 
 
 def sanitize_filename(filename: str) -> str:
@@ -312,3 +312,35 @@ def _extend_unique_attachment_dicts(target: list[dict[str, Any]], value: Any) ->
             continue
         target.append(item)
         seen_urls.add(absolute_url)
+
+
+def _dedupe_candidates(candidates: list[AttachmentCandidate]) -> list[AttachmentCandidate]:
+    # Prefer API-declared files over inline links when names collide.
+    kind_priority = {"file": 4, "shared_file": 3, "attachment": 2, "inline_media": 1}
+    chosen_by_key: dict[str, tuple[int, AttachmentCandidate]] = {}
+    order: list[str] = []
+
+    for candidate in candidates:
+        key = _candidate_identity_key(candidate)
+        if key not in chosen_by_key:
+            chosen_by_key[key] = (kind_priority.get(candidate.kind, 0), candidate)
+            order.append(key)
+            continue
+
+        existing_priority, existing_candidate = chosen_by_key[key]
+        incoming_priority = kind_priority.get(candidate.kind, 0)
+        if incoming_priority > existing_priority:
+            chosen_by_key[key] = (incoming_priority, candidate)
+        elif incoming_priority == existing_priority and len(candidate.remote_url) < len(existing_candidate.remote_url):
+            # If same type, prefer shorter URL (usually canonical).
+            chosen_by_key[key] = (incoming_priority, candidate)
+
+    return [chosen_by_key[key][1] for key in order]
+
+
+def _candidate_identity_key(candidate: AttachmentCandidate) -> str:
+    cleaned_name = sanitize_filename(candidate.name).lower()
+    if cleaned_name and cleaned_name not in {"file", "attachment", "main-file", "shared-file"}:
+        return f"name:{cleaned_name}"
+    parsed = urlparse(candidate.remote_url)
+    return f"url:{parsed.netloc.lower()}{parsed.path.lower()}"
