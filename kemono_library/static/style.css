@@ -981,8 +981,8 @@ small {
 .folder-explorer-grid {
   display: grid;
   gap: 0.72rem;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 210px));
-  justify-content: start;
+  width: 100%;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .folder-tile-wrap {
@@ -1004,7 +1004,8 @@ small {
 
 .folder-tile-thumb {
   width: 100%;
-  height: 84px;
+  height: auto;
+  aspect-ratio: 1200 / 630;
   border-radius: 0.45rem;
   border: 1px solid var(--border);
   object-fit: cover;
@@ -1469,5 +1470,23 @@ small {
   .creator-sort-bar {
     flex-direction: column;
     align-items: flex-start;
+  }
+}
+
+@media (max-width: 980px) {
+  .folder-explorer-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .folder-explorer-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .folder-explorer-grid {
+    grid-template-columns: 1fr;
   }
 }
