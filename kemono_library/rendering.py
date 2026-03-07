@@ -152,6 +152,12 @@ def _parse_supported_post_link(href: str):
             from .kemono import KemonoPostRef
 
             return KemonoPostRef(service="fanbox", post_id=post_id, user_id=None)
+    if len(parts) >= 3 and parts[0].startswith("@") and parts[1] == "posts":
+        post_id = parts[2]
+        if post_id.isdigit():
+            from .kemono import KemonoPostRef
+
+            return KemonoPostRef(service="fanbox", post_id=post_id, user_id=None)
     return None
 
 

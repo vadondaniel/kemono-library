@@ -104,3 +104,20 @@ def test_render_linkifies_and_rewrites_plain_fanbox_post_url():
         '/links/resolve?service=fanbox&amp;post=8644398&amp;from_post=1&amp;user=70479526&amp;assumed_from_context=1'
         in rendered
     )
+
+
+def test_render_rewrites_www_fanbox_creator_post_link():
+    content = (
+        '<h3><a href="https://www.fanbox.cc/@tetetoroort/posts/9187463" '
+        'rel="noopener noreferrer nofollow">【+3カット】りなちゃんゆめちゃんの休暇</a></h3>'
+    )
+    rendered = render_post_content(
+        content,
+        current_service="fanbox",
+        current_user_id="70479526",
+        current_post_id=1,
+    )
+    assert (
+        '/links/resolve?service=fanbox&amp;post=9187463&amp;from_post=1&amp;user=70479526&amp;assumed_from_context=1'
+        in rendered
+    )
