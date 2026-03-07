@@ -72,3 +72,20 @@ def test_render_rewrites_file_link_using_anchor_text_alias():
     )
     assert 'href="/files/post_1/Break_Room.zip"' in rendered
     assert ">Break Room<" in rendered
+
+
+def test_render_rewrites_file_link_alias_with_numeric_label_suffix():
+    content = (
+        '<p><a href="https://downloads.fanbox.cc/files/post/11441751/EZNQnKOMdH7j94svQWqmIaPo.zip" '
+        'rel="noopener noreferrer">Artwork No.34</a></p>'
+    )
+    rendered = render_post_content(
+        content,
+        current_service="fanbox",
+        current_user_id="70479526",
+        current_post_id=1,
+        local_media_map={},
+        local_media_by_name={"artwork no.34.zip": "/files/post_1/Artwork_No.34.zip"},
+    )
+    assert 'href="/files/post_1/Artwork_No.34.zip"' in rendered
+    assert ">Artwork No.34<" in rendered

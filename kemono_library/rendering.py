@@ -251,8 +251,41 @@ def _anchor_alias_name(node: object | None, path: str) -> str | None:
     if not isinstance(text, str) or not text.strip():
         return None
 
-    suffix = Path(path).suffix
+    suffix = Path(path).suffix.lower()
     label = text.strip().lower()
-    if suffix and not Path(label).suffix:
-        return f"{label}{suffix.lower()}"
+    label_suffix = Path(label).suffix.lower()
+    if suffix and label_suffix != suffix and not _is_known_file_extension(label_suffix):
+        return f"{label}{suffix}"
     return label
+
+
+def _is_known_file_extension(suffix: str) -> bool:
+    if not suffix:
+        return False
+    known = {
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".gif",
+        ".webp",
+        ".bmp",
+        ".svg",
+        ".mp4",
+        ".webm",
+        ".m4v",
+        ".mov",
+        ".mp3",
+        ".wav",
+        ".ogg",
+        ".flac",
+        ".zip",
+        ".rar",
+        ".7z",
+        ".tar",
+        ".gz",
+        ".pdf",
+        ".txt",
+        ".json",
+        ".csv",
+    }
+    return suffix in known
