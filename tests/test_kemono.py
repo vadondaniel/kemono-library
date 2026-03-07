@@ -1,4 +1,10 @@
-from kemono_library.kemono import KemonoPostRef, extract_attachments, fetch_post_json, parse_kemono_post_url
+from kemono_library.kemono import (
+    KemonoPostRef,
+    extract_attachments,
+    fetch_post_json,
+    normalize_post_payload,
+    parse_kemono_post_url,
+)
 
 
 def test_parse_full_kemono_url():
@@ -30,6 +36,33 @@ def test_extract_attachments_collects_main_and_list():
     assert items[0].remote_url == "https://kemono.cr/data/abc/cover.png"
 
 
+def test_extract_attachments_collects_from_envelope_shape():
+    payload = {
+        "post": {
+            "file": {"name": "main.jpg", "path": "/data/x/main.jpg"},
+            "attachments": [{"name": "inside.txt", "path": "/data/x/inside.txt"}],
+        },
+        "attachments": [{"name": "top.zip", "path": "/data/x/top.zip"}],
+    }
+    items = extract_attachments(payload)
+    names = [item.name for item in items]
+    assert names == ["top.zip", "main.jpg", "inside.txt"]
+
+
+def test_normalize_post_payload_unwraps_envelope():
+    payload = {
+        "post": {"title": "T", "content": "C", "user": "U"},
+        "attachments": [{"name": "a", "path": "/data/a"}],
+        "previews": [{"id": 1}],
+    }
+    normalized = normalize_post_payload(payload)
+    assert normalized["title"] == "T"
+    assert normalized["content"] == "C"
+    assert normalized["user"] == "U"
+    assert isinstance(normalized["attachments"], list)
+    assert isinstance(normalized["previews"], list)
+
+
 def test_fetch_post_json_uses_css_accept(monkeypatch):
     captured_headers = {}
 
@@ -52,4 +85,4 @@ def test_fetch_post_json_uses_css_accept(monkeypatch):
     payload = fetch_post_json(KemonoPostRef(service="fanbox", user_id="1", post_id="2"))
 
     assert payload["title"] == "ok"
-    assert captured_headers["Accept"].startswith("text/css")
+    assert captured_headers["Accept"] == "text/css"

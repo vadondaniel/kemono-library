@@ -10,6 +10,7 @@ from .kemono import (
     download_attachment,
     extract_attachments,
     fetch_post_json,
+    normalize_post_payload,
     parse_kemono_post_url,
     sanitize_filename,
 )
@@ -112,10 +113,11 @@ def create_app(test_config: dict | None = None) -> Flask:
 
         fallback_user = creator["external_user_id"] if not post_ref.user_id else None
         try:
-            payload = fetch_post_json(post_ref, fallback_user_id=fallback_user)
+            raw_payload = fetch_post_json(post_ref, fallback_user_id=fallback_user)
         except Exception as exc:  # noqa: BLE001
             flash(f"Failed to fetch post: {exc}", "error")
             return redirect(url_for("import_form", url=raw_url, creator_id=creator_id))
+        payload = normalize_post_payload(raw_payload)
 
         resolved_user_id = post_ref.user_id or payload.get("user")
         if not resolved_user_id:
@@ -154,10 +156,11 @@ def create_app(test_config: dict | None = None) -> Flask:
 
         post_ref = KemonoPostRef(service=service, user_id=user_id, post_id=post_id)
         try:
-            payload = fetch_post_json(post_ref)
+            raw_payload = fetch_post_json(post_ref)
         except Exception as exc:  # noqa: BLE001
             flash(f"Failed to fetch post during save: {exc}", "error")
             return redirect(url_for("import_form"))
+        payload = normalize_post_payload(raw_payload)
 
         db.attach_creator_external(creator_id, service=service, external_user_id=user_id)
         all_attachments = extract_attachments(payload)
@@ -177,7 +180,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             external_post_id=post_id,
             title=str(title),
             content=str(content),
-            metadata=payload,
+            metadata=raw_payload,
             source_url=source_url,
         )
 

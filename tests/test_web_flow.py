@@ -14,10 +14,13 @@ def test_import_and_resolve_flow(tmp_path, monkeypatch):
     )
 
     payload = {
-        "title": "Post 100",
-        "content": '<a href="https://kemono.cr/fanbox/post/101">linked</a>',
-        "user": "70479526",
-        "file": {"name": "cover.jpg", "path": "/data/x/cover.jpg"},
+        "post": {
+            "title": "Post 100",
+            "content": '<a href="https://kemono.cr/fanbox/post/101">linked</a>',
+            "user": "70479526",
+            "file": {"name": "cover.jpg", "path": "/data/x/cover.jpg"},
+            "attachments": [],
+        },
         "attachments": [],
     }
 

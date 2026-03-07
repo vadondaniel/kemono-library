@@ -10,10 +10,10 @@ from urllib.parse import urlparse
 import requests
 
 KEMONO_BASE = "https://kemono.cr"
-KEMONO_HOSTS = {"kemono.cr", "kemono.su"}
+KEMONO_HOSTS = {"kemono.cr"}
 KEMONO_API_HEADERS = {
     # Kemono API quirk: some endpoints expect this Accept value.
-    "Accept": "text/css, */*;q=0.1",
+    "Accept": "text/css",
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
@@ -59,7 +59,7 @@ def parse_kemono_post_url(raw_url: str) -> KemonoPostRef:
     parsed = urlparse(url)
     host = parsed.netloc.lower()
     if host not in KEMONO_HOSTS:
-        raise ValueError("Only kemono.cr/kemono.su post links are supported.")
+        raise ValueError("Only kemono.cr post links are supported.")
 
     parts = [p for p in parsed.path.split("/") if p]
     if len(parts) >= 5 and parts[1] == "user" and parts[3] == "post":
@@ -85,6 +85,24 @@ def fetch_post_json(post_ref: KemonoPostRef, fallback_user_id: str | None = None
     return payload
 
 
+def normalize_post_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Normalize Kemono API envelope payloads into a post-centric dict."""
+    post = payload.get("post")
+    if not isinstance(post, dict):
+        return payload
+
+    normalized = dict(post)
+    top_attachments = payload.get("attachments")
+    if isinstance(top_attachments, list):
+        normalized["attachments"] = top_attachments
+
+    for key in ("previews", "videos", "props"):
+        value = payload.get(key)
+        if value is not None and key not in normalized:
+            normalized[key] = value
+    return normalized
+
+
 def to_absolute_kemono_url(path_or_url: str) -> str:
     if path_or_url.startswith("http://") or path_or_url.startswith("https://"):
         return path_or_url
@@ -96,22 +114,37 @@ def to_absolute_kemono_url(path_or_url: str) -> str:
 def extract_attachments(post_payload: dict[str, Any]) -> list[AttachmentCandidate]:
     candidates: list[AttachmentCandidate] = []
     seen: set[str] = set()
+    sources = [post_payload]
+    nested_post = post_payload.get("post")
+    if isinstance(nested_post, dict):
+        sources.append(nested_post)
 
-    file_item = post_payload.get("file")
-    if isinstance(file_item, dict):
-        _append_attachment(candidates, seen, file_item, default_name="main-file", kind="file")
+    for source in sources:
+        file_item = source.get("file")
+        if isinstance(file_item, dict):
+            _append_attachment(candidates, seen, file_item, default_name="main-file", kind="file")
 
-    attachments = post_payload.get("attachments")
-    if isinstance(attachments, list):
-        for item in attachments:
-            if isinstance(item, dict):
-                _append_attachment(
-                    candidates,
-                    seen,
-                    item,
-                    default_name="attachment",
-                    kind="attachment",
-                )
+        shared_file = source.get("shared_file")
+        if isinstance(shared_file, dict):
+            _append_attachment(
+                candidates,
+                seen,
+                shared_file,
+                default_name="shared-file",
+                kind="shared_file",
+            )
+
+        attachments = source.get("attachments")
+        if isinstance(attachments, list):
+            for item in attachments:
+                if isinstance(item, dict):
+                    _append_attachment(
+                        candidates,
+                        seen,
+                        item,
+                        default_name="attachment",
+                        kind="attachment",
+                    )
     return candidates
 
 
