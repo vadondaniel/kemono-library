@@ -17,6 +17,18 @@
   const progressFill = form.querySelector("[data-import-progress-fill]");
   const currentFile = form.querySelector("[data-import-submit-current]");
 
+  function shortenForDisplay(value, maxLength) {
+    if (typeof value !== "string") {
+      return "";
+    }
+    if (!Number.isFinite(maxLength) || maxLength < 8 || value.length <= maxLength) {
+      return value;
+    }
+    const head = Math.max(4, Math.floor(maxLength * 0.68));
+    const tail = Math.max(3, maxLength - head - 1);
+    return `${value.slice(0, head)}…${value.slice(-tail)}`;
+  }
+
   function setSubmittingState() {
     if (isSubmitting) {
       return;
@@ -50,7 +62,9 @@
 
   function setOverlayMessage(message) {
     if (statusMessage instanceof HTMLElement) {
-      statusMessage.textContent = message;
+      const text = typeof message === "string" ? message : "";
+      statusMessage.textContent = shortenForDisplay(text, 120);
+      statusMessage.title = text.length > 120 ? text : "";
     }
   }
 
@@ -69,7 +83,9 @@
       progressFill.style.width = `${normalizedPercent}%`;
     }
     if (currentFile instanceof HTMLElement) {
-      currentFile.textContent = fileName || "";
+      const rawName = typeof fileName === "string" ? fileName : "";
+      currentFile.textContent = shortenForDisplay(rawName, 96);
+      currentFile.title = rawName.length > 96 ? rawName : "";
     }
     if (message) {
       setOverlayMessage(message);

@@ -61,15 +61,25 @@
 <section class="panel">
   <h2>Saved Files</h2>
   {% if attachments %}
-    <ul class="list">
+    <ul class="list post-file-list">
       {% for file in attachments %}
         <li>
           {% if file['local_available'] %}
-            <a href="{{ url_for('serve_file', relative_path=file['local_path']) }}">{{ file['name'] }}</a>
+            <a
+              class="post-file-link"
+              href="{{ url_for('serve_file', relative_path=file['local_path']) }}"
+              title="{{ file['name'] }}"
+            >{{ file['name'] if file['name']|length <= 90 else file['name'][:87] ~ '...' }}</a>
           {% else %}
-            <a href="{{ file['remote_url_display'] }}" target="_blank" rel="noopener noreferrer">{{ file['name'] }}</a>
+            <a
+              class="post-file-link"
+              href="{{ file['remote_url_display'] }}"
+              target="_blank"
+              rel="noopener noreferrer"
+              title="{{ file['name'] }}"
+            >{{ file['name'] if file['name']|length <= 90 else file['name'][:87] ~ '...' }}</a>
           {% endif %}
-          <small>{{ file['kind'] }}</small>
+          <small class="post-file-kind">{{ file['kind'] }}</small>
           {% if not file['local_available'] %}
             <form
               method="post"

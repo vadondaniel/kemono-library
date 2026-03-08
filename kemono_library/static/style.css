@@ -282,6 +282,47 @@ button:hover,
   gap: 0.42rem;
 }
 
+.list li {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.post-file-link {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.post-file-list {
+  list-style: none;
+  padding-left: 0;
+  gap: 0.5rem;
+}
+
+.post-file-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.44rem 0.52rem;
+  border-radius: 0.56rem;
+  border: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
+  background: color-mix(in srgb, var(--card-solid) 94%, transparent);
+}
+
+.post-file-kind {
+  margin: 0;
+  padding: 0.12rem 0.42rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  background: color-mix(in srgb, var(--card-solid) 85%, transparent);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
 small {
   color: var(--muted);
 }
@@ -602,6 +643,8 @@ small {
 .import-submit-head p {
   margin: 0;
   font-weight: 600;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .import-submit-progress-line {
@@ -635,6 +678,7 @@ small {
   font-size: 0.8rem;
   line-height: 1.35;
   overflow-wrap: anywhere;
+  word-break: break-word;
   min-height: 1.05rem;
 }
 
@@ -1347,8 +1391,9 @@ small {
 
 .post-file-retry-form {
   display: inline-flex;
-  margin-left: 0.16rem;
-  vertical-align: baseline;
+  align-items: center;
+  margin: 0;
+  white-space: nowrap;
 }
 
 @media (max-width: 720px) {
