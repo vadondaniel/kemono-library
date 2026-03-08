@@ -73,6 +73,12 @@
         </p>
         <input type="hidden" name="import_target_mode" value="existing">
         <input type="hidden" name="target_post_id" value="{{ exact_match_post['id'] if exact_match_post else (default_target_post_id or '') }}">
+      {% elif force_target_post_version %}
+        <p class="import-target-note">
+          This import is locked to add a new version to post #{{ default_target_post_id }}.
+        </p>
+        <input type="hidden" name="import_target_mode" value="existing">
+        <input type="hidden" name="target_post_id" value="{{ default_target_post_id or '' }}">
       {% elif can_create_new %}
         <div class="import-target-choice-grid">
           <label class="import-target-choice">
@@ -139,6 +145,7 @@
     <input type="hidden" name="service" value="{{ post_ref.service }}">
     <input type="hidden" name="user_id" value="{{ post_ref.user_id }}">
     <input type="hidden" name="post_id" value="{{ post_ref.post_id }}">
+    <input type="hidden" name="force_target_post_version" value="{{ '1' if force_target_post_version else '0' }}">
     <input type="hidden" name="force_overwrite_matching_version" value="{{ '1' if force_overwrite_matching_version else '0' }}">
   </section>
 

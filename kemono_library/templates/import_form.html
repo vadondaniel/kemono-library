@@ -26,6 +26,7 @@
 
     <input type="hidden" name="import_target_mode" value="{{ prefill_import_target_mode or '' }}">
     <input type="hidden" name="target_post_id" value="{{ prefill_target_post_id or '' }}">
+    <input type="hidden" name="force_target_post_version" value="{{ '1' if prefill_force_target_post_version else '0' }}">
     <input type="hidden" name="force_overwrite_matching_version" value="{{ '1' if prefill_force_overwrite_matching_version else '0' }}">
     <input type="hidden" name="overwrite_matching_version" value="{{ '1' if prefill_overwrite_matching_version else '0' }}">
     <input type="hidden" name="set_as_default" value="{{ '1' if prefill_set_as_default else '0' }}">

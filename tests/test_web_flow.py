@@ -1748,6 +1748,84 @@ def test_import_can_add_non_default_version_to_existing_post(tmp_path, monkeypat
     assert imported["language"] == "en"
 
 
+def test_import_commit_force_target_post_version_ignores_new_mode(tmp_path, monkeypatch):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+
+    payload = {
+        "post": {
+            "title": "Alt Translation",
+            "content": "alt content",
+            "user": "70479526",
+            "attachments": [],
+        },
+        "attachments": [],
+    }
+
+    def fake_fetch(ref, fallback_user_id=None):  # noqa: ARG001
+        return payload
+
+    def fake_icon_download(service, user_id, icons_root):  # noqa: ARG001
+        destination = Path(icons_root) / f"{service}_{user_id}.jpg"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"icon")
+        return (f"https://img.kemono.cr/icons/{service}/{user_id}", destination)
+
+    monkeypatch.setattr("kemono_library.web.fetch_post_json", fake_fetch)
+    monkeypatch.setattr("kemono_library.web.download_creator_icon", fake_icon_download)
+
+    creator_id = db.create_creator("Forced Target Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="70479526",
+        external_post_id="100",
+        title="Original Title",
+        content="jp content",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/70479526/post/100",
+    )
+
+    client = app.test_client()
+    response = client.post(
+        "/import/commit",
+        data={
+            "creator_id": str(creator_id),
+            "series_id": "",
+            "service": "fanbox",
+            "user_id": "70479526",
+            "post_id": "300",
+            "import_target_mode": "new",
+            "target_post_id": str(post_id),
+            "force_target_post_version": "1",
+            "overwrite_matching_version": "0",
+            "set_as_default": "0",
+            "version_label": "KR TL",
+            "version_language": "ko",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    assert response.headers["Location"].startswith(f"/posts/{post_id}?version_id=")
+
+    creator_posts = db.list_posts_for_creator(creator_id)
+    assert len(creator_posts) == 1
+    versions = db.list_post_versions(post_id)
+    assert len(versions) == 2
+    imported = next(row for row in versions if row["source_post_id"] == "300")
+    assert imported["label"] == "KR TL"
+    assert imported["language"] == "ko"
+
+
 def test_post_detail_uses_requested_version_id(tmp_path):
     app = create_app(
         {
@@ -1834,6 +1912,8 @@ def test_edit_version_reimport_link_only_for_non_manual_versions(tmp_path):
     client = app.test_client()
     non_manual_page = client.get(f"/posts/{post_id}/edit?version_id={non_manual_id}")
     assert non_manual_page.status_code == 200
+    assert b"Import new version" in non_manual_page.data
+    assert b"force_target_post_version=1" in non_manual_page.data
     assert b"Reimport and overwrite this version" in non_manual_page.data
     assert b"/import?" in non_manual_page.data
     assert b"url=https://kemono.cr/fanbox/user/777/post/888" in non_manual_page.data
