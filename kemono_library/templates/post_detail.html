@@ -1,22 +1,37 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="panel">
-  <h1>{{ active_version['title'] }}</h1>
-  <p>
-    <strong>Original:</strong>
-    {% if active_version['source_url'] %}
-      <a href="{{ active_version['source_url'] }}" target="_blank" rel="noopener">{{ active_version['source_url'] }}</a>
-    {% else %}
-      <span>Manual version</span>
-    {% endif %}
-  </p>
-  {% if active_version['published_at'] %}
-    <p><strong>Published:</strong> {{ active_version['published_at'] }}</p>
-  {% endif %}
+<section class="panel post-viewer-info">
+  <div class="post-viewer-head">
+    <div class="post-viewer-title-wrap">
+      <h1 class="post-viewer-title">{{ active_version['title'] }}</h1>
+      <div class="post-viewer-chip-row">
+        {% if active_version['published_at'] %}
+          <span class="post-viewer-chip"><strong>Published:</strong> <time datetime="{{ active_version['published_at'] }}">{{ active_version['published_at']|format_datetime }}</time></span>
+        {% endif %}
+        {% if active_version['edited_at'] %}
+          <span class="post-viewer-chip"><strong>Edited:</strong> <time datetime="{{ active_version['edited_at'] }}">{{ active_version['edited_at']|format_datetime }}</time></span>
+        {% endif %}
+        {% if versions|length > 1 and active_version['is_default'] %}
+          <span class="post-viewer-chip">Default version</span>
+        {% endif %}
+        {% if active_version['source_url'] %}
+          <a class="post-viewer-chip post-viewer-chip-link" href="{{ active_version['source_url'] }}" target="_blank" rel="noopener noreferrer">Source</a>
+        {% else %}
+          <span class="post-viewer-chip">Manual version</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="post-viewer-head-actions">
+      <a class="button-link button-ghost" href="{{ url_for('edit_post', post_id=post['id'], version_id=active_version['id']) }}">
+        {% if versions|length > 1 %}Edit Version{% else %}Edit Post{% endif %}
+      </a>
+    </div>
+  </div>
+
   {% if versions|length > 1 %}
-    <div class="post-version-tools">
-      <form method="get" action="{{ url_for('post_detail', post_id=post['id']) }}" class="inline-form">
-        <label for="version-id"><strong>Version:</strong></label>
+    <div class="post-viewer-details">
+      <form method="get" action="{{ url_for('post_detail', post_id=post['id']) }}" class="post-viewer-version-form">
+        <label for="version-id">Version</label>
         <select id="version-id" name="version_id" onchange="this.form.submit()">
           {% for version in versions %}
             <option value="{{ version['id'] }}" {% if version['id'] == active_version['id'] %}selected{% endif %}>
@@ -27,11 +42,6 @@
       </form>
     </div>
   {% endif %}
-  <div class="post-actions">
-    <a class="button-link" href="{{ url_for('edit_post', post_id=post['id'], version_id=active_version['id']) }}">
-      {% if versions|length > 1 %}Edit Version{% else %}Edit Post{% endif %}
-    </a>
-  </div>
 </section>
 
 <section class="panel post-content">

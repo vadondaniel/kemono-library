@@ -2164,11 +2164,83 @@ body.is-lightbox-open {
   justify-content: center;
 }
 
-.post-actions {
-  margin: 0;
+.post-viewer-info {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.post-viewer-head {
   display: flex;
-  gap: 0.5rem;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.8rem;
   flex-wrap: wrap;
+}
+
+.post-viewer-title-wrap {
+  min-width: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.post-viewer-title {
+  margin: 0;
+  line-height: 1.15;
+}
+
+.post-viewer-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.42rem;
+}
+
+.post-viewer-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0.2rem 0.52rem;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--card-solid) 90%, transparent);
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.post-viewer-chip strong {
+  color: var(--text);
+}
+
+.post-viewer-chip-link {
+  text-decoration: none;
+  color: var(--accent);
+}
+
+.post-viewer-head-actions {
+  display: inline-flex;
+  align-items: center;
+}
+
+.post-viewer-details {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
+  padding-top: 0.2rem;
+}
+
+.post-viewer-version-form {
+  display: grid;
+  gap: 0.32rem;
+  align-content: start;
+  width: min(300px, 100%);
+}
+
+.post-viewer-version-form label {
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  font-weight: 700;
 }
 
 .post-file-missing {
@@ -2204,6 +2276,10 @@ body.is-lightbox-open {
   .header-actions {
     width: 100%;
     justify-content: space-between;
+  }
+
+  .post-viewer-details {
+    justify-content: flex-start;
   }
 
   .site-header nav {
