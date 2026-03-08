@@ -153,83 +153,113 @@
   </details>
 </section>
 
+{% macro render_attachment_item(file, active_version, post) %}
+  <li class="post-edit-attachment-item">
+    <div class="post-edit-attachment-preview">
+      {% if file['is_image'] %}
+        <button
+          type="button"
+          class="post-edit-attachment-lightbox-trigger"
+          data-lightbox-image
+          data-lightbox-src="{{ file['preview_url'] }}"
+          data-lightbox-alt="{{ file['name'] }}"
+        >
+          <img src="{{ file['preview_url'] }}" alt="{{ file['name'] }}" loading="lazy" referrerpolicy="no-referrer">
+        </button>
+      {% else %}
+        <span class="post-edit-attachment-preview-fallback">File</span>
+      {% endif %}
+    </div>
+    <div class="post-edit-attachment-body">
+      <div class="post-edit-attachment-meta">
+        {% if file['tracked'] %}
+          {% if active_version['is_manual'] %}
+            <label class="post-edit-attachment-keep">
+              <input type="hidden" name="attachment_keep_{{ file['form_key'] }}" value="0" form="post-edit-main-form">
+              <input type="checkbox" name="attachment_keep_{{ file['form_key'] }}" value="1" checked form="post-edit-main-form">
+              <span>Keep in version</span>
+            </label>
+          {% else %}
+            <span class="post-edit-attachment-source-badge">Tracked source file</span>
+          {% endif %}
+        {% else %}
+          <label class="post-edit-attachment-keep">
+            <input type="hidden" name="attachment_add_{{ file['form_key'] }}" value="0" form="post-edit-main-form">
+            <input type="checkbox" name="attachment_add_{{ file['form_key'] }}" value="1" form="post-edit-main-form">
+            <span>Add to version</span>
+          </label>
+        {% endif %}
+        <small class="post-edit-attachment-kind">{{ file['kind'] }}</small>
+        {% if file['tracked'] and not file['local_available'] %}
+          <small class="post-file-missing">download skipped/missing</small>
+        {% elif not file['tracked'] %}
+          <small class="post-edit-source-note">not in version yet</small>
+        {% endif %}
+      </div>
+      <label for="attachment-name-{{ file['form_key'] }}">File name</label>
+      <input
+        id="attachment-name-{{ file['form_key'] }}"
+        name="attachment_name_{{ file['form_key'] }}"
+        value="{{ file['name'] }}"
+        form="post-edit-main-form"
+      >
+      {% if file['local_available'] %}
+        <label class="post-edit-attachment-keep-local">
+          <input type="hidden" name="attachment_keep_local_{{ file['form_key'] }}" value="0" form="post-edit-main-form">
+          <input type="checkbox" name="attachment_keep_local_{{ file['form_key'] }}" value="1" checked form="post-edit-main-form">
+          <span>Keep downloaded file</span>
+        </label>
+      {% endif %}
+      <div class="post-edit-attachment-actions">
+      {% if file['local_available'] %}
+        <a class="button-link button-ghost" href="{{ url_for('serve_file', relative_path=file['local_path']) }}" target="_blank" rel="noopener">Open local</a>
+      {% else %}
+        <a class="button-link button-ghost" href="{{ file['remote_url_display'] }}" target="_blank" rel="noopener noreferrer">Open remote</a>
+        {% if file['id'] is not none %}
+          <form method="post" action="{{ url_for('retry_attachment_download', post_id=post['id'], attachment_id=file['id'], version_id=active_version['id']) }}" class="inline-form">
+            <input type="hidden" name="version_id" value="{{ active_version['id'] }}">
+            <button type="submit" class="button-ghost">Retry download</button>
+          </form>
+        {% endif %}
+      {% endif %}
+      </div>
+    </div>
+  </li>
+{% endmacro %}
+
 <section class="panel post-edit-attachments">
   <h2>Attachment Management</h2>
-  {% if attachments %}
+  {% if tracked_attachments or source_attachments %}
     <p class="post-edit-attachments-note">Attachment edits are applied when you click <strong>Save Changes</strong>.</p>
-    <ul class="post-edit-attachment-list">
-      {% for file in attachments %}
-        <li class="post-edit-attachment-item">
-          <div class="post-edit-attachment-preview">
-            {% if file['is_image'] %}
-              <button
-                type="button"
-                class="post-edit-attachment-lightbox-trigger"
-                data-lightbox-image
-                data-lightbox-src="{{ file['preview_url'] }}"
-                data-lightbox-alt="{{ file['name'] }}"
-              >
-                <img src="{{ file['preview_url'] }}" alt="{{ file['name'] }}" loading="lazy" referrerpolicy="no-referrer">
-              </button>
-            {% else %}
-              <span class="post-edit-attachment-preview-fallback">File</span>
-            {% endif %}
-          </div>
-          <div class="post-edit-attachment-body">
-            <div class="post-edit-attachment-meta">
-              {% if file['tracked'] %}
-                {% if active_version['is_manual'] %}
-                  <label class="post-edit-attachment-keep">
-                    <input type="hidden" name="attachment_keep_{{ file['form_key'] }}" value="0" form="post-edit-main-form">
-                    <input type="checkbox" name="attachment_keep_{{ file['form_key'] }}" value="1" checked form="post-edit-main-form">
-                    <span>Keep in version</span>
-                  </label>
-                {% else %}
-                  <span class="post-edit-attachment-source-badge">Tracked source file</span>
-                {% endif %}
-              {% else %}
-                <label class="post-edit-attachment-keep">
-                  <input type="hidden" name="attachment_add_{{ file['form_key'] }}" value="0" form="post-edit-main-form">
-                  <input type="checkbox" name="attachment_add_{{ file['form_key'] }}" value="1" form="post-edit-main-form">
-                  <span>Add to version</span>
-                </label>
-              {% endif %}
-              <small class="post-edit-attachment-kind">{{ file['kind'] }}</small>
-              {% if not file['local_available'] %}
-                <small class="post-file-missing">download skipped/missing</small>
-              {% endif %}
-            </div>
-            <label for="attachment-name-{{ file['form_key'] }}">File name</label>
-            <input
-              id="attachment-name-{{ file['form_key'] }}"
-              name="attachment_name_{{ file['form_key'] }}"
-              value="{{ file['name'] }}"
-              form="post-edit-main-form"
-            >
-            {% if file['local_available'] %}
-              <label class="post-edit-attachment-keep-local">
-                <input type="hidden" name="attachment_keep_local_{{ file['form_key'] }}" value="0" form="post-edit-main-form">
-                <input type="checkbox" name="attachment_keep_local_{{ file['form_key'] }}" value="1" checked form="post-edit-main-form">
-                <span>Keep downloaded file</span>
-              </label>
-            {% endif %}
-            <div class="post-edit-attachment-actions">
-            {% if file['local_available'] %}
-              <a class="button-link button-ghost" href="{{ url_for('serve_file', relative_path=file['local_path']) }}" target="_blank" rel="noopener">Open local</a>
-            {% else %}
-              <a class="button-link button-ghost" href="{{ file['remote_url_display'] }}" target="_blank" rel="noopener noreferrer">Open remote</a>
-              {% if file['id'] is not none %}
-                <form method="post" action="{{ url_for('retry_attachment_download', post_id=post['id'], attachment_id=file['id'], version_id=active_version['id']) }}" class="inline-form">
-                  <input type="hidden" name="version_id" value="{{ active_version['id'] }}">
-                  <button type="submit" class="button-ghost">Retry download</button>
-                </form>
-              {% endif %}
-            {% endif %}
-            </div>
-          </div>
-        </li>
-      {% endfor %}
-    </ul>
+    <div class="post-edit-attachments-group">
+      <div class="post-edit-attachments-group-head">
+        <h3>In This Version</h3>
+        <small>Shown in the post viewer.</small>
+      </div>
+      {% if tracked_attachments %}
+        <ul class="post-edit-attachment-list">
+          {% for file in tracked_attachments %}
+            {{ render_attachment_item(file, active_version, post) }}
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="post-edit-attachments-group-empty">No files currently in this version.</p>
+      {% endif %}
+    </div>
+
+    {% if source_attachments %}
+      <div class="post-edit-attachments-group">
+        <div class="post-edit-attachments-group-head">
+          <h3>Available From Source</h3>
+          <small>Not included unless you check <strong>Add to version</strong>.</small>
+        </div>
+        <ul class="post-edit-attachment-list">
+          {% for file in source_attachments %}
+            {{ render_attachment_item(file, active_version, post) }}
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
   {% else %}
     <p>No attachments saved for this version.</p>
   {% endif %}

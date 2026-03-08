@@ -945,6 +945,8 @@ def create_app(test_config: dict | None = None) -> Flask:
         active_metadata = _safe_load_metadata(active_version["metadata_json"])
         thumbnail_focus_x, thumbnail_focus_y = _extract_thumbnail_focus_from_metadata(active_metadata)
         tracked_remote_urls: set[str] = set()
+        tracked_remote_path_keys: set[str] = set()
+        tracked_name_keys: set[str] = set()
 
         for idx, row in enumerate(attachments):
             local_path = _optional_str(row["local_path"])
@@ -978,6 +980,12 @@ def create_app(test_config: dict | None = None) -> Flask:
             }
             attachment_rows.append(row_data)
             tracked_remote_urls.add(remote_url)
+            remote_path_key = _remote_path_key(remote_url)
+            if remote_path_key:
+                tracked_remote_path_keys.add(remote_path_key)
+            tracked_name_key = _attachment_collapse_key(row_data["name"])
+            if tracked_name_key:
+                tracked_name_keys.add(tracked_name_key)
             if selected_thumbnail_choice is None:
                 if thumbnail_remote_url and row_data["remote_url"] == thumbnail_remote_url:
                     selected_thumbnail_choice = row_data["choice_value"]
@@ -988,10 +996,29 @@ def create_app(test_config: dict | None = None) -> Flask:
 
         source_candidates = extract_attachments(active_metadata)
         source_candidate_index = 0
+        seen_source_keys: set[str] = set()
         for candidate in source_candidates:
             remote_url = str(candidate.remote_url)
+            remote_path_key = _remote_path_key(remote_url)
+            candidate_name_key = _attachment_collapse_key(candidate.name)
+
             if remote_url in tracked_remote_urls:
                 continue
+            if remote_path_key and remote_path_key in tracked_remote_path_keys:
+                continue
+            if candidate_name_key and candidate_name_key in tracked_name_keys:
+                continue
+
+            source_identity = (
+                f"path:{remote_path_key}"
+                if remote_path_key
+                else f"name:{candidate_name_key}"
+                if candidate_name_key
+                else f"url:{remote_url}"
+            )
+            if source_identity in seen_source_keys:
+                continue
+            seen_source_keys.add(source_identity)
             remote_url_display = _preferred_remote_url_for_access(remote_url, candidate.name)
             is_image = _is_likely_image_attachment(
                 remote_url=remote_url,
@@ -1166,6 +1193,9 @@ def create_app(test_config: dict | None = None) -> Flask:
             )
             flash("Post updated.", "success")
             return redirect(url_for("post_detail", post_id=post_id, version_id=active_version_id))
+
+        tracked_attachment_rows = [item for item in attachment_rows if item["tracked"]]
+        source_attachment_rows = [item for item in attachment_rows if not item["tracked"]]
         return render_template(
             "post_edit.html",
             post=post,
@@ -1174,6 +1204,8 @@ def create_app(test_config: dict | None = None) -> Flask:
             series_list=series_list,
             edit_content=_prettify_content_for_edit(active_version["content"]),
             attachments=attachment_rows,
+            tracked_attachments=tracked_attachment_rows,
+            source_attachments=source_attachment_rows,
             selected_thumbnail_choice=selected_thumbnail_choice,
             thumbnail_preview_url=thumbnail_preview_url,
             thumbnail_focus_x=thumbnail_focus_x,
