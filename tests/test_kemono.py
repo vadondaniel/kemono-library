@@ -285,3 +285,4 @@ def test_extract_attachments_includes_inline_img_without_extension():
     matches = [item for item in items if item.remote_url == inline_url]
     assert len(matches) == 1
     assert matches[0].kind == "inline_only"
+    assert matches[0].name.endswith(".jpg")

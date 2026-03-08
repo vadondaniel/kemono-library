@@ -322,7 +322,8 @@ def _append_inline_content_attachments(
             absolute_url = to_absolute_kemono_url(raw_url.strip())
             if not _should_keep_inline_url(tag_name, absolute_url):
                 continue
-            filename = _infer_inline_name(node, absolute_url) or f"inline-{inline_counter}"
+            inferred_name = _infer_inline_name(node, absolute_url) or f"inline-{inline_counter}"
+            filename = _with_default_inline_extension(tag_name, absolute_url, inferred_name)
             normalized_name = sanitize_filename(filename).lower()
             if normalized_name in existing_non_inline_names:
                 continue
@@ -358,11 +359,13 @@ def _collect_inline_name_keys(content: str) -> set[str]:
 
             url_name = Path(urlparse(absolute_url).path).name
             if url_name:
-                name_keys.add(sanitize_filename(url_name).lower())
+                normalized_url_name = _with_default_inline_extension(tag_name, absolute_url, url_name)
+                name_keys.add(sanitize_filename(normalized_url_name).lower())
 
             inline_name = _infer_inline_name(node, absolute_url)
             if inline_name:
-                name_keys.add(sanitize_filename(inline_name).lower())
+                normalized_inline_name = _with_default_inline_extension(tag_name, absolute_url, inline_name)
+                name_keys.add(sanitize_filename(normalized_inline_name).lower())
     return name_keys
 
 
@@ -411,6 +414,7 @@ def _build_unnamed_attachment_aliases(sources: list[dict[str, Any]], content: st
             if not _should_keep_inline_url(tag_name, absolute_url):
                 continue
             filename = Path(urlparse(absolute_url).path).name
+            filename = _with_default_inline_extension(tag_name, absolute_url, filename)
             normalized = filename.lower()
             if not filename or normalized in seen_inline_names:
                 continue
@@ -458,6 +462,28 @@ def _should_keep_inline_url(tag_name: str, absolute_url: str) -> bool:
         parsed = urlparse(absolute_url)
         return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
     return _looks_like_media_url(absolute_url)
+
+
+def _with_default_inline_extension(tag_name: str, absolute_url: str, name: str) -> str:
+    if not isinstance(name, str):
+        return name
+    cleaned = name.strip()
+    if not cleaned or Path(cleaned).suffix:
+        return cleaned
+    suffix = _default_inline_extension(tag_name, absolute_url)
+    if not suffix:
+        return cleaned
+    return f"{cleaned}{suffix}"
+
+
+def _default_inline_extension(tag_name: str, absolute_url: str) -> str:
+    if tag_name == "img":
+        return ".jpg"
+    if tag_name in {"video", "source"}:
+        return ".mp4"
+    if tag_name == "audio":
+        return ".mp3"
+    return ""
 
 
 def _looks_like_media_url(url: str) -> bool:
@@ -597,8 +623,24 @@ def _infer_inline_name(node: Any, absolute_url: str) -> str:
     url_suffix = Path(urlparse(absolute_url).path).suffix.lower()
     text_suffix = Path(text).suffix.lower()
     if url_suffix and text_suffix != url_suffix and not _is_known_file_extension(text_suffix):
-        return f"{text}{url_suffix}"
+        if _should_preserve_anchor_suffix(url_suffix):
+            return f"{text}{url_suffix}"
+        return text
     return text
+
+
+def _should_preserve_anchor_suffix(url_suffix: str) -> bool:
+    return url_suffix in {
+        ".zip",
+        ".rar",
+        ".7z",
+        ".tar",
+        ".gz",
+        ".pdf",
+        ".txt",
+        ".json",
+        ".csv",
+    }
 
 
 def _candidate_name_key(candidate: AttachmentCandidate) -> str:
