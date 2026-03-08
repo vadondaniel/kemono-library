@@ -356,10 +356,26 @@ small {
 }
 
 .post-content img {
+  display: block;
   max-width: 100%;
   height: auto;
+  margin: 0.62rem auto;
   border-radius: 0.65rem;
   border: 1px solid var(--border);
+}
+
+.post-content a:has(> img) {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0.62rem auto;
+}
+
+.post-content a.post-image-link {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0.62rem auto;
 }
 
 .post-content pre {

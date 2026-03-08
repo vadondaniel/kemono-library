@@ -100,8 +100,9 @@ def render_post_content(
     linkified = _linkify_urls(with_local_media)
     with_inline_media = _expand_empty_image_links(linkified)
     with_grouped_promos = _group_promo_inserts(with_inline_media)
+    with_marked_image_links = _mark_image_links(with_grouped_promos)
     return _rewrite_kemono_links(
-        with_grouped_promos,
+        with_marked_image_links,
         current_service=current_service,
         current_user_id=current_user_id,
         current_post_id=current_post_id,
@@ -283,6 +284,15 @@ def _group_promo_inserts(html_content: str) -> str:
         container.append(heading.extract())
         container.append(image_block.extract())
         container.append(teaser_block.extract())
+    return str(soup)
+
+
+def _mark_image_links(html_content: str) -> str:
+    soup = BeautifulSoup(html_content, "html.parser")
+    for link in soup.find_all("a"):
+        if link.find("img") is None:
+            continue
+        _append_class(link, "post-image-link")
     return str(soup)
 
 

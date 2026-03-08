@@ -31,6 +31,7 @@ def test_render_turns_empty_image_anchor_into_img():
         current_post_id=1,
     )
     assert "<a " in rendered
+    assert 'class="post-image-link"' in rendered
     assert "<img" in rendered
     assert 'target="_blank"' in rendered
     assert 'src="https://downloads.fanbox.cc/images/post/10791194/eO8wzPLjankw59mg6YeTMzxN.jpeg"' in rendered
