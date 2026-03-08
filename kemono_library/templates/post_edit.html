@@ -168,7 +168,15 @@
         <li class="post-edit-attachment-item">
           <div class="post-edit-attachment-preview">
             {% if file['is_image'] %}
-              <img src="{{ file['preview_url'] }}" alt="{{ file['name'] }}" loading="lazy" referrerpolicy="no-referrer">
+              <button
+                type="button"
+                class="post-edit-attachment-lightbox-trigger"
+                data-lightbox-image
+                data-lightbox-src="{{ file['preview_url'] }}"
+                data-lightbox-alt="{{ file['name'] }}"
+              >
+                <img src="{{ file['preview_url'] }}" alt="{{ file['name'] }}" loading="lazy" referrerpolicy="no-referrer">
+              </button>
             {% else %}
               <span class="post-edit-attachment-preview-fallback">File</span>
             {% endif %}
@@ -235,6 +243,19 @@
 <div class="post-edit-floating-actions" aria-label="Post edit quick actions">
   <a class="button-link button-ghost" href="{{ url_for('post_detail', post_id=post['id'], version_id=active_version['id']) }}">Back to post</a>
   <button type="submit" form="post-edit-main-form">Save Changes</button>
+</div>
+<div class="post-edit-lightbox" data-post-edit-lightbox hidden>
+  <button
+    type="button"
+    class="post-edit-lightbox-backdrop"
+    data-lightbox-close
+    aria-label="Close image preview"
+  ></button>
+  <figure class="post-edit-lightbox-dialog" role="dialog" aria-modal="true" aria-label="Attachment image preview">
+    <button type="button" class="post-edit-lightbox-close" data-lightbox-close aria-label="Close image preview">Close</button>
+    <img src="" alt="" data-lightbox-image-target>
+    <figcaption data-lightbox-caption></figcaption>
+  </figure>
 </div>
 </div>
 <script src="{{ url_for('static', filename='post_edit.js') }}"></script>

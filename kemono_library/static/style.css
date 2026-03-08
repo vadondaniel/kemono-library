@@ -1852,6 +1852,74 @@ small {
   backdrop-filter: blur(6px);
 }
 
+.post-edit-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+}
+
+.post-edit-lightbox[hidden] {
+  display: none;
+}
+
+.post-edit-lightbox-backdrop {
+  position: fixed;
+  inset: 0;
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  background: rgba(2, 5, 12, 0.5);
+  backdrop-filter: blur(2px);
+  cursor: zoom-out;
+}
+
+.post-edit-lightbox-dialog {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  max-width: min(1120px, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  display: grid;
+  gap: 0.5rem;
+}
+
+.post-edit-lightbox-dialog img {
+  max-width: 100%;
+  max-height: calc(100vh - 5.8rem);
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 0.52rem;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  background: color-mix(in srgb, var(--card-solid) 96%, transparent);
+}
+
+.post-edit-lightbox-close {
+  justify-self: end;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--card-solid) 94%, transparent);
+  color: var(--text);
+  padding: 0.28rem 0.72rem;
+  cursor: pointer;
+}
+
+.post-edit-lightbox-dialog figcaption {
+  color: color-mix(in srgb, var(--card-solid) 88%, #ffffff);
+  font-size: 0.85rem;
+  text-align: center;
+  word-break: break-word;
+}
+
+body.is-lightbox-open {
+  overflow: hidden;
+}
+
 .post-edit-tool-row {
   display: flex;
   gap: 0.5rem;
@@ -1915,6 +1983,23 @@ small {
   height: 170px;
   object-fit: cover;
   display: block;
+}
+
+.post-edit-attachment-lightbox-trigger {
+  width: 100%;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  cursor: zoom-in;
+}
+
+.post-edit-attachment-lightbox-trigger img {
+  transition: transform 0.16s ease;
+}
+
+.post-edit-attachment-lightbox-trigger:hover img {
+  transform: scale(1.02);
 }
 
 .post-edit-attachment-preview-fallback {

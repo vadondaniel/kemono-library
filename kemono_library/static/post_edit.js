@@ -273,3 +273,81 @@
     setFocus(focusX, focusY);
   }
 })();
+
+(() => {
+  const lightbox = document.querySelector("[data-post-edit-lightbox]");
+  if (!(lightbox instanceof HTMLElement)) {
+    return;
+  }
+
+  const triggers = Array.from(document.querySelectorAll("[data-lightbox-image]"));
+  if (!triggers.length) {
+    return;
+  }
+
+  const imageTarget = lightbox.querySelector("[data-lightbox-image-target]");
+  const captionTarget = lightbox.querySelector("[data-lightbox-caption]");
+  const dialog = lightbox.querySelector(".post-edit-lightbox-dialog");
+  const closeButtons = Array.from(lightbox.querySelectorAll("[data-lightbox-close]"));
+  if (!(imageTarget instanceof HTMLImageElement)) {
+    return;
+  }
+
+  function openLightbox(src, alt) {
+    imageTarget.src = src;
+    imageTarget.alt = alt || "";
+    if (captionTarget instanceof HTMLElement) {
+      captionTarget.textContent = alt || "";
+    }
+    lightbox.hidden = false;
+    document.body.classList.add("is-lightbox-open");
+  }
+
+  function closeLightbox() {
+    lightbox.hidden = true;
+    imageTarget.removeAttribute("src");
+    imageTarget.alt = "";
+    if (captionTarget instanceof HTMLElement) {
+      captionTarget.textContent = "";
+    }
+    document.body.classList.remove("is-lightbox-open");
+  }
+
+  triggers.forEach((trigger) => {
+    trigger.addEventListener("click", () => {
+      if (!(trigger instanceof HTMLElement)) {
+        return;
+      }
+      const src = trigger.dataset.lightboxSrc || "";
+      const alt = trigger.dataset.lightboxAlt || "";
+      if (!src) {
+        return;
+      }
+      openLightbox(src, alt);
+    });
+  });
+
+  closeButtons.forEach((button) => {
+    button.addEventListener("click", closeLightbox);
+  });
+
+  lightbox.addEventListener("click", (event) => {
+    if (lightbox.hidden) {
+      return;
+    }
+    const target = event.target;
+    if (!(target instanceof Node)) {
+      return;
+    }
+    if (dialog instanceof HTMLElement && !dialog.contains(target)) {
+      closeLightbox();
+    }
+  });
+
+  window.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || lightbox.hidden) {
+      return;
+    }
+    closeLightbox();
+  });
+})();
