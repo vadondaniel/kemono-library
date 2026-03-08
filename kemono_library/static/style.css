@@ -296,6 +296,10 @@ button:hover,
   text-overflow: ellipsis;
 }
 
+.post-file-image-trigger {
+  cursor: zoom-in;
+}
+
 .post-file-list {
   list-style: none;
   padding-left: 0;
@@ -362,6 +366,11 @@ small {
   margin: 0.62rem auto;
   border-radius: 0.65rem;
   border: 1px solid var(--border);
+}
+
+.post-content img,
+.post-content a.post-image-link {
+  cursor: zoom-in;
 }
 
 .post-content a:has(> img) {
@@ -1852,7 +1861,8 @@ small {
   backdrop-filter: blur(6px);
 }
 
-.post-edit-lightbox {
+.post-edit-lightbox,
+.post-lightbox {
   position: fixed;
   inset: 0;
   z-index: 120;
@@ -1860,11 +1870,13 @@ small {
   place-items: center;
 }
 
-.post-edit-lightbox[hidden] {
+.post-edit-lightbox[hidden],
+.post-lightbox[hidden] {
   display: none;
 }
 
-.post-edit-lightbox-backdrop {
+.post-edit-lightbox-backdrop,
+.post-lightbox-backdrop {
   position: fixed;
   inset: 0;
   display: block;
@@ -1878,7 +1890,8 @@ small {
   cursor: zoom-out;
 }
 
-.post-edit-lightbox-dialog {
+.post-edit-lightbox-dialog,
+.post-lightbox-dialog {
   position: relative;
   z-index: 1;
   margin: 0;
@@ -1888,12 +1901,14 @@ small {
   gap: 0.5rem;
 }
 
-.post-edit-lightbox-dialog img {
+.post-edit-lightbox-dialog img,
+.post-lightbox-dialog img {
   max-width: 100%;
   max-height: calc(100vh - 5.8rem);
   width: auto;
   height: auto;
   object-fit: contain;
+  display: block;
   border-radius: 0.52rem;
   border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
   background: color-mix(in srgb, var(--card-solid) 96%, transparent);
@@ -1909,11 +1924,22 @@ small {
   cursor: pointer;
 }
 
-.post-edit-lightbox-dialog figcaption {
+.post-edit-lightbox-dialog figcaption,
+.post-lightbox-dialog figcaption {
   color: color-mix(in srgb, var(--card-solid) 88%, #ffffff);
   font-size: 0.85rem;
   text-align: center;
   word-break: break-word;
+}
+
+.post-lightbox-actions {
+  position: fixed;
+  top: 0.85rem;
+  right: 1rem;
+  z-index: 130;
+  display: inline-flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
 }
 
 body.is-lightbox-open {

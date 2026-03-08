@@ -51,7 +51,17 @@
     <ul class="list post-file-list">
       {% for file in attachments %}
         <li>
-          {% if file['local_available'] %}
+          {% if file['is_image'] %}
+            {% set image_src = url_for('serve_file', relative_path=file['local_path']) if file['local_available'] else file['remote_url_display'] %}
+            <a
+              class="post-file-link post-file-image-trigger"
+              href="{{ image_src }}"
+              data-post-file-image-trigger
+              data-lightbox-src="{{ image_src }}"
+              data-lightbox-title="{{ file['name'] }}"
+              title="{{ file['name'] }}"
+            >{{ file['name'] if file['name']|length <= 90 else file['name'][:87] ~ '...' }}</a>
+          {% elif file['local_available'] %}
             <a
               class="post-file-link"
               href="{{ url_for('serve_file', relative_path=file['local_path']) }}"
@@ -88,4 +98,16 @@
     <p>No files downloaded for this post.</p>
   {% endif %}
 </section>
+<div class="post-lightbox" data-post-lightbox hidden>
+  <button type="button" class="post-lightbox-backdrop" data-post-lightbox-close aria-label="Close image preview"></button>
+  <figure class="post-lightbox-dialog" role="dialog" aria-modal="true" aria-label="Image preview">
+    <div class="post-lightbox-actions">
+      <a href="#" target="_blank" rel="noopener noreferrer" class="button-link button-ghost" data-post-lightbox-open-tab>Open in new tab</a>
+      <button type="button" class="post-lightbox-close button-link button-ghost" data-post-lightbox-close>Close</button>
+    </div>
+    <img src="" alt="" data-post-lightbox-image>
+    <figcaption data-post-lightbox-caption></figcaption>
+  </figure>
+</div>
+<script src="{{ url_for('static', filename='post_detail.js') }}"></script>
 {% endblock %}

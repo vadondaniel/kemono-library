@@ -716,6 +716,56 @@ def test_post_detail_dedupes_saved_files_that_point_to_same_local_file(tmp_path)
     assert len(same_links) == 1
 
 
+def test_post_detail_includes_lightbox_hooks_for_inline_and_saved_images(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Lightbox Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="70479526",
+        external_post_id="3001",
+        title="Lightbox Case",
+        content=(
+            '<p><a href="https://n1.kemono.cr/aa/bb/content-image.jpg" rel="noopener noreferrer">'
+            '<img src="https://n1.kemono.cr/aa/bb/content-image.jpg" alt="content-image.jpg"></a></p>'
+        ),
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/70479526/post/3001",
+    )
+    db.replace_attachments(
+        post_id,
+        [
+            {
+                "name": "saved-image.jpg",
+                "remote_url": "https://n2.kemono.cr/cc/dd/saved-image.jpg",
+                "local_path": None,
+                "kind": "attachment",
+            }
+        ],
+    )
+
+    response = app.test_client().get(f"/posts/{post_id}")
+    assert response.status_code == 200
+    html = response.data.decode("utf-8")
+    assert "data-post-lightbox" in html
+    assert "data-post-file-image-trigger" in html
+    assert "/static/post_detail.js" in html
+
+    soup = BeautifulSoup(response.data, "html.parser")
+    inline_links = soup.select(".post-content a.post-image-link")
+    assert inline_links
+
+
 def test_post_detail_uses_metadata_kemono_url_for_fanbox_file_link_without_attachment_row(tmp_path):
     app = create_app(
         {
