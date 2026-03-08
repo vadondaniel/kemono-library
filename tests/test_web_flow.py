@@ -631,6 +631,72 @@ def test_retry_attachment_download_updates_missing_file(tmp_path, monkeypatch):
     assert updated["local_path"] == f"post_{post_id}/broken.jpg"
 
 
+def test_retry_attachment_uses_kemono_data_url_fallback(tmp_path, monkeypatch):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Retry Fallback Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="67922",
+        external_post_id="1004",
+        title="Retry Fallback",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/67922/post/1004",
+    )
+    original_remote = "https://n2.kemono.cr/53/68/536867864d85f832daa65e77715618c7f54435002860281650ae44401f47b117.txt"
+    expected_fallback = (
+        "https://n2.kemono.cr/data/53/68/536867864d85f832daa65e77715618c7f54435002860281650ae44401f47b117.txt"
+        "?f=Text_for_translation.txt"
+    )
+    db.replace_attachments(
+        post_id,
+        [
+            {
+                "name": "Text_for_translation.txt",
+                "remote_url": original_remote,
+                "local_path": None,
+                "kind": "attachment",
+            }
+        ],
+    )
+
+    attempted_urls: list[str] = []
+
+    def fake_download(remote_url, destination):  # noqa: ARG001
+        attempted_urls.append(remote_url)
+        if remote_url == original_remote:
+            raise RuntimeError("404 Client Error")
+        Path(destination).parent.mkdir(parents=True, exist_ok=True)
+        Path(destination).write_bytes(b"ok")
+
+    monkeypatch.setattr("kemono_library.web.download_attachment", fake_download)
+
+    client = app.test_client()
+    detail = client.get(f"/posts/{post_id}")
+    assert detail.status_code == 200
+    assert expected_fallback.encode() in detail.data
+
+    attachment_id = int(db.list_attachments(post_id)[0]["id"])
+    response = client.post(
+        f"/posts/{post_id}/attachments/{attachment_id}/retry",
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith(f"/posts/{post_id}")
+    assert attempted_urls == [original_remote, expected_fallback]
+
+
 def test_edit_page_prettifies_html_content(tmp_path):
     app = create_app(
         {

@@ -34,7 +34,7 @@
           {% if file['local_available'] %}
             <a href="{{ url_for('serve_file', relative_path=file['local_path']) }}">{{ file['name'] }}</a>
           {% else %}
-            <a href="{{ file['remote_url'] }}" target="_blank" rel="noopener noreferrer">{{ file['name'] }}</a>
+            <a href="{{ file['remote_url_display'] }}" target="_blank" rel="noopener noreferrer">{{ file['name'] }}</a>
           {% endif %}
           <small>{{ file['kind'] }}</small>
           {% if not file['local_available'] %}

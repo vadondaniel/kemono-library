@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import bleach
 from flask import Flask, flash, jsonify, redirect, render_template, request, send_from_directory, url_for
@@ -489,6 +489,10 @@ def create_app(test_config: dict | None = None) -> Flask:
                     "id": int(row["id"]),
                     "name": row["name"],
                     "remote_url": row["remote_url"],
+                    "remote_url_display": _preferred_remote_url_for_access(
+                        str(row["remote_url"]),
+                        row["name"],
+                    ),
                     "local_path": row["local_path"],
                     "kind": row["kind"],
                     "local_available": local_available,
@@ -532,7 +536,13 @@ def create_app(test_config: dict | None = None) -> Flask:
             destination = files_base / f"post_{post_id}" / sanitize_filename(str(attachment["name"]))
 
         try:
-            download_attachment(str(attachment["remote_url"]), destination)
+            used_remote_url = _download_with_fallback_remote_url(
+                str(attachment["remote_url"]),
+                destination,
+                attachment["name"],
+            )
+            if not used_remote_url:
+                raise RuntimeError("all download URL variants failed")
         except Exception as exc:  # noqa: BLE001
             flash(f"Retry failed for {attachment['name']}: {exc}", "error")
             return redirect(url_for("post_detail", post_id=post_id))
@@ -673,6 +683,60 @@ def _is_valid_file(path: Path | None) -> bool:
     return bool(path and path.exists() and path.is_file() and path.stat().st_size > 0)
 
 
+def _download_with_fallback_remote_url(
+    remote_url: str,
+    destination: Path,
+    attachment_name: Any,
+) -> str | None:
+    urls_to_try = [remote_url]
+    fallback = _kemono_data_fallback_url(remote_url, attachment_name)
+    if fallback and fallback not in urls_to_try:
+        urls_to_try.append(fallback)
+
+    for candidate_url in urls_to_try:
+        try:
+            download_attachment(candidate_url, destination)
+            return candidate_url
+        except Exception:  # noqa: BLE001
+            continue
+    return None
+
+
+def _preferred_remote_url_for_access(remote_url: str, attachment_name: Any) -> str:
+    return _kemono_data_fallback_url(remote_url, attachment_name) or remote_url
+
+
+def _kemono_data_fallback_url(remote_url: str, attachment_name: Any) -> str | None:
+    parsed = urlparse(remote_url)
+    host = parsed.netloc.lower()
+    if not host.endswith("kemono.cr"):
+        return None
+
+    raw_path = parsed.path if parsed.path.startswith("/") else f"/{parsed.path}"
+    if raw_path.startswith("/data/"):
+        return None
+    if not re.match(r"^/[0-9a-f]{2}/[0-9a-f]{2}/[^/]+$", raw_path, flags=re.IGNORECASE):
+        return None
+
+    query_items = parse_qsl(parsed.query, keep_blank_values=True)
+    if not any(key == "f" for key, _ in query_items):
+        preferred_name = str(attachment_name).strip() if attachment_name is not None else ""
+        if not preferred_name:
+            preferred_name = Path(raw_path).name
+        query_items.append(("f", preferred_name))
+
+    return urlunparse(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            f"/data{raw_path}",
+            parsed.params,
+            urlencode(query_items, doseq=True),
+            parsed.fragment,
+        )
+    )
+
+
 def _ensure_creator_icon(
     db: LibraryDB,
     *,
@@ -799,7 +863,10 @@ def _build_remote_media_by_name(attachments: list[Any]) -> dict[str, str]:
     remote_media_by_name: dict[str, str] = {}
     remote_media_priority: dict[str, int] = {}
     for attachment in attachments:
-        remote_url = attachment["remote_url"]
+        remote_url = _preferred_remote_url_for_access(
+            str(attachment["remote_url"]),
+            attachment["name"],
+        )
         kind_priority = _media_kind_priority(attachment["kind"])
 
         parsed = urlparse(remote_url)
@@ -1077,9 +1144,12 @@ def _import_post_into_library(
         )
         needs_download = not _is_valid_file(destination)
         if needs_download:
-            try:
-                download_attachment(candidate.remote_url, destination)
-            except Exception:  # noqa: BLE001
+            used_remote_url = _download_with_fallback_remote_url(
+                candidate.remote_url,
+                destination,
+                candidate.name,
+            )
+            if not used_remote_url:
                 destination = None
         if destination and _is_valid_file(destination):
             local_path = destination.relative_to(files_base).as_posix()
