@@ -6,28 +6,45 @@
       <div class="post-viewer-head">
         <div class="post-viewer-title-wrap">
           <div class="post-viewer-title-line">
-            <h1 class="post-viewer-title">{{ active_version['title'] }}</h1>
             {% if versions|length > 1 %}
-              <details class="post-viewer-version-menu" data-post-version-menu>
-                <summary class="post-viewer-version-menu-toggle" title="Select version" aria-label="Select version">
-                  <span class="post-viewer-version-arrow-icon" aria-hidden="true">&#9662;</span>
-                </summary>
-                <div class="post-viewer-version-menu-list">
-                  {% for version in versions %}
-                    <a
-                      class="post-viewer-version-menu-item {% if version['id'] == active_version['id'] %}is-active{% endif %}"
-                      href="{{ url_for('post_detail', post_id=post['id'], version_id=version['id'], nav_scope=navigator_scope) }}"
-                    >
-                      <span class="post-viewer-version-menu-item-main">
-                        {{ version['title'] }}
-                      </span>
-                      <span class="post-viewer-version-menu-item-sub">
-                        {{ version['label'] }}{% if version['language'] %} ({{ version['language'] }}){% endif %}{% if version['is_default'] %} [default]{% endif %}
-                      </span>
-                    </a>
-                  {% endfor %}
-                </div>
-              </details>
+              <div class="post-viewer-title-select-shell">
+                <h1 class="post-viewer-title">{{ active_version['title'] }}</h1>
+                <details class="post-viewer-version-menu" data-post-version-menu>
+                  <summary class="post-viewer-version-menu-toggle" title="Select version" aria-label="Select version">
+                    <span class="post-viewer-version-arrow-icon" aria-hidden="true">&#9662;</span>
+                  </summary>
+                  <div class="post-viewer-version-menu-list">
+                    {% for version in versions if version['id'] == active_version['id'] %}
+                      <a
+                        class="post-viewer-version-menu-item is-active"
+                        href="{{ url_for('post_detail', post_id=post['id'], version_id=version['id'], nav_scope=navigator_scope) }}"
+                      >
+                        <span class="post-viewer-version-menu-item-main">
+                          {{ version['title'] }}
+                        </span>
+                        <span class="post-viewer-version-menu-item-sub">
+                          {{ version['label'] }}{% if version['language'] %} ({{ version['language'] }}){% endif %}{% if version['is_default'] %} [default]{% endif %}
+                        </span>
+                      </a>
+                    {% endfor %}
+                    {% for version in versions if version['id'] != active_version['id'] %}
+                      <a
+                        class="post-viewer-version-menu-item"
+                        href="{{ url_for('post_detail', post_id=post['id'], version_id=version['id'], nav_scope=navigator_scope) }}"
+                      >
+                        <span class="post-viewer-version-menu-item-main">
+                          {{ version['title'] }}
+                        </span>
+                        <span class="post-viewer-version-menu-item-sub">
+                          {{ version['label'] }}{% if version['language'] %} ({{ version['language'] }}){% endif %}{% if version['is_default'] %} [default]{% endif %}
+                        </span>
+                      </a>
+                    {% endfor %}
+                  </div>
+                </details>
+              </div>
+            {% else %}
+              <h1 class="post-viewer-title">{{ active_version['title'] }}</h1>
             {% endif %}
           </div>
           <div class="post-viewer-chip-row">

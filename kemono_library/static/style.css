@@ -2404,7 +2404,7 @@ body.is-lightbox-open {
 .post-viewer-title-line {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
+  gap: 0;
   min-width: 0;
   max-width: 100%;
 }
@@ -2413,6 +2413,19 @@ body.is-lightbox-open {
   margin: 0;
   line-height: 1.15;
   min-width: 0;
+}
+
+.post-viewer-title-select-shell {
+  --post-viewer-arrow-slot: 1.9rem;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: min(100%, 1000px);
+}
+
+.post-viewer-title-select-shell .post-viewer-title {
+  padding-right: var(--post-viewer-arrow-slot);
 }
 
 .post-viewer-chip-row {
@@ -2449,8 +2462,10 @@ body.is-lightbox-open {
 }
 
 .post-viewer-version-menu {
-  position: relative;
+  position: absolute;
+  inset: 0;
   margin: 0;
+  pointer-events: none;
 }
 
 .post-viewer-version-menu summary {
@@ -2462,18 +2477,23 @@ body.is-lightbox-open {
 }
 
 .post-viewer-version-menu-toggle {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.42rem;
-  height: 1.42rem;
-  min-width: 1.42rem;
+  width: 1.72rem;
+  height: 1.72rem;
+  min-width: 1.72rem;
   flex: 0 0 auto;
   margin: 0;
   cursor: pointer;
   border-radius: 0.44rem;
   user-select: none;
   -webkit-user-select: none;
+  pointer-events: auto;
 }
 
 .post-viewer-version-menu-toggle:hover {
@@ -2487,10 +2507,10 @@ body.is-lightbox-open {
 
 .post-viewer-version-arrow-icon {
   pointer-events: none;
-  font-size: 0.92rem;
+  font-size: 1.36rem;
   line-height: 1;
   color: var(--muted);
-  margin-top: 0.06rem;
+  margin-top: 0.02rem;
   user-select: none;
   -webkit-user-select: none;
 }
@@ -2501,10 +2521,10 @@ body.is-lightbox-open {
 
 .post-viewer-version-menu-list {
   position: absolute;
-  top: calc(100% + 0.28rem);
-  right: 0;
-  min-width: 260px;
-  max-width: min(460px, calc(100vw - 2.2rem));
+  top: 0;
+  left: 0;
+  width: calc(100% - var(--post-viewer-arrow-slot));
+  max-width: 100%;
   max-height: 300px;
   overflow: auto;
   border: 1px solid var(--border);
@@ -2515,6 +2535,7 @@ body.is-lightbox-open {
   display: grid;
   gap: 0.22rem;
   z-index: 16;
+  pointer-events: auto;
 }
 
 .post-viewer-version-menu-item {
@@ -2539,10 +2560,13 @@ body.is-lightbox-open {
 
 .post-viewer-version-menu-item-main {
   font-family: var(--font-head);
-  font-size: 0.98rem;
+  font-size: 1.05rem;
   font-weight: 700;
   line-height: 1.2;
   color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .post-viewer-version-menu-item-sub {
