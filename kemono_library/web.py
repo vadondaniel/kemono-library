@@ -13,7 +13,7 @@ from typing import Any, Callable
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import bleach
-from flask import Flask, flash, jsonify, redirect, render_template, request, send_from_directory, url_for
+from flask import Flask, flash, jsonify, redirect, render_template, request, send_file, send_from_directory, url_for
 from markupsafe import Markup
 
 from .db import LibraryDB
@@ -604,18 +604,33 @@ def create_app(test_config: dict | None = None) -> Flask:
             local_path = row["local_path"]
             local_abs = files_base / local_path if isinstance(local_path, str) and local_path.strip() else None
             local_available = _is_valid_file(local_abs)
+            remote_url = str(row["remote_url"])
+            remote_url_display = _preferred_remote_url_for_access(
+                remote_url,
+                row["name"],
+            )
+            is_image = _is_likely_image_attachment(
+                remote_url=remote_url,
+                name=row["name"],
+                local_path=local_path,
+                kind=row["kind"],
+            )
+            preview_url = (
+                url_for("serve_file", relative_path=local_path)
+                if local_available and local_path
+                else remote_url_display
+            )
             attachment_rows.append(
                 {
                     "id": int(row["id"]),
                     "name": row["name"],
-                    "remote_url": row["remote_url"],
-                    "remote_url_display": _preferred_remote_url_for_access(
-                        str(row["remote_url"]),
-                        row["name"],
-                    ),
+                    "remote_url": remote_url,
+                    "remote_url_display": remote_url_display,
                     "local_path": row["local_path"],
                     "kind": row["kind"],
                     "local_available": local_available,
+                    "is_image": is_image,
+                    "preview_url": preview_url,
                 }
             )
 
@@ -736,6 +751,18 @@ def create_app(test_config: dict | None = None) -> Flask:
             local_path = _optional_str(row["local_path"])
             remote_url = str(row["remote_url"])
             local_available = _is_valid_file(files_base / local_path) if local_path else False
+            remote_url_display = _preferred_remote_url_for_access(remote_url, row["name"])
+            is_image = _is_likely_image_attachment(
+                remote_url=remote_url,
+                name=row["name"],
+                local_path=local_path,
+                kind=row["kind"],
+            )
+            preview_url = (
+                url_for("serve_file", relative_path=local_path)
+                if local_available and local_path
+                else remote_url_display
+            )
             row_data = {
                 "id": int(row["id"]),
                 "form_key": f"id_{int(row['id'])}",
@@ -744,9 +771,11 @@ def create_app(test_config: dict | None = None) -> Flask:
                 "name": str(row["name"]),
                 "kind": str(row["kind"]),
                 "remote_url": remote_url,
-                "remote_url_display": _preferred_remote_url_for_access(remote_url, row["name"]),
+                "remote_url_display": remote_url_display,
                 "local_path": local_path,
                 "local_available": local_available,
+                "is_image": is_image,
+                "preview_url": preview_url,
             }
             attachment_rows.append(row_data)
             tracked_remote_urls.add(remote_url)
@@ -764,6 +793,13 @@ def create_app(test_config: dict | None = None) -> Flask:
             remote_url = str(candidate.remote_url)
             if remote_url in tracked_remote_urls:
                 continue
+            remote_url_display = _preferred_remote_url_for_access(remote_url, candidate.name)
+            is_image = _is_likely_image_attachment(
+                remote_url=remote_url,
+                name=candidate.name,
+                local_path=None,
+                kind=candidate.kind,
+            )
             row_data = {
                 "id": None,
                 "form_key": f"src_{source_candidate_index}",
@@ -772,9 +808,11 @@ def create_app(test_config: dict | None = None) -> Flask:
                 "name": str(candidate.name),
                 "kind": str(candidate.kind),
                 "remote_url": remote_url,
-                "remote_url_display": _preferred_remote_url_for_access(remote_url, candidate.name),
+                "remote_url_display": remote_url_display,
                 "local_path": None,
                 "local_available": False,
+                "is_image": is_image,
+                "preview_url": remote_url_display,
             }
             source_candidate_index += 1
             attachment_rows.append(row_data)
@@ -1041,6 +1079,17 @@ def create_app(test_config: dict | None = None) -> Flask:
     def serve_file(relative_path: str):
         # Keep compatibility with old Windows-stored paths using backslashes.
         safe_relative = relative_path.replace("\\", "/")
+        base_dir = Path(app.config["FILES_DIR"]).resolve()
+        target = (base_dir / safe_relative).resolve()
+        try:
+            target.relative_to(base_dir)
+        except ValueError:
+            return ("Not found", 404)
+        if not target.exists() or not target.is_file():
+            return ("Not found", 404)
+        detected_mime = _detect_image_mime(target)
+        if detected_mime:
+            return send_file(target, mimetype=detected_mime, as_attachment=False)
         return send_from_directory(app.config["FILES_DIR"], safe_relative, as_attachment=False)
 
     @app.get("/creator-icons/<path:relative_path>")
@@ -1491,6 +1540,91 @@ def _optional_str(value: Any) -> str | None:
     if isinstance(value, str):
         cleaned = value.strip()
         return cleaned or None
+    return None
+
+
+_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"}
+_NON_IMAGE_EXTENSIONS = {
+    ".zip",
+    ".rar",
+    ".7z",
+    ".txt",
+    ".pdf",
+    ".mp4",
+    ".webm",
+    ".mkv",
+    ".mov",
+    ".avi",
+    ".mp3",
+    ".wav",
+    ".ogg",
+    ".flac",
+}
+
+
+def _extract_extension(value: str | None) -> str:
+    if not value:
+        return ""
+    parsed = urlparse(value)
+    source = parsed.path if parsed.path else value
+    return Path(source).suffix.lower()
+
+
+def _is_likely_image_attachment(
+    *,
+    remote_url: str | None,
+    name: Any,
+    local_path: str | None,
+    kind: Any,
+) -> bool:
+    kind_text = str(kind).strip().lower() if kind is not None else ""
+    if kind_text == "thumbnail":
+        return True
+
+    ext_candidates = {
+        _extract_extension(remote_url),
+        _extract_extension(str(name) if isinstance(name, str) else None),
+        _extract_extension(local_path),
+    }
+    ext_candidates.discard("")
+    if any(ext in _IMAGE_EXTENSIONS for ext in ext_candidates):
+        return True
+    if any(ext in _NON_IMAGE_EXTENSIONS for ext in ext_candidates):
+        return False
+
+    lowered_url = (remote_url or "").lower()
+    if "/images/" in lowered_url or "/image/" in lowered_url:
+        return True
+    if "/files/" in lowered_url:
+        return False
+    if "pixiv.pximg.net" in lowered_url:
+        return True
+    if kind_text in {"inline_only"}:
+        return True
+    return False
+
+
+def _detect_image_mime(path: Path) -> str | None:
+    try:
+        head = path.read_bytes()[:512]
+    except OSError:
+        return None
+    if len(head) >= 3 and head[:3] == b"\xFF\xD8\xFF":
+        return "image/jpeg"
+    if len(head) >= 8 and head[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if len(head) >= 6 and (head[:6] == b"GIF87a" or head[:6] == b"GIF89a"):
+        return "image/gif"
+    if len(head) >= 12 and head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return "image/webp"
+    if len(head) >= 2 and head[:2] == b"BM":
+        return "image/bmp"
+    try:
+        text_head = head.decode("utf-8", errors="ignore").lstrip().lower()
+    except Exception:  # noqa: BLE001
+        text_head = ""
+    if text_head.startswith("<?xml") or text_head.startswith("<svg") or "<svg" in text_head[:256]:
+        return "image/svg+xml"
     return None
 
 

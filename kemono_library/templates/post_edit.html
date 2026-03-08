@@ -78,12 +78,8 @@
             <option value="__keep__" data-preview-url="{{ thumbnail_preview_url or '' }}" {% if not selected_thumbnail_choice %}selected{% endif %}>Keep current thumbnail</option>
             <option value="__none__" data-preview-url="">No thumbnail</option>
             {% for file in attachments %}
-              {% set lowered_url = file['remote_url']|lower %}
-              {% set lowered_url_no_query = lowered_url.split('?')[0] %}
-              {% set is_image = lowered_url_no_query.endswith('.jpg') or lowered_url_no_query.endswith('.jpeg') or lowered_url_no_query.endswith('.png') or lowered_url_no_query.endswith('.gif') or lowered_url_no_query.endswith('.webp') or lowered_url_no_query.endswith('.bmp') or lowered_url_no_query.endswith('.svg') %}
-              {% if is_image %}
-                {% set option_preview_url = url_for('serve_file', relative_path=file['local_path']) if file['local_available'] and file['local_path'] else file['remote_url_display'] %}
-                <option value="{{ file['choice_value'] }}" data-preview-url="{{ option_preview_url }}" {% if selected_thumbnail_choice == file['choice_value'] %}selected{% endif %}>
+              {% if file['is_image'] %}
+                <option value="{{ file['choice_value'] }}" data-preview-url="{{ file['preview_url'] }}" {% if selected_thumbnail_choice == file['choice_value'] %}selected{% endif %}>
                   {{ file['name'] }}{% if not file['local_available'] %} (remote only){% endif %}
                 </option>
               {% endif %}
@@ -168,14 +164,10 @@
     <p class="post-edit-attachments-note">Attachment edits are applied when you click <strong>Save Changes</strong>.</p>
     <ul class="post-edit-attachment-list">
       {% for file in attachments %}
-        {% set lowered_url = file['remote_url']|lower %}
-        {% set lowered_url_no_query = lowered_url.split('?')[0] %}
-        {% set is_image = lowered_url_no_query.endswith('.jpg') or lowered_url_no_query.endswith('.jpeg') or lowered_url_no_query.endswith('.png') or lowered_url_no_query.endswith('.gif') or lowered_url_no_query.endswith('.webp') or lowered_url_no_query.endswith('.bmp') or lowered_url_no_query.endswith('.svg') %}
-        {% set preview_url = url_for('serve_file', relative_path=file['local_path']) if file['local_available'] and file['local_path'] else file['remote_url_display'] %}
         <li class="post-edit-attachment-item">
           <div class="post-edit-attachment-preview">
-            {% if is_image %}
-              <img src="{{ preview_url }}" alt="{{ file['name'] }}" loading="lazy" referrerpolicy="no-referrer">
+            {% if file['is_image'] %}
+              <img src="{{ file['preview_url'] }}" alt="{{ file['name'] }}" loading="lazy" referrerpolicy="no-referrer">
             {% else %}
               <span class="post-edit-attachment-preview-fallback">File</span>
             {% endif %}
