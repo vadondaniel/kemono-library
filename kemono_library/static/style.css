@@ -1558,6 +1558,12 @@ small {
   color: var(--muted);
 }
 
+.series-edit-settings-row {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .series-edit-actions {
   display: flex;
   justify-content: flex-end;

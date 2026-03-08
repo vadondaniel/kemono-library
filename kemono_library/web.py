@@ -118,13 +118,6 @@ def create_app(test_config: dict | None = None) -> Flask:
 
         requested_series_id = request.args.get("series_id", type=int)
         folder = request.args.get("folder", "").strip().lower()
-        sort_by = request.args.get("sort", "published").strip().lower()
-        sort_direction = request.args.get("direction", "desc").strip().lower()
-
-        if sort_by not in {"published", "title"}:
-            sort_by = "published"
-        if sort_direction not in {"asc", "desc"}:
-            sort_direction = "desc"
 
         selected_series_id: int | None = None
         unsorted_only = False
@@ -135,6 +128,33 @@ def create_app(test_config: dict | None = None) -> Flask:
         elif requested_series_id is not None and requested_series_id in series_by_id:
             selected_series_id = requested_series_id
             active_folder = "series"
+
+        selected_series = series_by_id.get(selected_series_id) if selected_series_id is not None else None
+        series_default_sort = (
+            str(selected_series.get("default_sort_by", "")).strip().lower()
+            if selected_series and isinstance(selected_series.get("default_sort_by"), str)
+            else ""
+        )
+        if series_default_sort not in {"published", "title"}:
+            series_default_sort = "published"
+        series_default_direction = (
+            str(selected_series.get("default_sort_direction", "")).strip().lower()
+            if selected_series and isinstance(selected_series.get("default_sort_direction"), str)
+            else ""
+        )
+        if series_default_direction not in {"asc", "desc"}:
+            series_default_direction = "desc"
+
+        sort_by = request.args.get("sort", series_default_sort if selected_series else "published").strip().lower()
+        sort_direction = request.args.get(
+            "direction",
+            series_default_direction if selected_series else "desc",
+        ).strip().lower()
+
+        if sort_by not in {"published", "title"}:
+            sort_by = series_default_sort if selected_series else "published"
+        if sort_direction not in {"asc", "desc"}:
+            sort_direction = series_default_direction if selected_series else "desc"
 
         posts_rows = db.list_posts_for_creator(
             creator_id,
@@ -150,7 +170,18 @@ def create_app(test_config: dict | None = None) -> Flask:
             item["thumbnail_focus_x"] = focus_x
             item["thumbnail_focus_y"] = focus_y
             posts.append(item)
-        selected_series = series_by_id.get(selected_series_id) if selected_series_id is not None else None
+        series_thumbnail_options = (
+            [
+                {
+                    "id": int(item["id"]),
+                    "title": str(item["title"]) if item["title"] else f"Post {item['id']}",
+                    "published_at": str(item["published_at"]) if item["published_at"] else "",
+                }
+                for item in posts
+            ]
+            if selected_series
+            else []
+        )
         header_context = _build_creator_header_context(creator=creator, selected_series=selected_series)
         return render_template(
             "creator_detail.html",
@@ -158,6 +189,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             series_list=series_list,
             posts=posts,
             selected_series=selected_series,
+            series_thumbnail_options=series_thumbnail_options,
             active_folder=active_folder,
             sort_by=sort_by,
             sort_direction=sort_direction,
@@ -197,15 +229,39 @@ def create_app(test_config: dict | None = None) -> Flask:
         name = request.form.get("name", "").strip()
         description = request.form.get("description", "")
         tags_text = request.form.get("tags_text", "")
+        default_sort_by = request.form.get("default_sort_by", "published").strip().lower()
+        default_sort_direction = request.form.get("default_sort_direction", "desc").strip().lower()
+        raw_cover_post_id = request.form.get("cover_post_id", "").strip()
+        try:
+            cover_post_id = int(raw_cover_post_id) if raw_cover_post_id else None
+        except ValueError:
+            cover_post_id = None
         if not name:
             flash("Series/group name is required.", "error")
             return redirect(url_for("creator_detail", creator_id=creator_id, series_id=series_id))
+        if default_sort_by not in {"published", "title"}:
+            default_sort_by = "published"
+        if default_sort_direction not in {"asc", "desc"}:
+            default_sort_direction = "desc"
+        if cover_post_id is not None:
+            cover_post = db.get_post(cover_post_id)
+            if (
+                not cover_post
+                or int(cover_post["creator_id"]) != creator_id
+                or cover_post["series_id"] is None
+                or int(cover_post["series_id"]) != series_id
+            ):
+                flash("Selected cover post is not part of this series.", "error")
+                return redirect(url_for("creator_detail", creator_id=creator_id, series_id=series_id))
 
         db.update_series(
             series_id,
             name=name,
             description=description,
             tags_text=tags_text,
+            default_sort_by=default_sort_by,
+            default_sort_direction=default_sort_direction,
+            cover_post_id=cover_post_id,
         )
         flash("Series updated.", "success")
         return redirect(url_for("creator_detail", creator_id=creator_id, series_id=series_id))

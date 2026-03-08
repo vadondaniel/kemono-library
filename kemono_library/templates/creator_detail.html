@@ -79,6 +79,31 @@
                 <textarea id="series-description" name="description" rows="4" placeholder="Optional description">{{ selected_series['description'] or '' }}</textarea>
                 <label for="series-tags">Tags</label>
                 <input id="series-tags" name="tags_text" value="{{ selected_series['tags_text'] or '' }}" placeholder="tag one, tag two">
+                <div class="series-edit-settings-row">
+                  <div>
+                    <label for="series-default-sort">Default sort</label>
+                    <select id="series-default-sort" name="default_sort_by">
+                      <option value="published" {% if (selected_series['default_sort_by'] or 'published') == 'published' %}selected{% endif %}>Publish date</option>
+                      <option value="title" {% if selected_series['default_sort_by'] == 'title' %}selected{% endif %}>Alphabetical</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label for="series-default-direction">Default order</label>
+                    <select id="series-default-direction" name="default_sort_direction">
+                      <option value="desc" {% if (selected_series['default_sort_direction'] or 'desc') == 'desc' %}selected{% endif %}>Descending</option>
+                      <option value="asc" {% if selected_series['default_sort_direction'] == 'asc' %}selected{% endif %}>Ascending</option>
+                    </select>
+                  </div>
+                </div>
+                <label for="series-cover-post">Folder thumbnail source</label>
+                <select id="series-cover-post" name="cover_post_id">
+                  <option value="">Automatic (latest post)</option>
+                  {% for option in series_thumbnail_options %}
+                    <option value="{{ option['id'] }}" {% if selected_series['cover_post_id'] and selected_series['cover_post_id'] == option['id'] %}selected{% endif %}>
+                      {{ option['title'] }}{% if option['published_at'] %} ({{ option['published_at']|format_datetime }}){% endif %}
+                    </option>
+                  {% endfor %}
+                </select>
                 <div class="series-edit-actions">
                   <button type="submit">Save metadata</button>
                 </div>
@@ -131,7 +156,7 @@
       <div class="folder-explorer-grid">
         {% for series in series_list %}
           <div class="folder-tile-wrap">
-            <a class="folder-tile {% if selected_series and selected_series['id'] == series['id'] %}is-active{% endif %}" href="{{ url_for('creator_detail', creator_id=creator['id'], series_id=series['id'], sort=sort_by, direction=sort_direction) }}">
+            <a class="folder-tile {% if selected_series and selected_series['id'] == series['id'] %}is-active{% endif %}" href="{{ url_for('creator_detail', creator_id=creator['id'], series_id=series['id']) }}">
               {% if series['cover_thumbnail_local_path'] %}
                 <span class="folder-tile-thumb-wrap">
                   <img

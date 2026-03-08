@@ -44,6 +44,9 @@ class LibraryDB:
                     name TEXT NOT NULL,
                     description TEXT,
                     tags_text TEXT,
+                    default_sort_by TEXT,
+                    default_sort_direction TEXT,
+                    cover_post_id INTEGER,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE (creator_id, name),
                     FOREIGN KEY (creator_id) REFERENCES creators(id) ON DELETE CASCADE
@@ -211,21 +214,38 @@ class LibraryDB:
         *,
         description: str | None = None,
         tags_text: str | None = None,
+        default_sort_by: str | None = None,
+        default_sort_direction: str | None = None,
+        cover_post_id: int | None = None,
     ) -> int:
         with self._connect() as conn:
             cursor = conn.execute(
                 """
-                INSERT INTO series (creator_id, name, description, tags_text)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO series (
+                    creator_id,
+                    name,
+                    description,
+                    tags_text,
+                    default_sort_by,
+                    default_sort_direction,
+                    cover_post_id
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(creator_id, name) DO UPDATE SET
                     description = excluded.description,
-                    tags_text = excluded.tags_text
+                    tags_text = excluded.tags_text,
+                    default_sort_by = excluded.default_sort_by,
+                    default_sort_direction = excluded.default_sort_direction,
+                    cover_post_id = excluded.cover_post_id
                 """,
                 (
                     creator_id,
                     name.strip(),
                     self._normalize_optional_text(description),
                     self._normalize_optional_text(tags_text),
+                    self._normalize_series_sort_by(default_sort_by),
+                    self._normalize_series_sort_direction(default_sort_direction),
+                    cover_post_id,
                 ),
             )
             if cursor.lastrowid:
@@ -243,18 +263,29 @@ class LibraryDB:
         name: str,
         description: str | None = None,
         tags_text: str | None = None,
+        default_sort_by: str | None = None,
+        default_sort_direction: str | None = None,
+        cover_post_id: int | None = None,
     ) -> None:
         with self._connect() as conn:
             conn.execute(
                 """
                 UPDATE series
-                SET name = ?, description = ?, tags_text = ?
+                SET name = ?,
+                    description = ?,
+                    tags_text = ?,
+                    default_sort_by = ?,
+                    default_sort_direction = ?,
+                    cover_post_id = ?
                 WHERE id = ?
                 """,
                 (
                     name.strip(),
                     self._normalize_optional_text(description),
                     self._normalize_optional_text(tags_text),
+                    self._normalize_series_sort_by(default_sort_by),
+                    self._normalize_series_sort_direction(default_sort_direction),
+                    cover_post_id,
                     series_id,
                 ),
             )
@@ -265,35 +296,59 @@ class LibraryDB:
                 """
                 SELECT s.*,
                        (SELECT COUNT(*) FROM posts p WHERE p.series_id = s.id) AS post_count,
-                       (
-                           SELECT p.thumbnail_local_path
-                           FROM posts p
-                           WHERE p.series_id = s.id
-                           ORDER BY
-                               CASE WHEN p.published_at IS NULL OR p.published_at = '' THEN 1 ELSE 0 END ASC,
-                               p.published_at DESC,
-                               p.id DESC
-                           LIMIT 1
+                       COALESCE(
+                           (
+                               SELECT p.thumbnail_local_path
+                               FROM posts p
+                               WHERE p.id = s.cover_post_id AND p.series_id = s.id
+                               LIMIT 1
+                           ),
+                           (
+                               SELECT p.thumbnail_local_path
+                               FROM posts p
+                               WHERE p.series_id = s.id
+                               ORDER BY
+                                   CASE WHEN p.published_at IS NULL OR p.published_at = '' THEN 1 ELSE 0 END ASC,
+                                   p.published_at DESC,
+                                   p.id DESC
+                               LIMIT 1
+                           )
                        ) AS cover_thumbnail_local_path,
-                       (
-                           SELECT p.thumbnail_remote_url
-                           FROM posts p
-                           WHERE p.series_id = s.id
-                           ORDER BY
-                               CASE WHEN p.published_at IS NULL OR p.published_at = '' THEN 1 ELSE 0 END ASC,
-                               p.published_at DESC,
-                               p.id DESC
-                           LIMIT 1
+                       COALESCE(
+                           (
+                               SELECT p.thumbnail_remote_url
+                               FROM posts p
+                               WHERE p.id = s.cover_post_id AND p.series_id = s.id
+                               LIMIT 1
+                           ),
+                           (
+                               SELECT p.thumbnail_remote_url
+                               FROM posts p
+                               WHERE p.series_id = s.id
+                               ORDER BY
+                                   CASE WHEN p.published_at IS NULL OR p.published_at = '' THEN 1 ELSE 0 END ASC,
+                                   p.published_at DESC,
+                                   p.id DESC
+                               LIMIT 1
+                           )
                        ) AS cover_thumbnail_remote_url,
-                       (
-                           SELECT p.metadata_json
-                           FROM posts p
-                           WHERE p.series_id = s.id
-                           ORDER BY
-                               CASE WHEN p.published_at IS NULL OR p.published_at = '' THEN 1 ELSE 0 END ASC,
-                               p.published_at DESC,
-                               p.id DESC
-                           LIMIT 1
+                       COALESCE(
+                           (
+                               SELECT p.metadata_json
+                               FROM posts p
+                               WHERE p.id = s.cover_post_id AND p.series_id = s.id
+                               LIMIT 1
+                           ),
+                           (
+                               SELECT p.metadata_json
+                               FROM posts p
+                               WHERE p.series_id = s.id
+                               ORDER BY
+                                   CASE WHEN p.published_at IS NULL OR p.published_at = '' THEN 1 ELSE 0 END ASC,
+                                   p.published_at DESC,
+                                   p.id DESC
+                               LIMIT 1
+                           )
                        ) AS cover_metadata_json
                 FROM series s
                 WHERE s.creator_id = ?
@@ -1469,6 +1524,9 @@ class LibraryDB:
         required = {
             "description": "TEXT",
             "tags_text": "TEXT",
+            "default_sort_by": "TEXT",
+            "default_sort_direction": "TEXT",
+            "cover_post_id": "INTEGER",
         }
         for column, column_type in required.items():
             if column not in existing_columns:
@@ -1487,3 +1545,21 @@ class LibraryDB:
             return "Version"
         cleaned = value.strip()
         return cleaned or "Version"
+
+    @staticmethod
+    def _normalize_series_sort_by(value: str | None) -> str:
+        if not isinstance(value, str):
+            return "published"
+        normalized = value.strip().lower()
+        if normalized not in {"published", "title"}:
+            return "published"
+        return normalized
+
+    @staticmethod
+    def _normalize_series_sort_direction(value: str | None) -> str:
+        if not isinstance(value, str):
+            return "desc"
+        normalized = value.strip().lower()
+        if normalized not in {"asc", "desc"}:
+            return "desc"
+        return normalized

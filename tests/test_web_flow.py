@@ -1459,6 +1459,84 @@ def test_series_folder_tile_uses_first_entry_thumbnail(tmp_path):
     assert b"/files/post_302/new.jpg" in response.data
 
 
+def test_series_settings_apply_default_sort_and_cover_source(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+
+    creator_id = db.create_creator("Series Settings Creator")
+    series_id = db.create_series(creator_id, "Main Arc")
+
+    cover_post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=series_id,
+        service="fanbox",
+        external_user_id="user-1",
+        external_post_id="401",
+        title="Zeta Post",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/user-1/post/401",
+        thumbnail_local_path="post_401/zeta.jpg",
+        published_at="2025-01-02T00:00:00",
+    )
+    db.upsert_post(
+        creator_id=creator_id,
+        series_id=series_id,
+        service="fanbox",
+        external_user_id="user-1",
+        external_post_id="402",
+        title="Alpha Post",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/user-1/post/402",
+        thumbnail_local_path="post_402/alpha.jpg",
+        published_at="2025-01-01T00:00:00",
+    )
+
+    client = app.test_client()
+    update = client.post(
+        f"/creators/{creator_id}/series/{series_id}",
+        data={
+            "name": "Main Arc",
+            "description": "",
+            "tags_text": "",
+            "default_sort_by": "title",
+            "default_sort_direction": "asc",
+            "cover_post_id": str(cover_post_id),
+        },
+        follow_redirects=False,
+    )
+    assert update.status_code == 302
+
+    series_row = next(row for row in db.list_series(creator_id) if int(row["id"]) == series_id)
+    assert series_row["default_sort_by"] == "title"
+    assert series_row["default_sort_direction"] == "asc"
+    assert int(series_row["cover_post_id"]) == cover_post_id
+    assert series_row["cover_thumbnail_local_path"] == "post_401/zeta.jpg"
+
+    creator_view = client.get(f"/creators/{creator_id}")
+    assert creator_view.status_code == 200
+    assert b"/files/post_401/zeta.jpg" in creator_view.data
+
+    folder_default = client.get(f"/creators/{creator_id}?series_id={series_id}")
+    assert folder_default.status_code == 200
+    folder_default_html = folder_default.data.decode("utf-8")
+    assert folder_default_html.index("Alpha Post") < folder_default_html.index("Zeta Post")
+
+    folder_override = client.get(f"/creators/{creator_id}?series_id={series_id}&sort=published&direction=desc")
+    assert folder_override.status_code == 200
+    folder_override_html = folder_override.data.decode("utf-8")
+    assert folder_override_html.index("Zeta Post") < folder_override_html.index("Alpha Post")
+
+
 def test_creator_import_context_and_series_folder_metadata_mode(tmp_path):
     app = create_app(
         {
