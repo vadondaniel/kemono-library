@@ -228,6 +228,22 @@ def test_served_files_are_inline_not_forced_download(tmp_path):
     assert "attachment" not in disposition.lower()
 
 
+def test_favicon_route_serves_svg_icon(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    client = app.test_client()
+    response = client.get("/favicon.ico")
+    assert response.status_code == 200
+    assert b"<svg" in response.data
+
+
 def test_reimport_reuses_existing_file_without_duplicate_suffix(tmp_path, monkeypatch):
     app = create_app(
         {

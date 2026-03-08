@@ -1187,6 +1187,10 @@ def create_app(test_config: dict | None = None) -> Flask:
         safe_relative = relative_path.replace("\\", "/")
         return send_from_directory(app.config["ICONS_DIR"], safe_relative, as_attachment=False)
 
+    @app.get("/favicon.ico")
+    def favicon():
+        return send_from_directory(Path(app.root_path) / "static", "icon.svg", mimetype="image/svg+xml")
+
     return app
 
 
