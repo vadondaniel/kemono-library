@@ -91,6 +91,26 @@ def test_render_rewrites_file_link_alias_with_numeric_label_suffix():
     assert ">Artwork No.34<" in rendered
 
 
+def test_render_prefers_unique_kemono_extension_url_over_fanbox_download_link():
+    content = (
+        '<a href="https://downloads.fanbox.cc/files/post/6266002/iYQR8ofim9yr8Iw0ONjv4E1A.zip" '
+        'rel="noopener noreferrer nofollow">vault</a>'
+    )
+    rendered = render_post_content(
+        content,
+        current_service="fanbox",
+        current_user_id="67922",
+        current_post_id=1,
+        local_media_map={},
+        local_media_by_name={},
+        remote_media_by_name={
+            "vault.zip": "https://downloads.fanbox.cc/files/post/6266002/iYQR8ofim9yr8Iw0ONjv4E1A.zip",
+            "__ext_unique__:.zip": "https://n2.kemono.cr/data/aa/bb/hash.zip?f=vault.zip",
+        },
+    )
+    assert 'href="https://n2.kemono.cr/data/aa/bb/hash.zip?f=vault.zip"' in rendered
+
+
 def test_render_falls_back_to_attachment_remote_url_when_local_missing():
     content = (
         '<a href="https://downloads.fanbox.cc/images/post/10791194/'

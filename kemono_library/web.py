@@ -477,7 +477,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             return ("Post not found", 404)
         attachments = db.list_attachments(post_id)
         local_media_map, local_media_by_name = _build_local_media_maps(post, attachments)
-        remote_media_by_name = _build_remote_media_by_name(attachments)
+        remote_media_by_name = _build_remote_media_by_name(post, attachments)
         files_base = Path(app.config["FILES_DIR"])
         attachment_rows = []
         for row in attachments:
@@ -859,28 +859,27 @@ def _build_local_media_maps(
     return local_media_map, local_media_by_name
 
 
-def _build_remote_media_by_name(attachments: list[Any]) -> dict[str, str]:
+def _build_remote_media_by_name(post: Any, attachments: list[Any]) -> dict[str, str]:
     remote_media_by_name: dict[str, str] = {}
     remote_media_priority: dict[str, int] = {}
-    for attachment in attachments:
-        remote_url = _preferred_remote_url_for_access(
-            str(attachment["remote_url"]),
-            attachment["name"],
-        )
-        kind_priority = _media_kind_priority(attachment["kind"])
+    kemono_urls_by_ext: dict[str, set[str]] = {}
 
-        parsed = urlparse(remote_url)
+    def register_url(url: str, *, name: Any, priority: int) -> None:
+        parsed = urlparse(url)
+        ext = Path(parsed.path).suffix.lower()
+        if ext and parsed.netloc.lower().endswith("kemono.cr"):
+            kemono_urls_by_ext.setdefault(ext, set()).add(url)
+
         filename = Path(parsed.path).name.lower()
         if filename:
             _assign_preferred(
                 remote_media_by_name,
                 remote_media_priority,
                 filename,
-                remote_url,
-                kind_priority,
+                url,
+                priority,
             )
 
-        name = attachment["name"]
         if isinstance(name, str):
             plain_name = name.strip().lower()
             if plain_name:
@@ -888,8 +887,8 @@ def _build_remote_media_by_name(attachments: list[Any]) -> dict[str, str]:
                     remote_media_by_name,
                     remote_media_priority,
                     plain_name,
-                    remote_url,
-                    kind_priority,
+                    url,
+                    priority,
                 )
             normalized_name = sanitize_filename(name).lower()
             if normalized_name:
@@ -897,9 +896,36 @@ def _build_remote_media_by_name(attachments: list[Any]) -> dict[str, str]:
                     remote_media_by_name,
                     remote_media_priority,
                     normalized_name,
-                    remote_url,
-                    kind_priority,
+                    url,
+                    priority,
                 )
+
+    for attachment in attachments:
+        remote_url = _preferred_remote_url_for_access(
+            str(attachment["remote_url"]),
+            attachment["name"],
+        )
+        kind_priority = _media_kind_priority(attachment["kind"])
+        register_url(remote_url, name=attachment["name"], priority=kind_priority)
+
+    metadata = _safe_load_metadata(post["metadata_json"])
+    for entry in _iter_metadata_media_entries(metadata):
+        raw_path = entry.get("path") or entry.get("url")
+        if not isinstance(raw_path, str) or not raw_path.strip():
+            continue
+        server = entry.get("server")
+        if not isinstance(server, str):
+            server = None
+        resolved = _resolve_media_url(raw_path.strip(), server)
+        if not isinstance(resolved, str) or not resolved.strip():
+            continue
+        metadata_name = entry.get("name")
+        preferred = _preferred_remote_url_for_access(resolved, metadata_name)
+        register_url(preferred, name=metadata_name, priority=15)
+
+    for ext, urls in kemono_urls_by_ext.items():
+        if len(urls) == 1:
+            remote_media_by_name[f"__ext_unique__:{ext}"] = next(iter(urls))
     return remote_media_by_name
 
 

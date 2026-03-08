@@ -575,6 +575,70 @@ def test_post_detail_falls_back_to_attachment_remote_when_local_missing(tmp_path
     assert b"retry" in detail.data
 
 
+def test_post_detail_uses_metadata_kemono_url_for_fanbox_file_link_without_attachment_row(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Metadata Fallback Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="67922",
+        external_post_id="6266002",
+        title="vault",
+        content=(
+            '<p><a href="https://downloads.fanbox.cc/files/post/6266002/'
+            'iYQR8ofim9yr8Iw0ONjv4E1A.zip" rel="noopener noreferrer nofollow">vault</a></p>'
+        ),
+        metadata={
+            "post": {
+                "attachments": [
+                    {"name": "vault.zip", "path": "/68/d4/68d43b0c0b364665540eb944a7e2a1f75fe56c37d4ed8a7cfca2329ddf1a62fb.zip"}
+                ]
+            },
+            "attachments": [
+                {
+                    "server": "https://n4.kemono.cr",
+                    "name": "vault.zip",
+                    "path": "/68/d4/68d43b0c0b364665540eb944a7e2a1f75fe56c37d4ed8a7cfca2329ddf1a62fb.zip",
+                }
+            ],
+        },
+        source_url="https://kemono.cr/fanbox/user/67922/post/6266002",
+    )
+    db.replace_attachments(
+        post_id,
+        [
+            {
+                "name": "cover.jpg",
+                "remote_url": "https://kemono.cr/aa/bb/cover.jpg",
+                "local_path": f"post_{post_id}/cover.jpg",
+                "kind": "thumbnail",
+            }
+        ],
+    )
+
+    file_path = Path(app.config["FILES_DIR"]) / f"post_{post_id}" / "cover.jpg"
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    file_path.write_bytes(b"ok")
+
+    detail = app.test_client().get(f"/posts/{post_id}")
+    assert detail.status_code == 200
+    expected = (
+        b"https://n4.kemono.cr/data/68/d4/68d43b0c0b364665540eb944a7e2a1f75fe56c37d4ed8a7cfca2329ddf1a62fb.zip"
+        b"?f=vault.zip"
+    )
+    assert b'href="' + expected + b'"' in detail.data
+
+
 def test_retry_attachment_download_updates_missing_file(tmp_path, monkeypatch):
     app = create_app(
         {

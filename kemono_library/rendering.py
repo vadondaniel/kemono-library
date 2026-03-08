@@ -434,17 +434,33 @@ def _find_local_media_replacement(
     if filename:
         remote_by_name = remote_media_by_name.get(filename)
         if remote_by_name:
+            ext_unique = _unique_kemono_by_extension(remote_media_by_name, filename)
+            if _is_fanbox_download_url(remote_by_name) and ext_unique:
+                return ext_unique
             return remote_by_name
         remote_by_sanitized = remote_media_by_name.get(sanitize_filename(filename).lower())
         if remote_by_sanitized:
+            ext_unique = _unique_kemono_by_extension(remote_media_by_name, filename)
+            if _is_fanbox_download_url(remote_by_sanitized) and ext_unique:
+                return ext_unique
             return remote_by_sanitized
     if alias_name:
         remote_by_alias = remote_media_by_name.get(alias_name)
         if remote_by_alias:
+            ext_unique = _unique_kemono_by_extension(remote_media_by_name, alias_name)
+            if _is_fanbox_download_url(remote_by_alias) and ext_unique:
+                return ext_unique
             return remote_by_alias
         remote_by_alias_sanitized = remote_media_by_name.get(sanitize_filename(alias_name).lower())
         if remote_by_alias_sanitized:
+            ext_unique = _unique_kemono_by_extension(remote_media_by_name, alias_name)
+            if _is_fanbox_download_url(remote_by_alias_sanitized) and ext_unique:
+                return ext_unique
             return remote_by_alias_sanitized
+
+    ext_unique = _unique_kemono_by_extension(remote_media_by_name, filename or alias_name or "")
+    if ext_unique:
+        return ext_unique
 
     # FANBOX image links sometimes put source URL in query parameters.
     query = parse_qs(parsed.query)
@@ -460,6 +476,20 @@ def _find_local_media_replacement(
             if nested:
                 return nested
     return None
+
+
+def _unique_kemono_by_extension(remote_media_by_name: dict[str, str], name_or_filename: str) -> str | None:
+    if not isinstance(name_or_filename, str) or not name_or_filename:
+        return None
+    ext = Path(name_or_filename).suffix.lower()
+    if not ext:
+        return None
+    return remote_media_by_name.get(f"__ext_unique__:{ext}")
+
+
+def _is_fanbox_download_url(url: str) -> bool:
+    parsed = urlparse(url)
+    return parsed.netloc.lower().endswith("downloads.fanbox.cc")
 
 
 def _anchor_alias_name(node: object | None, path: str) -> str | None:
