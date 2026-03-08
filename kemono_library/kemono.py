@@ -320,9 +320,7 @@ def _append_inline_content_attachments(
             if not isinstance(raw_url, str) or not raw_url.strip():
                 continue
             absolute_url = to_absolute_kemono_url(raw_url.strip())
-            if tag_name == "a" and not _looks_like_downloadable_url(absolute_url):
-                continue
-            if tag_name != "a" and not _looks_like_media_url(absolute_url):
+            if not _should_keep_inline_url(tag_name, absolute_url):
                 continue
             filename = _infer_inline_name(node, absolute_url) or f"inline-{inline_counter}"
             normalized_name = sanitize_filename(filename).lower()
@@ -355,9 +353,7 @@ def _collect_inline_name_keys(content: str) -> set[str]:
             if not isinstance(raw_url, str) or not raw_url.strip():
                 continue
             absolute_url = to_absolute_kemono_url(raw_url.strip())
-            if tag_name == "a" and not _looks_like_downloadable_url(absolute_url):
-                continue
-            if tag_name != "a" and not _looks_like_media_url(absolute_url):
+            if not _should_keep_inline_url(tag_name, absolute_url):
                 continue
 
             url_name = Path(urlparse(absolute_url).path).name
@@ -412,9 +408,7 @@ def _build_unnamed_attachment_aliases(sources: list[dict[str, Any]], content: st
             if not isinstance(raw_url, str) or not raw_url.strip():
                 continue
             absolute_url = to_absolute_kemono_url(raw_url.strip())
-            if tag_name == "a" and not _looks_like_downloadable_url(absolute_url):
-                continue
-            if tag_name != "a" and not _looks_like_media_url(absolute_url):
+            if not _should_keep_inline_url(tag_name, absolute_url):
                 continue
             filename = Path(urlparse(absolute_url).path).name
             normalized = filename.lower()
@@ -455,6 +449,15 @@ def _build_unnamed_attachment_aliases(sources: list[dict[str, Any]], content: st
 
 def _looks_like_downloadable_url(url: str) -> bool:
     return _looks_like_media_url(url) or _looks_like_archive_url(url)
+
+
+def _should_keep_inline_url(tag_name: str, absolute_url: str) -> bool:
+    if tag_name == "a":
+        return _looks_like_downloadable_url(absolute_url)
+    if tag_name == "img":
+        parsed = urlparse(absolute_url)
+        return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+    return _looks_like_media_url(absolute_url)
 
 
 def _looks_like_media_url(url: str) -> bool:

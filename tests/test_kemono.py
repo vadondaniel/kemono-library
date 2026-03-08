@@ -272,3 +272,16 @@ def test_extract_attachments_collects_videos_and_embed_media():
     assert urls["https://kemono.cr/data/v/clip.mp4"] == "video"
     assert urls["https://cdn.example/video2.webm"] == "video"
     assert urls["https://cdn.example/thumb.jpg"] == "embed_media"
+
+
+def test_extract_attachments_includes_inline_img_without_extension():
+    inline_url = (
+        "https://lh7-rt.googleusercontent.com/docsz/"
+        "AD_4nXf3wCbMOYZbPufA7PzyPY46ITGJ3qtaPPMhXOSxltDikx42eU68kSIqxg4-woqhD8FMJG094gMAjYaOnW_UMWu3mjilsGFXTbSwGRES-k39gsY2fZH7h0hu12_MOehDVCdxB0QZnQ"
+        "?key=S334lH3EYKYSJy0eMs4s3RSX"
+    )
+    payload = {"post": {"content": f'<p><br><img src="{inline_url}" title=""></p>'}}
+    items = extract_attachments(payload)
+    matches = [item for item in items if item.remote_url == inline_url]
+    assert len(matches) == 1
+    assert matches[0].kind == "inline_only"
