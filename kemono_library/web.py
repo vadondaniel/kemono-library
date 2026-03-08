@@ -737,7 +737,13 @@ def create_app(test_config: dict | None = None) -> Flask:
         if nav_scope not in {"series", "all"}:
             nav_scope = "series"
         attachments = db.list_attachments(post_id, version_id=active_version_id)
-        local_media_map, local_media_by_name = _build_local_media_maps(active_version, attachments)
+        local_media_map, local_media_by_name, local_media_by_path_key = _build_local_media_maps(active_version, attachments)
+        _apply_postwide_media_aliases(
+            db,
+            post_id=post_id,
+            local_media_by_name=local_media_by_name,
+            local_media_by_path_key=local_media_by_path_key,
+        )
         remote_media_by_name = _build_remote_media_by_name(active_version, attachments)
         files_base = Path(app.config["FILES_DIR"])
         attachment_rows = []
@@ -1558,7 +1564,7 @@ def _build_creator_header_context(*, creator: Any, selected_series: Any | None) 
 def _build_local_media_maps(
     post: Any,
     attachments: list[Any],
-) -> tuple[dict[str, str], dict[str, str]]:
+) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
     local_media_map: dict[str, str] = {}
     local_media_by_name: dict[str, str] = {}
     local_media_by_path_key: dict[str, str] = {}
@@ -1639,7 +1645,59 @@ def _build_local_media_maps(
                 path_priority,
             )
 
-    return local_media_map, local_media_by_name
+    return local_media_map, local_media_by_name, local_media_by_path_key
+
+
+def _apply_postwide_media_aliases(
+    db: LibraryDB,
+    *,
+    post_id: int,
+    local_media_by_name: dict[str, str],
+    local_media_by_path_key: dict[str, str],
+) -> None:
+    if not local_media_by_path_key:
+        return
+
+    aliases_by_path: dict[str, set[str]] = {}
+
+    for row in db.list_all_attachments_for_post(post_id):
+        remote_url = _optional_str(row["remote_url"])
+        if not remote_url:
+            continue
+        path_key = _remote_path_key(remote_url)
+        if not path_key:
+            continue
+        bucket = aliases_by_path.setdefault(path_key, set())
+        name_key = _attachment_collapse_key(row["name"])
+        if name_key:
+            bucket.add(name_key)
+        bucket.update(_remote_filename_alias_keys(remote_url))
+
+    for version in db.list_post_versions(post_id):
+        metadata = _safe_load_metadata(version["metadata_json"])
+        for entry in _iter_metadata_media_entries(metadata):
+            raw_path = entry.get("path") or entry.get("url")
+            if not isinstance(raw_path, str) or not raw_path.strip():
+                continue
+            server = entry.get("server")
+            resolved = _resolve_media_url(raw_path.strip(), server if isinstance(server, str) else None)
+            if not resolved:
+                continue
+            path_key = _remote_path_key(resolved)
+            if not path_key:
+                continue
+            name_key = _attachment_collapse_key(entry.get("name"))
+            if not name_key:
+                continue
+            aliases_by_path.setdefault(path_key, set()).add(name_key)
+
+    for path_key, alias_names in aliases_by_path.items():
+        local_url = local_media_by_path_key.get(path_key)
+        if not local_url:
+            continue
+        for alias in alias_names:
+            if alias and alias not in local_media_by_name:
+                local_media_by_name[alias] = local_url
 
 
 def _build_remote_media_by_name(post: Any, attachments: list[Any]) -> dict[str, str]:
