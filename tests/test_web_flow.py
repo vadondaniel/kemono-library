@@ -369,6 +369,79 @@ def test_import_commit_applies_metadata_overrides(tmp_path, monkeypatch):
     assert [row["tag"] for row in tags] == ["one", "two"]
 
 
+def test_reimport_force_overwrite_ignores_new_mode_conflict(tmp_path, monkeypatch):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Creator A")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="70479526",
+        external_post_id="100",
+        title="Existing title",
+        content="Old",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/70479526/post/100",
+    )
+    version = db.get_post_version(post_id)
+    assert version is not None
+
+    payload = {
+        "post": {
+            "title": "Reimported title",
+            "content": "Reimported content",
+            "user": "70479526",
+            "attachments": [],
+        },
+        "attachments": [],
+    }
+
+    def fake_fetch(ref, fallback_user_id=None):  # noqa: ARG001
+        return payload
+
+    def fake_icon_download(service, user_id, icons_root):  # noqa: ARG001
+        destination = Path(icons_root) / f"{service}_{user_id}.jpg"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"icon")
+        return (f"https://img.kemono.cr/icons/{service}/{user_id}", destination)
+
+    monkeypatch.setattr("kemono_library.web.fetch_post_json", fake_fetch)
+    monkeypatch.setattr("kemono_library.web.download_creator_icon", fake_icon_download)
+
+    response = app.test_client().post(
+        "/import/commit",
+        data={
+            "creator_id": str(creator_id),
+            "series_id": "",
+            "service": "fanbox",
+            "user_id": "70479526",
+            "post_id": "100",
+            "import_target_mode": "new",
+            "overwrite_matching_version": "0",
+            "force_overwrite_matching_version": "1",
+            "set_as_default": "1",
+            "version_label": "Original",
+            "version_language": "",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+
+    updated_version = db.get_post_version(post_id)
+    assert updated_version is not None
+    assert updated_version["title"] == "Reimported title"
+    assert updated_version["content"] == "Reimported content"
+
+
 def test_post_detail_maps_inline_alias_to_local_download(tmp_path):
     app = create_app(
         {

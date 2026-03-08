@@ -125,7 +125,7 @@
     {% if not active_version['is_manual'] and active_version['source_url'] %}
       <a
         class="button-link button-ghost"
-        href="{{ url_for('import_form', url=active_version['source_url'], creator_id=post['creator_id'], series_id=post['series_id'], import_target_mode='existing', target_post_id=post['id'], overwrite_matching_version='1', set_as_default='1' if active_version['is_default'] else '0', version_label=active_version['label'], version_language=active_version['language'] or '') }}"
+        href="{{ url_for('import_form', url=active_version['source_url'], creator_id=post['creator_id'], series_id=post['series_id'], import_target_mode='existing', target_post_id=post['id'], force_overwrite_matching_version='1', overwrite_matching_version='1', set_as_default='1' if active_version['is_default'] else '0', version_label=active_version['label'], version_language=active_version['language'] or '') }}"
       >Reimport and overwrite this version</a>
     {% endif %}
     <form method="post" action="{{ url_for('clone_post_version', post_id=post['id']) }}" class="inline-form">

@@ -67,7 +67,13 @@
     <article class="import-version-target">
       <h2>Version Target</h2>
       <p id="import-decision-summary" class="import-decision-summary"></p>
-      {% if can_create_new %}
+      {% if force_overwrite_matching_version %}
+        <p class="import-target-note">
+          Reimport mode is locked to overwrite the matching source version{% if exact_match_post %} on post #{{ exact_match_post['id'] }}{% elif default_target_post_id %} on post #{{ default_target_post_id }}{% endif %}.
+        </p>
+        <input type="hidden" name="import_target_mode" value="existing">
+        <input type="hidden" name="target_post_id" value="{{ exact_match_post['id'] if exact_match_post else (default_target_post_id or '') }}">
+      {% elif can_create_new %}
         <div class="import-target-choice-grid">
           <label class="import-target-choice">
             <input type="radio" name="import_target_mode" value="new" {% if default_import_target_mode == 'new' %}checked{% endif %}>
@@ -100,11 +106,15 @@
       {% endif %}
 
       <div class="import-version-options">
-        <label class="import-option-check" data-only-existing>
-          <input type="hidden" name="overwrite_matching_version" value="0">
-          <input type="checkbox" name="overwrite_matching_version" value="1" {% if default_overwrite_matching_version %}checked{% endif %}>
-          Overwrite matching source version if it exists
-        </label>
+        {% if force_overwrite_matching_version %}
+          <input type="hidden" name="overwrite_matching_version" value="1">
+        {% else %}
+          <label class="import-option-check" data-only-existing>
+            <input type="hidden" name="overwrite_matching_version" value="0">
+            <input type="checkbox" name="overwrite_matching_version" value="1" {% if default_overwrite_matching_version %}checked{% endif %}>
+            Overwrite matching source version if it exists
+          </label>
+        {% endif %}
         <label class="import-option-check" data-only-existing>
           <input type="hidden" name="set_as_default" value="0">
           <input type="checkbox" name="set_as_default" value="1" {% if default_set_as_default %}checked{% endif %}>
@@ -129,6 +139,7 @@
     <input type="hidden" name="service" value="{{ post_ref.service }}">
     <input type="hidden" name="user_id" value="{{ post_ref.user_id }}">
     <input type="hidden" name="post_id" value="{{ post_ref.post_id }}">
+    <input type="hidden" name="force_overwrite_matching_version" value="{{ '1' if force_overwrite_matching_version else '0' }}">
   </section>
 
   <section class="panel import-files-shell">

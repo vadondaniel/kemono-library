@@ -237,12 +237,19 @@ def create_app(test_config: dict | None = None) -> Flask:
         selected_creator = request.args.get("creator_id", type=int)
         selected_series = request.args.get("series_id", type=int)
         prefill_url = request.args.get("url", "")
+        prefill_force_overwrite_matching_version = _parse_boolish(
+            request.args.get("force_overwrite_matching_version"),
+            default=False,
+        )
         prefill_import_target_mode = request.args.get("import_target_mode", "").strip().lower()
         prefill_target_post_id = request.args.get("target_post_id", type=int)
         prefill_overwrite_matching_version = _parse_boolish(
             request.args.get("overwrite_matching_version"),
             default=True,
         )
+        if prefill_force_overwrite_matching_version:
+            prefill_import_target_mode = "existing"
+            prefill_overwrite_matching_version = True
         prefill_set_as_default = _parse_boolish(
             request.args.get("set_as_default"),
             default=True,
@@ -255,6 +262,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             selected_creator=selected_creator,
             selected_series=selected_series,
             prefill_url=prefill_url,
+            prefill_force_overwrite_matching_version=prefill_force_overwrite_matching_version,
             prefill_import_target_mode=prefill_import_target_mode,
             prefill_target_post_id=prefill_target_post_id,
             prefill_overwrite_matching_version=prefill_overwrite_matching_version,
@@ -300,11 +308,19 @@ def create_app(test_config: dict | None = None) -> Flask:
 
         prefill_import_target_mode = request.form.get("import_target_mode", "").strip().lower()
         prefill_target_post_id = request.form.get("target_post_id", type=int)
+        force_overwrite_matching_version = _form_checkbox_enabled(
+            request.form,
+            "force_overwrite_matching_version",
+            default=False,
+        )
         prefill_overwrite_matching_version = _form_checkbox_enabled(
             request.form,
             "overwrite_matching_version",
             default=True,
         )
+        if force_overwrite_matching_version:
+            prefill_import_target_mode = "existing"
+            prefill_overwrite_matching_version = True
         prefill_set_as_default = _form_checkbox_enabled(
             request.form,
             "set_as_default",
@@ -328,6 +344,10 @@ def create_app(test_config: dict | None = None) -> Flask:
         default_import_target_mode = "existing" if target_post_id else "new"
         if prefill_import_target_mode in {"new", "existing"} and exact_match is None:
             default_import_target_mode = prefill_import_target_mode
+        if force_overwrite_matching_version:
+            if target_post_id is None and exact_match:
+                target_post_id = int(exact_match["id"])
+            default_import_target_mode = "existing"
         target_attachment_index = _build_target_attachment_index(
             db,
             files_base=Path(app.config["FILES_DIR"]),
@@ -351,6 +371,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             default_set_as_default=prefill_set_as_default,
             default_version_label=prefill_version_label or "Original",
             default_version_language=prefill_version_language,
+            force_overwrite_matching_version=force_overwrite_matching_version,
             target_attachment_index=target_attachment_index,
         )
 
@@ -370,6 +391,15 @@ def create_app(test_config: dict | None = None) -> Flask:
             "overwrite_matching_version",
             default=True,
         )
+        force_overwrite_matching_version = _form_checkbox_enabled(
+            request.form,
+            "force_overwrite_matching_version",
+            default=False,
+        )
+        import_target_mode = request.form.get("import_target_mode", "new")
+        if force_overwrite_matching_version:
+            import_target_mode = "existing"
+            overwrite_matching_version = True
         set_as_default = _form_checkbox_enabled(
             request.form,
             "set_as_default",
@@ -385,7 +415,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                 service=service,
                 user_id=user_id,
                 post_id=post_id,
-                import_target_mode=request.form.get("import_target_mode", "new"),
+                import_target_mode=import_target_mode,
                 target_post_id=request.form.get("target_post_id", type=int),
                 overwrite_matching_version=overwrite_matching_version,
                 set_as_default=set_as_default,
@@ -433,6 +463,15 @@ def create_app(test_config: dict | None = None) -> Flask:
             "overwrite_matching_version",
             default=True,
         )
+        force_overwrite_matching_version = _form_checkbox_enabled(
+            request.form,
+            "force_overwrite_matching_version",
+            default=False,
+        )
+        import_target_mode = request.form.get("import_target_mode", "new")
+        if force_overwrite_matching_version:
+            import_target_mode = "existing"
+            overwrite_matching_version = True
         set_as_default = _form_checkbox_enabled(
             request.form,
             "set_as_default",
@@ -446,7 +485,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             "service": service,
             "user_id": user_id,
             "post_id": post_id,
-            "import_target_mode": request.form.get("import_target_mode", "new"),
+            "import_target_mode": import_target_mode,
             "target_post_id": request.form.get("target_post_id", type=int),
             "overwrite_matching_version": overwrite_matching_version,
             "set_as_default": set_as_default,
