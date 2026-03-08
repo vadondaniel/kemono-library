@@ -551,6 +551,125 @@ def test_post_detail_series_name_links_to_series_view(tmp_path):
     assert b"Folder A" in detail.data
 
 
+def test_post_detail_navigator_defaults_to_series_and_supports_all_scope(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+
+    creator_id = db.create_creator("Navigator Creator")
+    series_a_id = db.create_series(creator_id, "Series A")
+    series_b_id = db.create_series(creator_id, "Series B")
+
+    series_a_first = db.upsert_post(
+        creator_id=creator_id,
+        series_id=series_a_id,
+        service="fanbox",
+        external_user_id="u-nav",
+        external_post_id="1001",
+        title="A One",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/u-nav/post/1001",
+        published_at="2025-01-03T00:00:00",
+    )
+    db.upsert_post(
+        creator_id=creator_id,
+        series_id=series_a_id,
+        service="fanbox",
+        external_user_id="u-nav",
+        external_post_id="1002",
+        title="A Two",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/u-nav/post/1002",
+        published_at="2025-01-02T00:00:00",
+    )
+    db.upsert_post(
+        creator_id=creator_id,
+        series_id=series_b_id,
+        service="fanbox",
+        external_user_id="u-nav",
+        external_post_id="1003",
+        title="B One",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/u-nav/post/1003",
+        published_at="2025-01-01T00:00:00",
+    )
+    unsorted_first = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="u-nav",
+        external_post_id="1004",
+        title="Unsorted One",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/u-nav/post/1004",
+        published_at="2025-01-04T00:00:00",
+    )
+    db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="u-nav",
+        external_post_id="1005",
+        title="Unsorted Two",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/u-nav/post/1005",
+        published_at="2025-01-05T00:00:00",
+    )
+
+    client = app.test_client()
+
+    series_default = client.get(f"/posts/{series_a_first}")
+    assert series_default.status_code == 200
+    series_soup = BeautifulSoup(series_default.data, "html.parser")
+    series_nav = series_soup.select_one(".post-nav-list")
+    assert series_nav is not None
+    series_nav_text = series_nav.get_text(" ", strip=True)
+    assert "A One" in series_nav_text
+    assert "A Two" in series_nav_text
+    assert "B One" not in series_nav_text
+    assert "Unsorted One" not in series_nav_text
+    assert any("nav_scope=all" in (link.get("href") or "") for link in series_soup.select(".post-nav-scope-toggle a"))
+    assert series_soup.select_one(f'.post-nav-link.is-active[href="/posts/{series_a_first}?nav_scope=series"]') is not None
+
+    all_scope = client.get(f"/posts/{series_a_first}?nav_scope=all")
+    assert all_scope.status_code == 200
+    all_soup = BeautifulSoup(all_scope.data, "html.parser")
+    all_nav = all_soup.select_one(".post-nav-list")
+    assert all_nav is not None
+    all_nav_text = all_nav.get_text(" ", strip=True)
+    assert "A One" in all_nav_text
+    assert "A Two" in all_nav_text
+    assert "B One" in all_nav_text
+    assert "Unsorted One" in all_nav_text
+
+    unsorted_default = client.get(f"/posts/{unsorted_first}")
+    assert unsorted_default.status_code == 200
+    unsorted_soup = BeautifulSoup(unsorted_default.data, "html.parser")
+    unsorted_head = unsorted_soup.select_one(".post-nav-head small")
+    assert unsorted_head is not None
+    assert unsorted_head.get_text(strip=True) == "Unsorted"
+    unsorted_nav = unsorted_soup.select_one(".post-nav-list")
+    assert unsorted_nav is not None
+    unsorted_nav_text = unsorted_nav.get_text(" ", strip=True)
+    assert "Unsorted One" in unsorted_nav_text
+    assert "Unsorted Two" in unsorted_nav_text
+    assert "A One" not in unsorted_nav_text
+    assert "B One" not in unsorted_nav_text
+    assert unsorted_soup.select_one(f'.post-nav-link.is-active[href="/posts/{unsorted_first}?nav_scope=series"]') is not None
+
+
 def test_post_detail_prefers_attachment_over_inline_same_name(tmp_path):
     app = create_app(
         {

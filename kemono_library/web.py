@@ -732,6 +732,9 @@ def create_app(test_config: dict | None = None) -> Flask:
             active_version = versions[0]
         versions = db.list_post_versions(post_id)
         active_version_id = int(active_version["id"])
+        nav_scope = request.args.get("nav_scope", "series").strip().lower()
+        if nav_scope not in {"series", "all"}:
+            nav_scope = "series"
         attachments = db.list_attachments(post_id, version_id=active_version_id)
         local_media_map, local_media_by_name = _build_local_media_maps(active_version, attachments)
         remote_media_by_name = _build_remote_media_by_name(active_version, attachments)
@@ -781,6 +784,56 @@ def create_app(test_config: dict | None = None) -> Flask:
             local_media_by_name=local_media_by_name,
             remote_media_by_name=remote_media_by_name,
         )
+        creator_id = int(post["creator_id"])
+        raw_series_id = post["series_id"]
+        current_series_id = int(raw_series_id) if raw_series_id is not None else None
+        navigator_title = "All entries"
+        if nav_scope == "all":
+            navigator_rows = db.list_posts_for_creator(
+                creator_id,
+                sort_by="published",
+                sort_direction="desc",
+            )
+        elif current_series_id is not None:
+            navigator_rows = db.list_posts_for_creator(
+                creator_id,
+                series_id=current_series_id,
+                sort_by="published",
+                sort_direction="desc",
+            )
+            navigator_title = str(post["series_name"]).strip() if post["series_name"] else "Series"
+        else:
+            navigator_rows = db.list_posts_for_creator(
+                creator_id,
+                unsorted_only=True,
+                sort_by="published",
+                sort_direction="desc",
+            )
+            navigator_title = "Unsorted"
+
+        toggle_query: dict[str, Any] = {}
+        if not active_version["is_default"]:
+            toggle_query["version_id"] = active_version_id
+        series_scope_url = url_for("post_detail", post_id=post_id, nav_scope="series", **toggle_query)
+        all_scope_url = url_for("post_detail", post_id=post_id, nav_scope="all", **toggle_query)
+
+        navigator_entries: list[dict[str, Any]] = []
+        for row in navigator_rows:
+            nav_post_id = int(row["id"])
+            href = url_for("post_detail", post_id=nav_post_id, nav_scope=nav_scope)
+            if nav_post_id == post_id and not active_version["is_default"]:
+                href = url_for("post_detail", post_id=nav_post_id, nav_scope=nav_scope, version_id=active_version_id)
+            navigator_entries.append(
+                {
+                    "id": nav_post_id,
+                    "title": str(row["title"]) if row["title"] else f"Post {nav_post_id}",
+                    "published_at": row["published_at"],
+                    "series_name": row["series_name"],
+                    "is_current": nav_post_id == post_id,
+                    "href": href,
+                }
+            )
+
         return render_template(
             "post_detail.html",
             post=post,
@@ -789,6 +842,11 @@ def create_app(test_config: dict | None = None) -> Flask:
             attachments=attachment_rows,
             rendered_content=rendered_content,
             header_context=header_context,
+            navigator_entries=navigator_entries,
+            navigator_scope=nav_scope,
+            navigator_title=navigator_title,
+            navigator_series_url=series_scope_url,
+            navigator_all_url=all_scope_url,
         )
 
     @app.post("/posts/<int:post_id>/attachments/<int:attachment_id>/retry")

@@ -1,4 +1,84 @@
 (() => {
+  const navScrollRoot = document.querySelector(".post-nav-list-wrap");
+  const navList = document.querySelector(".post-nav-list");
+  const activeNav = document.querySelector(".post-nav-link.is-active");
+  const currentAboveHint = document.querySelector("[data-post-nav-current-above]");
+  const currentBelowHint = document.querySelector("[data-post-nav-current-below]");
+
+  function scrollCurrentIntoView() {
+    if (!(activeNav instanceof HTMLElement)) {
+      return;
+    }
+    activeNav.scrollIntoView({ block: "center", inline: "nearest" });
+  }
+
+  function updateCurrentVisibilityHints() {
+    const scrollRoot =
+      navScrollRoot instanceof HTMLElement
+        ? navScrollRoot
+        : navList instanceof HTMLElement
+          ? navList
+          : null;
+    const canTrack = scrollRoot instanceof HTMLElement && activeNav instanceof HTMLElement;
+    if (!canTrack) {
+      if (currentAboveHint instanceof HTMLElement) {
+        currentAboveHint.hidden = true;
+      }
+      if (currentBelowHint instanceof HTMLElement) {
+        currentBelowHint.hidden = true;
+      }
+      return;
+    }
+
+    const hasOverflow = scrollRoot.scrollHeight > scrollRoot.clientHeight + 1;
+    if (!hasOverflow) {
+      if (currentAboveHint instanceof HTMLElement) {
+        currentAboveHint.hidden = true;
+      }
+      if (currentBelowHint instanceof HTMLElement) {
+        currentBelowHint.hidden = true;
+      }
+      return;
+    }
+
+    const listRect = scrollRoot.getBoundingClientRect();
+    const activeRect = activeNav.getBoundingClientRect();
+    const currentAbove = activeRect.bottom < listRect.top + 2;
+    const currentBelow = activeRect.top > listRect.bottom - 2;
+
+    if (currentAboveHint instanceof HTMLElement) {
+      currentAboveHint.hidden = !currentAbove;
+    }
+    if (currentBelowHint instanceof HTMLElement) {
+      currentBelowHint.hidden = !currentBelow;
+    }
+  }
+
+  if (navList instanceof HTMLElement && activeNav instanceof HTMLElement) {
+    scrollCurrentIntoView();
+    requestAnimationFrame(updateCurrentVisibilityHints);
+    if (navScrollRoot instanceof HTMLElement) {
+      navScrollRoot.addEventListener("scroll", updateCurrentVisibilityHints, { passive: true });
+    } else {
+      navList.addEventListener("scroll", updateCurrentVisibilityHints, { passive: true });
+    }
+    window.addEventListener("resize", updateCurrentVisibilityHints);
+  }
+
+  if (currentAboveHint instanceof HTMLElement) {
+    currentAboveHint.addEventListener("click", () => {
+      scrollCurrentIntoView();
+      requestAnimationFrame(updateCurrentVisibilityHints);
+    });
+  }
+
+  if (currentBelowHint instanceof HTMLElement) {
+    currentBelowHint.addEventListener("click", () => {
+      scrollCurrentIntoView();
+      requestAnimationFrame(updateCurrentVisibilityHints);
+    });
+  }
+
   const lightbox = document.querySelector("[data-post-lightbox]");
   if (!(lightbox instanceof HTMLElement)) {
     return;

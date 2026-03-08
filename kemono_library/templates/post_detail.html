@@ -1,106 +1,153 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="panel post-viewer-info">
-  <div class="post-viewer-head">
-    <div class="post-viewer-title-wrap">
-      <h1 class="post-viewer-title">{{ active_version['title'] }}</h1>
-      <div class="post-viewer-chip-row">
-        {% if active_version['published_at'] %}
-          <span class="post-viewer-chip"><strong>Published:</strong> <time datetime="{{ active_version['published_at'] }}">{{ active_version['published_at']|format_datetime }}</time></span>
-        {% endif %}
-        {% if active_version['edited_at'] %}
-          <span class="post-viewer-chip"><strong>Edited:</strong> <time datetime="{{ active_version['edited_at'] }}">{{ active_version['edited_at']|format_datetime }}</time></span>
-        {% endif %}
-        {% if versions|length > 1 and active_version['is_default'] %}
-          <span class="post-viewer-chip">Default version</span>
-        {% endif %}
-        {% if active_version['source_url'] %}
-          <a class="post-viewer-chip post-viewer-chip-link" href="{{ active_version['source_url'] }}" target="_blank" rel="noopener noreferrer">Source</a>
-        {% else %}
-          <span class="post-viewer-chip">Manual version</span>
-        {% endif %}
+<div class="post-view-shell">
+  <div class="post-view-main">
+    <section class="panel post-viewer-info">
+      <div class="post-viewer-head">
+        <div class="post-viewer-title-wrap">
+          <h1 class="post-viewer-title">{{ active_version['title'] }}</h1>
+          <div class="post-viewer-chip-row">
+            {% if active_version['published_at'] %}
+              <span class="post-viewer-chip"><strong>Published:</strong> <time datetime="{{ active_version['published_at'] }}">{{ active_version['published_at']|format_datetime }}</time></span>
+            {% endif %}
+            {% if active_version['edited_at'] %}
+              <span class="post-viewer-chip"><strong>Edited:</strong> <time datetime="{{ active_version['edited_at'] }}">{{ active_version['edited_at']|format_datetime }}</time></span>
+            {% endif %}
+            {% if versions|length > 1 and active_version['is_default'] %}
+              <span class="post-viewer-chip">Default version</span>
+            {% endif %}
+            {% if active_version['source_url'] %}
+              <a class="post-viewer-chip post-viewer-chip-link" href="{{ active_version['source_url'] }}" target="_blank" rel="noopener noreferrer">Source</a>
+            {% else %}
+              <span class="post-viewer-chip">Manual version</span>
+            {% endif %}
+          </div>
+        </div>
+        <div class="post-viewer-head-actions">
+          <a class="button-link button-ghost" href="{{ url_for('edit_post', post_id=post['id'], version_id=active_version['id']) }}">
+            {% if versions|length > 1 %}Edit Version{% else %}Edit Post{% endif %}
+          </a>
+        </div>
       </div>
-    </div>
-    <div class="post-viewer-head-actions">
-      <a class="button-link button-ghost" href="{{ url_for('edit_post', post_id=post['id'], version_id=active_version['id']) }}">
-        {% if versions|length > 1 %}Edit Version{% else %}Edit Post{% endif %}
-      </a>
-    </div>
+
+      {% if versions|length > 1 %}
+        <div class="post-viewer-details">
+          <form method="get" action="{{ url_for('post_detail', post_id=post['id']) }}" class="post-viewer-version-form">
+            <input type="hidden" name="nav_scope" value="{{ navigator_scope }}">
+            <label for="version-id">Version</label>
+            <select id="version-id" name="version_id" onchange="this.form.submit()">
+              {% for version in versions %}
+                <option value="{{ version['id'] }}" {% if version['id'] == active_version['id'] %}selected{% endif %}>
+                  {{ version['label'] }}{% if version['language'] %} ({{ version['language'] }}){% endif %}{% if version['is_default'] %} [default]{% endif %}
+                </option>
+              {% endfor %}
+            </select>
+          </form>
+        </div>
+      {% endif %}
+    </section>
+
+    <section class="panel post-content">
+      {{ rendered_content | safe }}
+    </section>
+
+    <section class="panel">
+      <h2>Saved Files</h2>
+      {% if attachments %}
+        <ul class="list post-file-list">
+          {% for file in attachments %}
+            <li>
+              {% if file['is_image'] %}
+                {% set image_src = url_for('serve_file', relative_path=file['local_path']) if file['local_available'] else file['remote_url_display'] %}
+                <a
+                  class="post-file-link post-file-image-trigger"
+                  href="{{ image_src }}"
+                  data-post-file-image-trigger
+                  data-lightbox-src="{{ image_src }}"
+                  data-lightbox-title="{{ file['name'] }}"
+                  title="{{ file['name'] }}"
+                >{{ file['name'] if file['name']|length <= 90 else file['name'][:87] ~ '...' }}</a>
+              {% elif file['local_available'] %}
+                <a
+                  class="post-file-link"
+                  href="{{ url_for('serve_file', relative_path=file['local_path']) }}"
+                  title="{{ file['name'] }}"
+                >{{ file['name'] if file['name']|length <= 90 else file['name'][:87] ~ '...' }}</a>
+              {% else %}
+                <a
+                  class="post-file-link"
+                  href="{{ file['remote_url_display'] }}"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="{{ file['name'] }}"
+                >{{ file['name'] if file['name']|length <= 90 else file['name'][:87] ~ '...' }}</a>
+              {% endif %}
+              <small class="post-file-kind">{{ file['kind'] }}</small>
+              {% if not file['local_available'] %}
+                <form
+                  method="post"
+                  action="{{ url_for('retry_attachment_download', post_id=post['id'], attachment_id=file['id'], version_id=active_version['id']) }}"
+                  class="inline-form post-file-retry-form"
+                >
+                  <input type="hidden" name="version_id" value="{{ active_version['id'] }}">
+                  <a
+                    href="{{ url_for('retry_attachment_download', post_id=post['id'], attachment_id=file['id'], version_id=active_version['id']) }}"
+                    class="post-file-retry-link"
+                    onclick="event.preventDefault(); this.closest('form').submit();"
+                  >retry</a>
+                </form>
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p>No files downloaded for this post.</p>
+      {% endif %}
+    </section>
   </div>
 
-  {% if versions|length > 1 %}
-    <div class="post-viewer-details">
-      <form method="get" action="{{ url_for('post_detail', post_id=post['id']) }}" class="post-viewer-version-form">
-        <label for="version-id">Version</label>
-        <select id="version-id" name="version_id" onchange="this.form.submit()">
-          {% for version in versions %}
-            <option value="{{ version['id'] }}" {% if version['id'] == active_version['id'] %}selected{% endif %}>
-              {{ version['label'] }}{% if version['language'] %} ({{ version['language'] }}){% endif %}{% if version['is_default'] %} [default]{% endif %}
-            </option>
-          {% endfor %}
-        </select>
-      </form>
-    </div>
-  {% endif %}
-</section>
-
-<section class="panel post-content">
-  {{ rendered_content | safe }}
-</section>
-
-<section class="panel">
-  <h2>Saved Files</h2>
-  {% if attachments %}
-    <ul class="list post-file-list">
-      {% for file in attachments %}
-        <li>
-          {% if file['is_image'] %}
-            {% set image_src = url_for('serve_file', relative_path=file['local_path']) if file['local_available'] else file['remote_url_display'] %}
-            <a
-              class="post-file-link post-file-image-trigger"
-              href="{{ image_src }}"
-              data-post-file-image-trigger
-              data-lightbox-src="{{ image_src }}"
-              data-lightbox-title="{{ file['name'] }}"
-              title="{{ file['name'] }}"
-            >{{ file['name'] if file['name']|length <= 90 else file['name'][:87] ~ '...' }}</a>
-          {% elif file['local_available'] %}
-            <a
-              class="post-file-link"
-              href="{{ url_for('serve_file', relative_path=file['local_path']) }}"
-              title="{{ file['name'] }}"
-            >{{ file['name'] if file['name']|length <= 90 else file['name'][:87] ~ '...' }}</a>
-          {% else %}
-            <a
-              class="post-file-link"
-              href="{{ file['remote_url_display'] }}"
-              target="_blank"
-              rel="noopener noreferrer"
-              title="{{ file['name'] }}"
-            >{{ file['name'] if file['name']|length <= 90 else file['name'][:87] ~ '...' }}</a>
-          {% endif %}
-          <small class="post-file-kind">{{ file['kind'] }}</small>
-          {% if not file['local_available'] %}
-            <form
-              method="post"
-              action="{{ url_for('retry_attachment_download', post_id=post['id'], attachment_id=file['id'], version_id=active_version['id']) }}"
-              class="inline-form post-file-retry-form"
-            >
-              <input type="hidden" name="version_id" value="{{ active_version['id'] }}">
-              <a
-                href="{{ url_for('retry_attachment_download', post_id=post['id'], attachment_id=file['id'], version_id=active_version['id']) }}"
-                class="post-file-retry-link"
-                onclick="event.preventDefault(); this.closest('form').submit();"
-              >retry</a>
-            </form>
-          {% endif %}
-        </li>
-      {% endfor %}
-    </ul>
-  {% else %}
-    <p>No files downloaded for this post.</p>
-  {% endif %}
-</section>
+  <aside class="post-view-sidebar">
+    <section class="panel post-nav-panel">
+      <div class="post-nav-head">
+        <div>
+          <h2>Navigator</h2>
+          <small>{{ navigator_title }}</small>
+        </div>
+        <div class="post-nav-scope-toggle">
+          <a class="post-nav-scope-chip {% if navigator_scope == 'series' %}is-active{% endif %}" href="{{ navigator_series_url }}">Series</a>
+          <a class="post-nav-scope-chip {% if navigator_scope == 'all' %}is-active{% endif %}" href="{{ navigator_all_url }}">All</a>
+        </div>
+      </div>
+      {% if navigator_entries %}
+        <div class="post-nav-list-region">
+          <button type="button" class="post-nav-current-hint post-nav-current-hint-top" data-post-nav-current-above hidden>↑ Current entry is above</button>
+          <div class="post-nav-list-wrap">
+            <ul class="post-nav-list">
+              {% for entry in navigator_entries %}
+                <li>
+                  <a class="post-nav-link {% if entry['is_current'] %}is-active{% endif %}" href="{{ entry['href'] }}">
+                    <span class="post-nav-link-main">
+                      <strong>{{ entry['title'] }}</strong>
+                      {% if entry['published_at'] %}
+                        <small>{{ entry['published_at']|format_datetime }}</small>
+                      {% endif %}
+                    </span>
+                    {% if navigator_scope == 'all' %}
+                      <span class="post-nav-link-series">{{ entry['series_name'] or 'Unsorted' }}</span>
+                    {% endif %}
+                  </a>
+                </li>
+              {% endfor %}
+            </ul>
+          </div>
+          <button type="button" class="post-nav-current-hint post-nav-current-hint-bottom" data-post-nav-current-below hidden>↓ Current entry is below</button>
+        </div>
+      {% else %}
+        <p class="post-nav-empty">No entries to show.</p>
+      {% endif %}
+    </section>
+  </aside>
+</div>
 <div class="post-lightbox" data-post-lightbox hidden>
   <button type="button" class="post-lightbox-backdrop" data-post-lightbox-close aria-label="Close image preview"></button>
   <figure class="post-lightbox-dialog" role="dialog" aria-modal="true" aria-label="Image preview">
