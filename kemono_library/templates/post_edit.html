@@ -173,11 +173,11 @@
     <div class="post-edit-attachment-body">
       <div class="post-edit-attachment-meta">
         {% if file['tracked'] %}
-          {% if active_version['is_manual'] %}
+          {% if active_version['is_manual'] or not file['local_available'] %}
             <label class="post-edit-attachment-keep">
               <input type="hidden" name="attachment_keep_{{ file['form_key'] }}" value="0" form="post-edit-main-form">
               <input type="checkbox" name="attachment_keep_{{ file['form_key'] }}" value="1" checked form="post-edit-main-form">
-              <span>Keep in version</span>
+              <span>{% if file['local_available'] %}Keep in version{% else %}Keep in version{% endif %}</span>
             </label>
           {% else %}
             <span class="post-edit-attachment-source-badge">Tracked source file</span>
@@ -203,11 +203,17 @@
         value="{{ file['name'] }}"
         form="post-edit-main-form"
       >
-      {% if file['local_available'] %}
+      {% if file['tracked'] %}
         <label class="post-edit-attachment-keep-local">
           <input type="hidden" name="attachment_keep_local_{{ file['form_key'] }}" value="0" form="post-edit-main-form">
-          <input type="checkbox" name="attachment_keep_local_{{ file['form_key'] }}" value="1" checked form="post-edit-main-form">
-          <span>Keep downloaded file</span>
+          <input
+            type="checkbox"
+            name="attachment_keep_local_{{ file['form_key'] }}"
+            value="1"
+            {% if file['local_available'] %}checked{% endif %}
+            form="post-edit-main-form"
+          >
+          <span>{% if file['local_available'] %}Keep downloaded file{% else %}Download and keep local file{% endif %}</span>
         </label>
       {% endif %}
       <div class="post-edit-attachment-actions">

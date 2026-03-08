@@ -947,6 +947,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         tracked_remote_urls: set[str] = set()
         tracked_remote_path_keys: set[str] = set()
         tracked_name_keys: set[str] = set()
+        tracked_remote_name_aliases: set[str] = set()
 
         for idx, row in enumerate(attachments):
             local_path = _optional_str(row["local_path"])
@@ -986,6 +987,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             tracked_name_key = _attachment_collapse_key(row_data["name"])
             if tracked_name_key:
                 tracked_name_keys.add(tracked_name_key)
+            tracked_remote_name_aliases.update(_remote_filename_alias_keys(remote_url))
             if selected_thumbnail_choice is None:
                 if thumbnail_remote_url and row_data["remote_url"] == thumbnail_remote_url:
                     selected_thumbnail_choice = row_data["choice_value"]
@@ -997,16 +999,22 @@ def create_app(test_config: dict | None = None) -> Flask:
         source_candidates = extract_attachments(active_metadata)
         source_candidate_index = 0
         seen_source_keys: set[str] = set()
+        seen_source_aliases: set[str] = set()
         for candidate in source_candidates:
             remote_url = str(candidate.remote_url)
             remote_path_key = _remote_path_key(remote_url)
             candidate_name_key = _attachment_collapse_key(candidate.name)
+            candidate_aliases = _remote_filename_alias_keys(remote_url)
+            if candidate_name_key:
+                candidate_aliases.add(candidate_name_key)
 
             if remote_url in tracked_remote_urls:
                 continue
             if remote_path_key and remote_path_key in tracked_remote_path_keys:
                 continue
             if candidate_name_key and candidate_name_key in tracked_name_keys:
+                continue
+            if candidate_aliases and any(alias in tracked_remote_name_aliases for alias in candidate_aliases):
                 continue
 
             source_identity = (
@@ -1018,7 +1026,10 @@ def create_app(test_config: dict | None = None) -> Flask:
             )
             if source_identity in seen_source_keys:
                 continue
+            if candidate_aliases and any(alias in seen_source_aliases for alias in candidate_aliases):
+                continue
             seen_source_keys.add(source_identity)
+            seen_source_aliases.update(candidate_aliases)
             remote_url_display = _preferred_remote_url_for_access(remote_url, candidate.name)
             is_image = _is_likely_image_attachment(
                 remote_url=remote_url,
@@ -1079,9 +1090,12 @@ def create_app(test_config: dict | None = None) -> Flask:
             for item in attachment_rows:
                 form_key = str(item["form_key"])
                 tracked = bool(item["tracked"])
+                local_path = _optional_str(item["local_path"])
+                local_available = bool(local_path and _is_valid_file(files_base / local_path))
                 keep_in_version: bool
                 if tracked:
-                    if allow_detach:
+                    allow_detach_for_item = allow_detach or not local_available
+                    if allow_detach_for_item:
                         keep_values = request.form.getlist(f"attachment_keep_{form_key}")
                         keep_in_version = True if not keep_values else "1" in keep_values
                     else:
@@ -1095,10 +1109,9 @@ def create_app(test_config: dict | None = None) -> Flask:
                 desired_name_raw = request.form.get(f"attachment_name_{form_key}", item["name"])
                 desired_name = sanitize_filename(str(desired_name_raw or "").strip()) or str(item["name"])
 
-                local_path = _optional_str(item["local_path"])
-                local_available = bool(local_path and _is_valid_file(files_base / local_path))
                 keep_local_values = request.form.getlist(f"attachment_keep_local_{form_key}")
-                keep_local_file = (True if not keep_local_values else "1" in keep_local_values) if local_available else False
+                has_keep_local_field = bool(keep_local_values)
+                keep_local_file = ("1" in keep_local_values) if has_keep_local_field else local_available
                 if local_available and not keep_local_file and local_path:
                     _remove_local_attachment_file(files_base, local_path)
                     local_path = None
@@ -1109,6 +1122,22 @@ def create_app(test_config: dict | None = None) -> Flask:
                         desired_name=desired_name,
                         fallback_name=str(item["name"]),
                     )
+                elif not local_available and keep_local_file:
+                    destination = (
+                        files_base / local_path
+                        if local_path
+                        else files_base / f"post_{post_id}" / desired_name
+                    )
+                    try:
+                        used_remote_url = _download_with_fallback_remote_url(
+                            str(item["remote_url"]),
+                            destination,
+                            desired_name,
+                        )
+                    except Exception:  # noqa: BLE001
+                        used_remote_url = None
+                    if used_remote_url and _is_valid_file(destination):
+                        local_path = destination.relative_to(files_base).as_posix()
 
                 managed = {
                     "id": item["id"],
@@ -1942,6 +1971,29 @@ def _remote_path_key(raw_path_or_url: str) -> str:
     path = parsed.path if parsed.path else raw_path_or_url
     cleaned = path.strip()
     return cleaned.lower() if cleaned else ""
+
+
+def _remote_filename_alias_keys(raw_url: str | None) -> set[str]:
+    if not isinstance(raw_url, str) or not raw_url.strip():
+        return set()
+
+    parsed = urlparse(raw_url)
+    aliases: set[str] = set()
+
+    path_name = Path(parsed.path).name
+    path_key = _attachment_collapse_key(path_name)
+    if path_key:
+        aliases.add(path_key)
+
+    for key, value in parse_qsl(parsed.query, keep_blank_values=False):
+        key_norm = key.strip().lower()
+        if key_norm not in {"f", "file", "filename", "name", "download", "fn"}:
+            continue
+        value_key = _attachment_collapse_key(value)
+        if value_key:
+            aliases.add(value_key)
+
+    return aliases
 
 
 def _build_target_attachment_index(
