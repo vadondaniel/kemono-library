@@ -1263,7 +1263,6 @@ def test_edit_post_attachment_management_is_save_based_and_updates_inline_media(
                 (f"attachment_keep_id_{local_id}", "0"),
                 (f"attachment_keep_id_{local_id}", "1"),
                 (f"attachment_name_id_{local_id}", "renamed local"),
-                (f"attachment_keep_local_id_{local_id}", "0"),
                 (f"attachment_keep_id_{missing_id}", "0"),
                 (f"attachment_keep_id_{missing_id}", "1"),
                 (f"attachment_name_id_{missing_id}", "missing-two.txt"),
@@ -1284,8 +1283,11 @@ def test_edit_post_attachment_management_is_save_based_and_updates_inline_media(
     updated_extra = updated_by_remote["https://kemono.cr/z9/y8/extra.png"]
 
     assert str(updated_local["name"]).startswith("renamed_local")
-    assert updated_local["local_path"] is None
+    assert isinstance(updated_local["local_path"], str)
+    assert str(updated_local["local_path"]).endswith("renamed_local.jpg")
     assert not local_abs.exists()
+    renamed_abs = Path(tmp_path / "files" / str(updated_local["local_path"]))
+    assert renamed_abs.exists()
     assert str(updated_missing["name"]) == "missing-two.txt"
     assert updated_missing["local_path"] is None
     assert str(updated_extra["name"]) == "extra-localized.png"
@@ -1295,7 +1297,7 @@ def test_edit_post_attachment_management_is_save_based_and_updates_inline_media(
     assert after_detail.status_code == 200
     html_after = after_detail.data.decode("utf-8")
     assert f"/files/{local_rel}" not in html_after
-    assert "/a1/b2/local_one.jpg" in html_after
+    assert f"/files/{str(updated_local['local_path'])}" in html_after
 
 
 def test_edit_post_dedupes_local_file_for_same_name_and_same_bytes(tmp_path):

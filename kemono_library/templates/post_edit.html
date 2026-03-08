@@ -173,18 +173,9 @@
     <div class="post-edit-attachment-body">
       <div class="post-edit-attachment-meta">
         {% if file['tracked'] %}
-          <label class="post-edit-attachment-keep">
-            <input type="hidden" name="attachment_keep_{{ file['form_key'] }}" value="0" form="post-edit-main-form">
-            <input type="checkbox" name="attachment_keep_{{ file['form_key'] }}" value="1" checked form="post-edit-main-form">
-            <span>Keep in version</span>
-          </label>
           <span class="post-edit-attachment-source-badge">Tracked source file</span>
         {% else %}
-          <label class="post-edit-attachment-keep">
-            <input type="hidden" name="attachment_add_{{ file['form_key'] }}" value="0" form="post-edit-main-form">
-            <input type="checkbox" name="attachment_add_{{ file['form_key'] }}" value="1" form="post-edit-main-form">
-            <span>Add to version</span>
-          </label>
+          <span class="post-edit-attachment-source-badge">Source candidate</span>
         {% endif %}
         <small class="post-edit-attachment-kind">{{ file['kind'] }}</small>
         {% if file['tracked'] and not file['local_available'] %}
@@ -200,19 +191,6 @@
         value="{{ file['name'] }}"
         form="post-edit-main-form"
       >
-      {% if file['tracked'] %}
-        <label class="post-edit-attachment-keep-local">
-          <input type="hidden" name="attachment_keep_local_{{ file['form_key'] }}" value="0" form="post-edit-main-form">
-          <input
-            type="checkbox"
-            name="attachment_keep_local_{{ file['form_key'] }}"
-            value="1"
-            {% if file['local_available'] %}checked{% endif %}
-            form="post-edit-main-form"
-          >
-          <span>{% if file['local_available'] %}Keep downloaded file{% else %}Download and keep local file{% endif %}</span>
-        </label>
-      {% endif %}
       <div class="post-edit-attachment-actions">
       {% if file['local_available'] %}
         <a class="button-link button-ghost" href="{{ url_for('serve_file', relative_path=file['local_path']) }}" target="_blank" rel="noopener">Open local</a>
@@ -224,6 +202,25 @@
             <button type="submit" class="button-ghost">Retry download</button>
           </form>
         {% endif %}
+      {% endif %}
+      {% if file['tracked'] %}
+        <label class="post-edit-attachment-keep">
+          <input type="hidden" name="attachment_keep_{{ file['form_key'] }}" value="0" form="post-edit-main-form">
+          <input
+            type="checkbox"
+            name="attachment_keep_{{ file['form_key'] }}"
+            value="1"
+            checked
+            form="post-edit-main-form"
+          >
+          <span>Keep file</span>
+        </label>
+      {% else %}
+        <label class="post-edit-attachment-keep">
+          <input type="hidden" name="attachment_add_{{ file['form_key'] }}" value="0" form="post-edit-main-form">
+          <input type="checkbox" name="attachment_add_{{ file['form_key'] }}" value="1" form="post-edit-main-form">
+          <span>Add file</span>
+        </label>
       {% endif %}
       </div>
     </div>

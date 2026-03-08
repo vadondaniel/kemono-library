@@ -2190,6 +2190,10 @@ body.is-lightbox-open {
   justify-content: flex-start;
 }
 
+.post-edit-attachment-actions .post-edit-attachment-keep {
+  margin-left: auto;
+}
+
 .post-edit-tool-row .button-danger-quiet,
 .post-edit-danger .button-danger-quiet,
 .post-edit-attachment-actions .button-danger-quiet {

@@ -14,6 +14,7 @@ from typing import Any, Callable
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import bleach
+from bs4 import BeautifulSoup
 from flask import Flask, flash, jsonify, redirect, render_template, request, send_file, send_from_directory, url_for
 from markupsafe import Markup
 
@@ -1086,6 +1087,9 @@ def create_app(test_config: dict | None = None) -> Flask:
             # Apply attachment edits only on Save.
             managed_attachments_by_choice: dict[str, dict[str, Any]] = {}
             managed_attachments: list[dict[str, Any]] = []
+            local_ref_sync_updates: dict[str, tuple[str | None, str | None]] = {}
+            name_sync_by_remote: dict[str, str] = {}
+            rename_aliases: dict[str, str] = {}
             for item in attachment_rows:
                 form_key = str(item["form_key"])
                 tracked = bool(item["tracked"])
@@ -1103,36 +1107,22 @@ def create_app(test_config: dict | None = None) -> Flask:
 
                 desired_name_raw = request.form.get(f"attachment_name_{form_key}", item["name"])
                 desired_name = sanitize_filename(str(desired_name_raw or "").strip()) or str(item["name"])
+                original_name = sanitize_filename(str(item["name"])).strip()
+                if tracked and original_name and desired_name and original_name != desired_name:
+                    name_sync_by_remote[str(item["remote_url"])] = desired_name
+                    rename_aliases[original_name.lower()] = desired_name
 
-                keep_local_values = request.form.getlist(f"attachment_keep_local_{form_key}")
-                has_keep_local_field = bool(keep_local_values)
-                keep_local_file = ("1" in keep_local_values) if has_keep_local_field else local_available
-                if local_available and not keep_local_file and local_path:
-                    _remove_local_attachment_file(files_base, local_path)
-                    local_path = None
-                elif local_available and keep_local_file and local_path:
+                previous_local_path = local_path
+                if local_available and local_path:
                     local_path = _rename_local_attachment_file(
                         files_base=files_base,
                         local_path=local_path,
                         desired_name=desired_name,
                         fallback_name=str(item["name"]),
                     )
-                elif not local_available and keep_local_file:
-                    destination = (
-                        files_base / local_path
-                        if local_path
-                        else files_base / f"post_{post_id}" / desired_name
-                    )
-                    try:
-                        used_remote_url = _download_with_fallback_remote_url(
-                            str(item["remote_url"]),
-                            destination,
-                            desired_name,
-                        )
-                    except Exception:  # noqa: BLE001
-                        used_remote_url = None
-                    if used_remote_url and _is_valid_file(destination):
-                        local_path = destination.relative_to(files_base).as_posix()
+
+                if previous_local_path and local_path != previous_local_path:
+                    local_ref_sync_updates[previous_local_path] = (local_path, desired_name)
 
                 managed = {
                     "id": item["id"],
@@ -1162,6 +1152,27 @@ def create_app(test_config: dict | None = None) -> Flask:
                     for item in managed_attachments
                 ],
                 version_id=active_version_id,
+            )
+
+            for remote_url, new_name in name_sync_by_remote.items():
+                db.sync_attachment_name_by_remote_for_post(
+                    post_id,
+                    remote_url=remote_url,
+                    new_name=new_name,
+                )
+
+            for old_local_path, (new_local_path, new_name) in local_ref_sync_updates.items():
+                db.sync_attachment_local_refs_for_post(
+                    post_id,
+                    old_local_path=old_local_path,
+                    new_local_path=new_local_path,
+                    new_name=new_name,
+                )
+
+            _reprocess_post_versions_for_media_renames(
+                db,
+                post_id=post_id,
+                rename_aliases=rename_aliases,
             )
 
             resolved_thumbnail_name = active_version["thumbnail_name"]
@@ -2623,6 +2634,135 @@ def _resolve_import_optional_metadata(
     if field_present:
         return _optional_str(requested_value)
     return _optional_str(payload_value)
+
+
+def _reprocess_post_versions_for_media_renames(
+    db: LibraryDB,
+    *,
+    post_id: int,
+    rename_aliases: dict[str, str],
+) -> None:
+    if not rename_aliases:
+        return
+
+    versions = db.list_post_versions(post_id)
+    for version in versions:
+        version_id = int(version["id"])
+        original_content = str(version["content"] or "")
+        original_metadata = _safe_load_metadata(version["metadata_json"])
+
+        rewritten_content = _rewrite_content_media_names(original_content, rename_aliases)
+        rewritten_metadata = _rewrite_metadata_media_names(original_metadata, rename_aliases)
+
+        if rewritten_content == original_content and rewritten_metadata == original_metadata:
+            continue
+
+        db.update_post_version_content_metadata(
+            version_id=version_id,
+            content=rewritten_content,
+            metadata=rewritten_metadata,
+        )
+
+
+def _rewrite_content_media_names(content: str, rename_aliases: dict[str, str]) -> str:
+    if not content or not rename_aliases:
+        return content
+
+    if not re.search(r"<[a-zA-Z][^>]*>", content):
+        updated = content
+        for old_key, new_name in rename_aliases.items():
+            if not old_key or not new_name:
+                continue
+            updated = updated.replace(old_key, new_name)
+        return updated
+
+    soup = BeautifulSoup(content, "html.parser")
+    url_attrs = (
+        ("img", "src"),
+        ("source", "src"),
+        ("video", "src"),
+        ("audio", "src"),
+        ("a", "href"),
+    )
+    for tag_name, attr in url_attrs:
+        for node in soup.find_all(tag_name):
+            raw_url = node.get(attr)
+            if not isinstance(raw_url, str) or not raw_url.strip():
+                continue
+            rewritten = _rewrite_url_media_names(raw_url.strip(), rename_aliases)
+            if rewritten != raw_url:
+                node[attr] = rewritten
+
+    for img in soup.find_all("img"):
+        for attr in ("alt", "title"):
+            raw_value = img.get(attr)
+            if not isinstance(raw_value, str) or not raw_value.strip():
+                continue
+            replacement = rename_aliases.get(sanitize_filename(raw_value).lower())
+            if replacement:
+                img[attr] = replacement
+
+    return str(soup)
+
+
+def _rewrite_metadata_media_names(node: Any, rename_aliases: dict[str, str], *, field: str = "") -> Any:
+    if isinstance(node, dict):
+        out: dict[str, Any] = {}
+        for key, value in node.items():
+            out[key] = _rewrite_metadata_media_names(value, rename_aliases, field=str(key).strip().lower())
+        return out
+    if isinstance(node, list):
+        return [_rewrite_metadata_media_names(item, rename_aliases, field=field) for item in node]
+    if isinstance(node, str):
+        trimmed = node.strip()
+        if field in {"name", "filename", "file_name"}:
+            replacement = rename_aliases.get(sanitize_filename(trimmed).lower())
+            if replacement:
+                return replacement
+        if field in {"path", "url", "remote_url", "src", "href", "thumbnail_url"} or "://" in trimmed or "/" in trimmed:
+            rewritten_url = _rewrite_url_media_names(trimmed, rename_aliases)
+            if rewritten_url != trimmed:
+                return rewritten_url
+        return node
+    return node
+
+
+def _rewrite_url_media_names(raw_url: str, rename_aliases: dict[str, str]) -> str:
+    parsed = urlparse(raw_url)
+    updated_path = parsed.path
+    changed = False
+
+    basename = Path(parsed.path).name
+    if basename:
+        replacement = rename_aliases.get(sanitize_filename(basename).lower())
+        if replacement and replacement != basename:
+            updated_path = f"{parsed.path[: -len(basename)]}{replacement}"
+            changed = True
+
+    updated_query_pairs: list[tuple[str, str]] = []
+    for key, value in parse_qsl(parsed.query, keep_blank_values=True):
+        key_lower = key.strip().lower()
+        if key_lower in {"f", "file", "filename", "name", "download", "fn"}:
+            replacement = rename_aliases.get(sanitize_filename(value).lower())
+            if replacement and replacement != value:
+                updated_query_pairs.append((key, replacement))
+                changed = True
+                continue
+        updated_query_pairs.append((key, value))
+
+    if not changed:
+        return raw_url
+
+    return urlunparse(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            updated_path,
+            parsed.params,
+            urlencode(updated_query_pairs, doseq=True),
+            parsed.fragment,
+        )
+    )
 
 
 def _extract_previews(raw_payload: dict[str, Any]) -> list[dict[str, str]]:
