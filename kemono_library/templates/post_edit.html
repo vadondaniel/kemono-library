@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
+<div class="post-edit-page">
 <section class="panel post-edit-shell">
   <header class="post-edit-head">
     <div class="post-edit-title-wrap">
@@ -28,7 +29,6 @@
       </div>
     </div>
     <div class="post-edit-head-tools">
-      <a class="button-link button-ghost" href="{{ url_for('post_detail', post_id=post['id'], version_id=active_version['id']) }}">Back to post</a>
       <form method="get" action="{{ url_for('edit_post', post_id=post['id']) }}" class="form post-edit-version-switch">
         <label for="active-version">Active version</label>
         <select id="active-version" name="version_id" onchange="this.form.submit()">
@@ -113,9 +113,6 @@
       <textarea id="content" name="content" rows="18">{{ edit_content }}</textarea>
     </section>
 
-    <div class="post-edit-savebar">
-      <button type="submit">Save Changes</button>
-    </div>
   </form>
 </section>
 
@@ -231,5 +228,10 @@
     <p>No attachments saved for this version.</p>
   {% endif %}
 </section>
+<div class="post-edit-floating-actions" aria-label="Post edit quick actions">
+  <a class="button-link button-ghost" href="{{ url_for('post_detail', post_id=post['id'], version_id=active_version['id']) }}">Back to post</a>
+  <button type="submit" form="post-edit-main-form">Save Changes</button>
+</div>
+</div>
 <script src="{{ url_for('static', filename='post_edit.js') }}"></script>
 {% endblock %}
