@@ -230,12 +230,30 @@ def create_app(test_config: dict | None = None) -> Flask:
         selected_creator = request.args.get("creator_id", type=int)
         selected_series = request.args.get("series_id", type=int)
         prefill_url = request.args.get("url", "")
+        prefill_import_target_mode = request.args.get("import_target_mode", "").strip().lower()
+        prefill_target_post_id = request.args.get("target_post_id", type=int)
+        prefill_overwrite_matching_version = _parse_boolish(
+            request.args.get("overwrite_matching_version"),
+            default=True,
+        )
+        prefill_set_as_default = _parse_boolish(
+            request.args.get("set_as_default"),
+            default=True,
+        )
+        prefill_version_label = request.args.get("version_label", "")
+        prefill_version_language = request.args.get("version_language", "")
         return render_template(
             "import_form.html",
             creators=creators,
             selected_creator=selected_creator,
             selected_series=selected_series,
             prefill_url=prefill_url,
+            prefill_import_target_mode=prefill_import_target_mode,
+            prefill_target_post_id=prefill_target_post_id,
+            prefill_overwrite_matching_version=prefill_overwrite_matching_version,
+            prefill_set_as_default=prefill_set_as_default,
+            prefill_version_label=prefill_version_label,
+            prefill_version_language=prefill_version_language,
             series_list=db.list_series(selected_creator) if selected_creator else [],
         )
 
@@ -273,6 +291,21 @@ def create_app(test_config: dict | None = None) -> Flask:
             flash("Could not infer user ID for this URL.", "error")
             return redirect(url_for("import_form", url=raw_url, creator_id=creator_id))
 
+        prefill_import_target_mode = request.form.get("import_target_mode", "").strip().lower()
+        prefill_target_post_id = request.form.get("target_post_id", type=int)
+        prefill_overwrite_matching_version = _form_checkbox_enabled(
+            request.form,
+            "overwrite_matching_version",
+            default=True,
+        )
+        prefill_set_as_default = _form_checkbox_enabled(
+            request.form,
+            "set_as_default",
+            default=True,
+        )
+        prefill_version_label = request.form.get("version_label", "").strip()
+        prefill_version_language = request.form.get("version_language", "").strip()
+
         preview_ref = KemonoPostRef(service=post_ref.service, user_id=str(resolved_user_id), post_id=post_ref.post_id)
         attachments = extract_attachments(raw_payload)
         exact_match = db.find_post_by_source(preview_ref.service, preview_ref.user_id or "", preview_ref.post_id)
@@ -281,6 +314,13 @@ def create_app(test_config: dict | None = None) -> Flask:
             sort_by="published",
             sort_direction="desc",
         )
+        creator_post_ids = {int(row["id"]) for row in creator_posts}
+        target_post_id = prefill_target_post_id if prefill_target_post_id in creator_post_ids else None
+        if exact_match and target_post_id is None:
+            target_post_id = int(exact_match["id"])
+        default_import_target_mode = "existing" if target_post_id else "new"
+        if prefill_import_target_mode in {"new", "existing"} and exact_match is None:
+            default_import_target_mode = prefill_import_target_mode
 
         return render_template(
             "import_preview.html",
@@ -292,8 +332,13 @@ def create_app(test_config: dict | None = None) -> Flask:
             attachments=attachments,
             creator_posts=creator_posts,
             exact_match_post=exact_match,
-            default_target_post_id=int(exact_match["id"]) if exact_match else None,
+            default_target_post_id=target_post_id,
             can_create_new=exact_match is None,
+            default_import_target_mode=default_import_target_mode,
+            default_overwrite_matching_version=prefill_overwrite_matching_version,
+            default_set_as_default=prefill_set_as_default,
+            default_version_label=prefill_version_label or "Original",
+            default_version_language=prefill_version_language,
         )
 
     @app.post("/import/commit")
@@ -307,6 +352,16 @@ def create_app(test_config: dict | None = None) -> Flask:
         if not creator_id or not service or not user_id or not post_id:
             flash("Missing import fields.", "error")
             return redirect(url_for("import_form"))
+        overwrite_matching_version = _form_checkbox_enabled(
+            request.form,
+            "overwrite_matching_version",
+            default=True,
+        )
+        set_as_default = _form_checkbox_enabled(
+            request.form,
+            "set_as_default",
+            default=True,
+        )
         try:
             local_post_id, imported_version_id = _import_post_into_library(
                 db,
@@ -319,8 +374,8 @@ def create_app(test_config: dict | None = None) -> Flask:
                 post_id=post_id,
                 import_target_mode=request.form.get("import_target_mode", "new"),
                 target_post_id=request.form.get("target_post_id", type=int),
-                overwrite_matching_version=request.form.get("overwrite_matching_version", "1") == "1",
-                set_as_default=request.form.get("set_as_default") != "0",
+                overwrite_matching_version=overwrite_matching_version,
+                set_as_default=set_as_default,
                 version_label=request.form.get("version_label"),
                 version_language=request.form.get("version_language"),
                 requested_title=request.form.get("title"),
@@ -346,7 +401,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             return redirect(url_for("import_form"))
 
         flash("Post imported into local library.", "success")
-        if request.form.get("set_as_default") == "0":
+        if not set_as_default:
             return redirect(url_for("post_detail", post_id=local_post_id, version_id=imported_version_id))
         return redirect(url_for("post_detail", post_id=local_post_id))
 
@@ -360,6 +415,16 @@ def create_app(test_config: dict | None = None) -> Flask:
 
         if not creator_id or not service or not user_id or not post_id:
             return jsonify({"error": "Missing import fields."}), 400
+        overwrite_matching_version = _form_checkbox_enabled(
+            request.form,
+            "overwrite_matching_version",
+            default=True,
+        )
+        set_as_default = _form_checkbox_enabled(
+            request.form,
+            "set_as_default",
+            default=True,
+        )
 
         job_id = uuid.uuid4().hex
         job_payload = {
@@ -370,8 +435,8 @@ def create_app(test_config: dict | None = None) -> Flask:
             "post_id": post_id,
             "import_target_mode": request.form.get("import_target_mode", "new"),
             "target_post_id": request.form.get("target_post_id", type=int),
-            "overwrite_matching_version": request.form.get("overwrite_matching_version", "1") == "1",
-            "set_as_default": request.form.get("set_as_default") != "0",
+            "overwrite_matching_version": overwrite_matching_version,
+            "set_as_default": set_as_default,
             "version_label": request.form.get("version_label"),
             "version_language": request.form.get("version_language"),
             "requested_title": request.form.get("title"),
@@ -1475,6 +1540,24 @@ def _resolve_import_version_label(requested_label: str | None, payload_title: An
     if is_new_version:
         return "Original" if _optional_str(payload_title) else "Version"
     return "Version"
+
+
+def _parse_boolish(value: Any, *, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if not text:
+        return default
+    return text in {"1", "true", "on", "yes"}
+
+
+def _form_checkbox_enabled(form: Any, field_name: str, *, default: bool) -> bool:
+    values = form.getlist(field_name)
+    if not values:
+        return default
+    return any(_parse_boolish(value, default=False) for value in values)
 
 
 def _resolve_import_title(

@@ -1385,6 +1385,52 @@ def test_post_detail_uses_requested_version_id(tmp_path):
     assert b"English title" in detail.data
 
 
+def test_edit_version_reimport_link_only_for_non_manual_versions(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Reimport Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="777",
+        external_post_id="888",
+        title="Base",
+        content="base",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/777/post/888",
+    )
+    versions = db.list_post_versions(post_id)
+    assert versions
+    non_manual_id = int(versions[0]["id"])
+
+    client = app.test_client()
+    non_manual_page = client.get(f"/posts/{post_id}/edit?version_id={non_manual_id}")
+    assert non_manual_page.status_code == 200
+    assert b"Reimport and overwrite this version" in non_manual_page.data
+    assert b"/import?" in non_manual_page.data
+    assert b"url=https://kemono.cr/fanbox/user/777/post/888" in non_manual_page.data
+
+    manual_id = db.clone_post_version(
+        post_id=post_id,
+        source_version_id=non_manual_id,
+        label="Manual",
+        language="en",
+        set_default=False,
+    )
+    manual_page = client.get(f"/posts/{post_id}/edit?version_id={manual_id}")
+    assert manual_page.status_code == 200
+    assert b"Reimport and overwrite this version" not in manual_page.data
+
+
 def test_resolve_link_matches_version_source_tuple(tmp_path):
     app = create_app(
         {

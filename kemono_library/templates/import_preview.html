@@ -53,11 +53,11 @@
     <h3>Version Target</h3>
     {% if can_create_new %}
       <label>
-        <input type="radio" name="import_target_mode" value="new" {% if not default_target_post_id %}checked{% endif %}>
+        <input type="radio" name="import_target_mode" value="new" {% if default_import_target_mode == 'new' %}checked{% endif %}>
         Create new post
       </label>
       <label>
-        <input type="radio" name="import_target_mode" value="existing" {% if default_target_post_id %}checked{% endif %}>
+        <input type="radio" name="import_target_mode" value="existing" {% if default_import_target_mode == 'existing' %}checked{% endif %}>
         Add as version to existing post
       </label>
       <label for="target-post-id">Target post</label>
@@ -76,22 +76,24 @@
     {% endif %}
 
     <label>
-      <input type="checkbox" name="overwrite_matching_version" value="1" {% if exact_match_post %}checked{% endif %}>
+      <input type="hidden" name="overwrite_matching_version" value="0">
+      <input type="checkbox" name="overwrite_matching_version" value="1" {% if default_overwrite_matching_version %}checked{% endif %}>
       Overwrite matching source version if it exists
     </label>
     <label>
-      <input type="checkbox" name="set_as_default" value="1" checked>
+      <input type="hidden" name="set_as_default" value="0">
+      <input type="checkbox" name="set_as_default" value="1" {% if default_set_as_default %}checked{% endif %}>
       Set imported version as default
     </label>
 
     <div class="import-version-meta-grid">
       <div>
         <label for="version-label">Version label</label>
-        <input id="version-label" name="version_label" value="Original" placeholder="EN TL / JP / Manual">
+        <input id="version-label" name="version_label" value="{{ default_version_label }}" placeholder="EN TL / JP / Manual">
       </div>
       <div>
         <label for="version-language">Language (optional)</label>
-        <input id="version-language" name="version_language" placeholder="en / ja / ko">
+        <input id="version-language" name="version_language" value="{{ default_version_language }}" placeholder="en / ja / ko">
       </div>
     </div>
   </div>
