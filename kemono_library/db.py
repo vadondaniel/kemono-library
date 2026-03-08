@@ -284,7 +284,17 @@ class LibraryDB:
                                p.published_at DESC,
                                p.id DESC
                            LIMIT 1
-                       ) AS cover_thumbnail_remote_url
+                       ) AS cover_thumbnail_remote_url,
+                       (
+                           SELECT p.metadata_json
+                           FROM posts p
+                           WHERE p.series_id = s.id
+                           ORDER BY
+                               CASE WHEN p.published_at IS NULL OR p.published_at = '' THEN 1 ELSE 0 END ASC,
+                               p.published_at DESC,
+                               p.id DESC
+                           LIMIT 1
+                       ) AS cover_metadata_json
                 FROM series s
                 WHERE s.creator_id = ?
                 ORDER BY s.name COLLATE NOCASE

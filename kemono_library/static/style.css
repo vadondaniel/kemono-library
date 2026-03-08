@@ -1335,14 +1335,25 @@ small {
   min-height: 124px;
 }
 
-.folder-tile-thumb {
+.folder-tile-thumb-wrap {
+  position: relative;
   width: 100%;
-  height: auto;
+  display: block;
   aspect-ratio: 1200 / 630;
   border-radius: 0.45rem;
   border: 1px solid var(--border);
+  overflow: hidden;
+  background: color-mix(in srgb, var(--card-solid) 88%, transparent);
+}
+
+.folder-tile-thumb {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   object-fit: cover;
   display: block;
+  transition: object-position 120ms ease-out;
 }
 
 .folder-tile:hover {
@@ -1579,10 +1590,13 @@ small {
 }
 
 .creator-post-thumb img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
+  transition: object-position 120ms ease-out;
 }
 
 .creator-post-thumb-fallback {
@@ -1653,6 +1667,251 @@ small {
 .creator-empty {
   color: var(--muted);
   margin: 0.35rem 0 0;
+}
+
+.post-edit-shell {
+  background:
+    radial-gradient(560px 220px at 96% -16%, color-mix(in srgb, var(--accent-soft) 58%, transparent), transparent 72%),
+    var(--card);
+}
+
+.post-edit-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+  gap: 1rem;
+  align-items: start;
+}
+
+.post-edit-kicker {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.post-edit-title-wrap h1 {
+  margin: 0.22rem 0 0.35rem;
+  line-height: 1.15;
+}
+
+.post-edit-subtitle {
+  margin: 0;
+  color: var(--muted);
+}
+
+.post-edit-chips {
+  margin-top: 0.58rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.post-edit-chip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.2rem 0.56rem;
+  font-size: 0.8rem;
+  background: color-mix(in srgb, var(--card-solid) 92%, transparent);
+}
+
+.post-edit-chip-link {
+  text-decoration: none;
+  color: var(--accent);
+}
+
+.post-edit-head-tools {
+  display: grid;
+  gap: 0.65rem;
+  justify-items: stretch;
+}
+
+.post-edit-version-switch {
+  margin: 0;
+  gap: 0.4rem;
+}
+
+.post-edit-form {
+  margin-top: 0.9rem;
+  display: grid;
+  gap: 0.72rem;
+}
+
+.post-edit-block {
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 0.72rem;
+  background: color-mix(in srgb, var(--card-solid) 95%, transparent);
+  padding: 0.72rem;
+  display: grid;
+  gap: 0.54rem;
+}
+
+.post-edit-block h2 {
+  margin: 0 0 0.12rem;
+  font-size: 1.08rem;
+}
+
+.post-edit-field-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.post-edit-side-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.post-edit-thumbnail-preview {
+  width: 100%;
+  aspect-ratio: 40 / 21;
+  object-fit: cover;
+  display: block;
+  vertical-align: top;
+  border-radius: 0.58rem;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--card-solid) 90%, transparent);
+}
+
+.post-edit-thumbnail-stage {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 0.62rem;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--card-solid) 90%, transparent);
+  cursor: default;
+  user-select: none;
+  touch-action: none;
+}
+
+.post-edit-thumbnail-stage.axis-x {
+  cursor: grab;
+}
+
+.post-edit-thumbnail-stage.axis-y {
+  cursor: grab;
+}
+
+.post-edit-thumbnail-stage.axis-none {
+  cursor: default;
+}
+
+.post-edit-thumbnail-stage.is-dragging {
+  cursor: grabbing;
+}
+
+.post-edit-thumbnail-stage .post-edit-thumbnail-preview {
+  border: 0;
+  border-radius: 0;
+}
+
+.post-edit-thumbnail-stage.is-empty {
+  min-height: 120px;
+  display: grid;
+  place-items: center;
+}
+
+.post-edit-thumbnail-empty {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.post-edit-thumb-readout {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.83rem;
+}
+
+.post-edit-tools h2,
+.post-edit-attachments h2 {
+  margin-bottom: 0.7rem;
+}
+
+.post-edit-savebar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.post-edit-tool-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.post-edit-danger details {
+  border: 1px solid color-mix(in srgb, #9f4d58 26%, var(--border));
+  border-radius: 0.72rem;
+  padding: 0.62rem 0.7rem;
+  background: color-mix(in srgb, #9f4d58 4%, var(--card-solid));
+}
+
+.post-edit-danger summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.post-edit-danger p {
+  margin: 0.6rem 0;
+  color: var(--muted);
+}
+
+.post-edit-attachment-list {
+  list-style: none;
+  padding-left: 0;
+  gap: 0.55rem;
+}
+
+.post-edit-attachment-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.7rem;
+  align-items: center;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: 0.66rem;
+  padding: 0.56rem 0.62rem;
+  background: color-mix(in srgb, var(--card-solid) 94%, transparent);
+}
+
+.post-edit-attachment-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.42rem;
+  align-items: center;
+  min-width: 0;
+}
+
+.post-edit-attachment-name {
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.post-edit-attachment-kind {
+  margin: 0;
+  padding: 0.12rem 0.42rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-transform: lowercase;
+}
+
+.post-edit-attachment-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.post-edit-tool-row .button-danger-quiet,
+.post-edit-danger .button-danger-quiet,
+.post-edit-attachment-actions .button-danger-quiet {
+  width: fit-content;
+  justify-content: center;
 }
 
 .post-actions {
@@ -1733,6 +1992,30 @@ small {
   .import-action-bar {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .post-edit-head {
+    grid-template-columns: 1fr;
+  }
+
+  .post-edit-field-row {
+    grid-template-columns: 1fr;
+  }
+
+  .post-edit-savebar {
+    justify-content: stretch;
+  }
+
+  .post-edit-savebar button {
+    width: 100%;
+  }
+
+  .post-edit-attachment-item {
+    grid-template-columns: 1fr;
+  }
+
+  .post-edit-attachment-actions {
+    justify-content: flex-start;
   }
 
   .creator-hero-main {

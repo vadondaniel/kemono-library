@@ -795,6 +795,61 @@ def test_edit_page_prettifies_html_content(tmp_path):
     assert b"Hello" in response.data
 
 
+def test_edit_post_saves_thumbnail_focus_and_applies_to_creator_grid(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Focus Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="111",
+        external_post_id="222",
+        title="Focus Me",
+        content="<p>Body</p>",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/111/post/222",
+        thumbnail_name="cover.jpg",
+        thumbnail_remote_url="https://kemono.cr/a/b/cover.jpg",
+        thumbnail_local_path=None,
+    )
+
+    version_row = db.get_post_version(post_id)
+    assert version_row is not None
+    version_id = int(version_row["id"])
+
+    client = app.test_client()
+    response = client.post(
+        f"/posts/{post_id}/edit",
+        data={
+            "version_id": str(version_id),
+            "version_label": "Original",
+            "version_language": "",
+            "title": "Focus Me",
+            "series_id": "",
+            "thumbnail_attachment_id": "__keep__",
+            "thumbnail_focus_x": "22.5",
+            "thumbnail_focus_y": "77.5",
+            "content": "<p>Body</p>",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+
+    creator_page = client.get(f"/creators/{creator_id}")
+    assert creator_page.status_code == 200
+    html = creator_page.data.decode("utf-8")
+    assert "object-position: 22.5% 77.5%" in html
+
+
 def test_creator_folder_filter_and_sort_modes(tmp_path):
     app = create_app(
         {

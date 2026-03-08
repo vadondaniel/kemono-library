@@ -136,20 +136,26 @@
           <div class="folder-tile-wrap">
             <a class="folder-tile {% if selected_series and selected_series['id'] == series['id'] %}is-active{% endif %}" href="{{ url_for('creator_detail', creator_id=creator['id'], series_id=series['id'], sort=sort_by, direction=sort_direction) }}">
               {% if series['cover_thumbnail_local_path'] %}
-                <img
-                  class="folder-tile-thumb"
-                  src="{{ url_for('serve_file', relative_path=series['cover_thumbnail_local_path']) }}"
-                  alt="{{ series['name'] }} thumbnail"
-                  loading="lazy"
-                >
+                <span class="folder-tile-thumb-wrap">
+                  <img
+                    class="folder-tile-thumb"
+                    src="{{ url_for('serve_file', relative_path=series['cover_thumbnail_local_path']) }}"
+                    alt="{{ series['name'] }} thumbnail"
+                    style="object-fit: cover; object-position: {{ series['cover_thumbnail_focus_x'] }}% {{ series['cover_thumbnail_focus_y'] }}%;"
+                    loading="lazy"
+                  >
+                </span>
               {% elif series['cover_thumbnail_remote_url'] %}
-                <img
-                  class="folder-tile-thumb"
-                  src="{{ series['cover_thumbnail_remote_url'] }}"
-                  alt="{{ series['name'] }} thumbnail"
-                  loading="lazy"
-                  referrerpolicy="no-referrer"
-                >
+                <span class="folder-tile-thumb-wrap">
+                  <img
+                    class="folder-tile-thumb"
+                    src="{{ series['cover_thumbnail_remote_url'] }}"
+                    alt="{{ series['name'] }} thumbnail"
+                    style="object-fit: cover; object-position: {{ series['cover_thumbnail_focus_x'] }}% {{ series['cover_thumbnail_focus_y'] }}%;"
+                    loading="lazy"
+                    referrerpolicy="no-referrer"
+                  >
+                </span>
               {% else %}
                 <span class="folder-tile-icon" aria-hidden="true"></span>
               {% endif %}
@@ -199,9 +205,9 @@
                 <time class="creator-post-published" datetime="{{ post['published_at'] }}">{{ post['published_at']|format_datetime }}</time>
               {% endif %}
               {% if post['thumbnail_local_path'] %}
-                <img src="{{ url_for('serve_file', relative_path=post['thumbnail_local_path']) }}" alt="{{ post['title'] }}" loading="lazy">
+                <img src="{{ url_for('serve_file', relative_path=post['thumbnail_local_path']) }}" alt="{{ post['title'] }}" style="object-fit: cover; object-position: {{ post['thumbnail_focus_x'] }}% {{ post['thumbnail_focus_y'] }}%;" loading="lazy">
               {% elif post['thumbnail_remote_url'] %}
-                <img src="{{ post['thumbnail_remote_url'] }}" alt="{{ post['title'] }}" loading="lazy" referrerpolicy="no-referrer">
+                <img src="{{ post['thumbnail_remote_url'] }}" alt="{{ post['title'] }}" style="object-fit: cover; object-position: {{ post['thumbnail_focus_x'] }}% {{ post['thumbnail_focus_y'] }}%;" loading="lazy" referrerpolicy="no-referrer">
               {% else %}
                 <span class="creator-post-thumb-fallback" aria-hidden="true">No preview</span>
               {% endif %}

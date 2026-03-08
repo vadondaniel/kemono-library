@@ -108,7 +108,11 @@ def create_app(test_config: dict | None = None) -> Flask:
         creator = db.get_creator(creator_id)
         if not creator:
             return ("Creator not found", 404)
-        series_list = db.list_series(creator_id)
+        series_list = [dict(row) for row in db.list_series(creator_id)]
+        for series in series_list:
+            focus_x, focus_y = _extract_thumbnail_focus_from_raw_metadata(series.get("cover_metadata_json"))
+            series["cover_thumbnail_focus_x"] = focus_x
+            series["cover_thumbnail_focus_y"] = focus_y
         series_by_id = {int(series["id"]): series for series in series_list}
 
         requested_series_id = request.args.get("series_id", type=int)
@@ -131,18 +135,20 @@ def create_app(test_config: dict | None = None) -> Flask:
             selected_series_id = requested_series_id
             active_folder = "series"
 
-        posts = db.list_posts_for_creator(
+        posts_rows = db.list_posts_for_creator(
             creator_id,
             series_id=selected_series_id,
             unsorted_only=unsorted_only,
             sort_by=sort_by,
             sort_direction=sort_direction,
         )
-        all_posts = db.list_posts_for_creator(
-            creator_id,
-            sort_by="published",
-            sort_direction="desc",
-        )
+        posts: list[dict[str, Any]] = []
+        for row in posts_rows:
+            item = dict(row)
+            focus_x, focus_y = _extract_thumbnail_focus_from_raw_metadata(item.get("metadata_json"))
+            item["thumbnail_focus_x"] = focus_x
+            item["thumbnail_focus_y"] = focus_y
+            posts.append(item)
         return render_template(
             "creator_detail.html",
             creator=creator,
@@ -713,15 +719,141 @@ def create_app(test_config: dict | None = None) -> Flask:
         active_version_id = int(active_version["id"])
         versions = db.list_post_versions(post_id)
         series_list = db.list_series(post["creator_id"])
+        files_base = Path(app.config["FILES_DIR"])
+        attachments = db.list_attachments(post_id, version_id=active_version_id)
+
+        attachment_rows: list[dict[str, Any]] = []
+        selected_thumbnail_attachment_id: int | None = None
+        thumbnail_remote_url = _optional_str(active_version["thumbnail_remote_url"])
+        thumbnail_name = _optional_str(active_version["thumbnail_name"])
+        thumbnail_local_path = _optional_str(active_version["thumbnail_local_path"])
+        thumbnail_preview_url: str | None = None
+        active_metadata = _safe_load_metadata(active_version["metadata_json"])
+        thumbnail_focus_x, thumbnail_focus_y = _extract_thumbnail_focus_from_metadata(active_metadata)
+
+        for row in attachments:
+            local_path = _optional_str(row["local_path"])
+            local_available = _is_valid_file(files_base / local_path) if local_path else False
+            row_data = {
+                "id": int(row["id"]),
+                "name": str(row["name"]),
+                "kind": str(row["kind"]),
+                "remote_url": str(row["remote_url"]),
+                "remote_url_display": _preferred_remote_url_for_access(str(row["remote_url"]), row["name"]),
+                "local_path": local_path,
+                "local_available": local_available,
+            }
+            attachment_rows.append(row_data)
+            if selected_thumbnail_attachment_id is None:
+                if thumbnail_remote_url and row_data["remote_url"] == thumbnail_remote_url:
+                    selected_thumbnail_attachment_id = row_data["id"]
+                elif thumbnail_local_path and row_data["local_path"] == thumbnail_local_path:
+                    selected_thumbnail_attachment_id = row_data["id"]
+                elif thumbnail_name and row_data["name"] == thumbnail_name:
+                    selected_thumbnail_attachment_id = row_data["id"]
+
+        if thumbnail_local_path and _is_valid_file(files_base / thumbnail_local_path):
+            thumbnail_preview_url = url_for("serve_file", relative_path=thumbnail_local_path)
+        elif thumbnail_remote_url:
+            thumbnail_preview_url = _preferred_remote_url_for_access(thumbnail_remote_url, thumbnail_name)
+
         if request.method == "POST":
+            action = request.form.get("action", "save").strip().lower()
+
+            if action == "remove_attachment":
+                attachment_id = request.form.get("attachment_id", type=int)
+                if not attachment_id:
+                    flash("Attachment not found.", "error")
+                    return redirect(url_for("edit_post", post_id=post_id, version_id=active_version_id))
+
+                removed = next((item for item in attachment_rows if item["id"] == attachment_id), None)
+                if not removed:
+                    flash("Attachment not found.", "error")
+                    return redirect(url_for("edit_post", post_id=post_id, version_id=active_version_id))
+
+                remaining = [
+                    {
+                        "name": item["name"],
+                        "remote_url": item["remote_url"],
+                        "local_path": item["local_path"],
+                        "kind": item["kind"],
+                    }
+                    for item in attachment_rows
+                    if item["id"] != attachment_id
+                ]
+                db.replace_attachments(post_id, remaining, version_id=active_version_id)
+
+                if (
+                    (thumbnail_remote_url and removed["remote_url"] == thumbnail_remote_url)
+                    or (thumbnail_local_path and removed["local_path"] == thumbnail_local_path)
+                ):
+                    updated_metadata = _set_thumbnail_focus_in_metadata(active_metadata, None, None)
+                    db.update_post_version(
+                        version_id=active_version_id,
+                        label=active_version["label"],
+                        language=active_version["language"],
+                        title=active_version["title"],
+                        content=active_version["content"],
+                        thumbnail_name=None,
+                        thumbnail_remote_url=None,
+                        thumbnail_local_path=None,
+                        published_at=active_version["published_at"],
+                        edited_at=active_version["edited_at"],
+                        next_external_post_id=active_version["next_external_post_id"],
+                        prev_external_post_id=active_version["prev_external_post_id"],
+                        metadata=updated_metadata,
+                        source_url=active_version["source_url"],
+                    )
+                flash("Attachment removed from this version.", "success")
+                return redirect(url_for("edit_post", post_id=post_id, version_id=active_version_id))
+
             title = request.form.get("title", "").strip()
             content = request.form.get("content", "")
             series_id = request.form.get("series_id", type=int)
             version_label = request.form.get("version_label", "").strip() or "Version"
             version_language = request.form.get("version_language")
+            thumbnail_choice = request.form.get("thumbnail_attachment_id", "__keep__").strip()
+            focus_x, focus_y = _parse_thumbnail_focus_inputs(
+                request.form.get("thumbnail_focus_x"),
+                request.form.get("thumbnail_focus_y"),
+                fallback_x=thumbnail_focus_x,
+                fallback_y=thumbnail_focus_y,
+            )
             if not title:
                 flash("Version title is required.", "error")
                 return redirect(url_for("edit_post", post_id=post_id, version_id=active_version_id))
+
+            resolved_thumbnail_name = active_version["thumbnail_name"]
+            resolved_thumbnail_remote_url = active_version["thumbnail_remote_url"]
+            resolved_thumbnail_local_path = active_version["thumbnail_local_path"]
+
+            if thumbnail_choice == "__none__":
+                resolved_thumbnail_name = None
+                resolved_thumbnail_remote_url = None
+                resolved_thumbnail_local_path = None
+                focus_x = None
+                focus_y = None
+            elif thumbnail_choice != "__keep__":
+                try:
+                    selected_thumbnail_id = int(thumbnail_choice)
+                except (TypeError, ValueError):
+                    flash("Selected thumbnail file was not found.", "error")
+                    return redirect(url_for("edit_post", post_id=post_id, version_id=active_version_id))
+                selected_attachment = next(
+                    (item for item in attachment_rows if item["id"] == selected_thumbnail_id),
+                    None,
+                )
+                if selected_attachment is None:
+                    flash("Selected thumbnail file was not found.", "error")
+                    return redirect(url_for("edit_post", post_id=post_id, version_id=active_version_id))
+                resolved_thumbnail_name = selected_attachment["name"]
+                resolved_thumbnail_remote_url = selected_attachment["remote_url"]
+                if selected_attachment["local_path"] and selected_attachment["local_available"]:
+                    resolved_thumbnail_local_path = selected_attachment["local_path"]
+                else:
+                    resolved_thumbnail_local_path = None
+
+            metadata_for_save = _set_thumbnail_focus_in_metadata(active_metadata, focus_x, focus_y)
             db.update_post_series(post_id=post_id, series_id=series_id)
             db.update_post_version(
                 version_id=active_version_id,
@@ -729,14 +861,14 @@ def create_app(test_config: dict | None = None) -> Flask:
                 language=version_language,
                 title=title,
                 content=content,
-                thumbnail_name=active_version["thumbnail_name"],
-                thumbnail_remote_url=active_version["thumbnail_remote_url"],
-                thumbnail_local_path=active_version["thumbnail_local_path"],
+                thumbnail_name=resolved_thumbnail_name,
+                thumbnail_remote_url=resolved_thumbnail_remote_url,
+                thumbnail_local_path=resolved_thumbnail_local_path,
                 published_at=active_version["published_at"],
                 edited_at=active_version["edited_at"],
                 next_external_post_id=active_version["next_external_post_id"],
                 prev_external_post_id=active_version["prev_external_post_id"],
-                metadata=_safe_load_metadata(active_version["metadata_json"]),
+                metadata=metadata_for_save,
                 source_url=active_version["source_url"],
             )
             flash("Post updated.", "success")
@@ -748,6 +880,11 @@ def create_app(test_config: dict | None = None) -> Flask:
             active_version=active_version,
             series_list=series_list,
             edit_content=_prettify_content_for_edit(active_version["content"]),
+            attachments=attachment_rows,
+            selected_thumbnail_attachment_id=selected_thumbnail_attachment_id,
+            thumbnail_preview_url=thumbnail_preview_url,
+            thumbnail_focus_x=thumbnail_focus_x,
+            thumbnail_focus_y=thumbnail_focus_y,
         )
 
     @app.post("/posts/<int:post_id>/versions/<int:version_id>/set-default")
@@ -1145,6 +1282,60 @@ def _safe_load_metadata(raw_metadata: str | None) -> dict[str, Any]:
     except json.JSONDecodeError:
         return {}
     return loaded if isinstance(loaded, dict) else {}
+
+
+_THUMBNAIL_FOCUS_KEY = "_local_thumbnail_focus"
+
+
+def _clamp_thumbnail_focus(value: Any, *, fallback: float = 50.0) -> float:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return fallback
+    return max(0.0, min(100.0, numeric))
+
+
+def _extract_thumbnail_focus_from_metadata(metadata: dict[str, Any]) -> tuple[float, float]:
+    focus_block = metadata.get(_THUMBNAIL_FOCUS_KEY)
+    if not isinstance(focus_block, dict):
+        return 50.0, 50.0
+    x = _clamp_thumbnail_focus(focus_block.get("x"), fallback=50.0)
+    y = _clamp_thumbnail_focus(focus_block.get("y"), fallback=50.0)
+    return x, y
+
+
+def _extract_thumbnail_focus_from_raw_metadata(raw_metadata: Any) -> tuple[float, float]:
+    parsed = _safe_load_metadata(raw_metadata if isinstance(raw_metadata, str) else None)
+    return _extract_thumbnail_focus_from_metadata(parsed)
+
+
+def _set_thumbnail_focus_in_metadata(
+    metadata: dict[str, Any],
+    x: float | None,
+    y: float | None,
+) -> dict[str, Any]:
+    updated = dict(metadata)
+    if x is None or y is None:
+        updated.pop(_THUMBNAIL_FOCUS_KEY, None)
+        return updated
+    updated[_THUMBNAIL_FOCUS_KEY] = {
+        "x": _clamp_thumbnail_focus(x, fallback=50.0),
+        "y": _clamp_thumbnail_focus(y, fallback=50.0),
+    }
+    return updated
+
+
+def _parse_thumbnail_focus_inputs(
+    raw_x: str | None,
+    raw_y: str | None,
+    *,
+    fallback_x: float,
+    fallback_y: float,
+) -> tuple[float, float]:
+    return (
+        _clamp_thumbnail_focus(raw_x, fallback=fallback_x),
+        _clamp_thumbnail_focus(raw_y, fallback=fallback_y),
+    )
 
 
 def _iter_metadata_media_entries(metadata: dict[str, Any]) -> list[dict[str, Any]]:
