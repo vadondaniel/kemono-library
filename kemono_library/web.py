@@ -102,7 +102,8 @@ def create_app(test_config: dict | None = None) -> Flask:
             flash("Creator updated.", "success")
             return redirect(url_for("creator_detail", creator_id=creator_id))
 
-        return render_template("creator_edit.html", creator=creator)
+        header_context = _build_creator_header_context(creator=creator, selected_series=None)
+        return render_template("creator_edit.html", creator=creator, header_context=header_context)
 
     @app.get("/creators/<int:creator_id>")
     def creator_detail(creator_id: int):
