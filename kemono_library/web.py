@@ -275,6 +275,12 @@ def create_app(test_config: dict | None = None) -> Flask:
 
         preview_ref = KemonoPostRef(service=post_ref.service, user_id=str(resolved_user_id), post_id=post_ref.post_id)
         attachments = extract_attachments(raw_payload)
+        exact_match = db.find_post_by_source(preview_ref.service, preview_ref.user_id or "", preview_ref.post_id)
+        creator_posts = db.list_posts_for_creator(
+            creator_id,
+            sort_by="published",
+            sort_direction="desc",
+        )
 
         return render_template(
             "import_preview.html",
@@ -284,6 +290,10 @@ def create_app(test_config: dict | None = None) -> Flask:
             post_ref=preview_ref,
             payload=payload,
             attachments=attachments,
+            creator_posts=creator_posts,
+            exact_match_post=exact_match,
+            default_target_post_id=int(exact_match["id"]) if exact_match else None,
+            can_create_new=exact_match is None,
         )
 
     @app.post("/import/commit")
@@ -298,7 +308,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             flash("Missing import fields.", "error")
             return redirect(url_for("import_form"))
         try:
-            local_post_id = _import_post_into_library(
+            local_post_id, imported_version_id = _import_post_into_library(
                 db,
                 files_base=Path(app.config["FILES_DIR"]),
                 icons_base=Path(app.config["ICONS_DIR"]),
@@ -307,6 +317,12 @@ def create_app(test_config: dict | None = None) -> Flask:
                 service=service,
                 user_id=user_id,
                 post_id=post_id,
+                import_target_mode=request.form.get("import_target_mode", "new"),
+                target_post_id=request.form.get("target_post_id", type=int),
+                overwrite_matching_version=request.form.get("overwrite_matching_version", "1") == "1",
+                set_as_default=request.form.get("set_as_default") != "0",
+                version_label=request.form.get("version_label"),
+                version_language=request.form.get("version_language"),
                 requested_title=request.form.get("title"),
                 requested_content=request.form.get("content"),
                 requested_published_at=request.form.get("published_at"),
@@ -330,6 +346,8 @@ def create_app(test_config: dict | None = None) -> Flask:
             return redirect(url_for("import_form"))
 
         flash("Post imported into local library.", "success")
+        if request.form.get("set_as_default") == "0":
+            return redirect(url_for("post_detail", post_id=local_post_id, version_id=imported_version_id))
         return redirect(url_for("post_detail", post_id=local_post_id))
 
     @app.post("/import/start")
@@ -350,6 +368,12 @@ def create_app(test_config: dict | None = None) -> Flask:
             "service": service,
             "user_id": user_id,
             "post_id": post_id,
+            "import_target_mode": request.form.get("import_target_mode", "new"),
+            "target_post_id": request.form.get("target_post_id", type=int),
+            "overwrite_matching_version": request.form.get("overwrite_matching_version", "1") == "1",
+            "set_as_default": request.form.get("set_as_default") != "0",
+            "version_label": request.form.get("version_label"),
+            "version_language": request.form.get("version_language"),
             "requested_title": request.form.get("title"),
             "requested_content": request.form.get("content"),
             "requested_published_at": request.form.get("published_at"),
@@ -407,7 +431,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                     if job:
                         job.update({"status": "running", "message": "Fetching post payload..."})
 
-                local_post_id = _import_post_into_library(
+                local_post_id, imported_version_id = _import_post_into_library(
                     db,
                     files_base=Path(app.config["FILES_DIR"]),
                     icons_base=Path(app.config["ICONS_DIR"]),
@@ -416,6 +440,12 @@ def create_app(test_config: dict | None = None) -> Flask:
                     service=str(job_payload["service"]),
                     user_id=str(job_payload["user_id"]),
                     post_id=str(job_payload["post_id"]),
+                    import_target_mode=str(job_payload["import_target_mode"]),
+                    target_post_id=job_payload.get("target_post_id"),
+                    overwrite_matching_version=bool(job_payload["overwrite_matching_version"]),
+                    set_as_default=bool(job_payload["set_as_default"]),
+                    version_label=job_payload.get("version_label"),
+                    version_language=job_payload.get("version_language"),
                     requested_title=job_payload.get("requested_title"),
                     requested_content=job_payload.get("requested_content"),
                     requested_published_at=job_payload.get("requested_published_at"),
@@ -437,7 +467,11 @@ def create_app(test_config: dict | None = None) -> Flask:
                                 "status": "completed",
                                 "message": "Import complete.",
                                 "completed": max(completed, total),
-                                "redirect_url": f"/posts/{local_post_id}",
+                                "redirect_url": (
+                                    f"/posts/{local_post_id}?version_id={imported_version_id}"
+                                    if not bool(job_payload["set_as_default"])
+                                    else f"/posts/{local_post_id}"
+                                ),
                             }
                         )
             except Exception as exc:  # noqa: BLE001
@@ -475,9 +509,18 @@ def create_app(test_config: dict | None = None) -> Flask:
         post = db.get_post(post_id)
         if not post:
             return ("Post not found", 404)
-        attachments = db.list_attachments(post_id)
-        local_media_map, local_media_by_name = _build_local_media_maps(post, attachments)
-        remote_media_by_name = _build_remote_media_by_name(post, attachments)
+        requested_version_id = request.args.get("version_id", type=int)
+        active_version = db.get_post_version(post_id, requested_version_id)
+        if not active_version:
+            versions = db.list_post_versions(post_id)
+            if not versions:
+                return ("Post version not found", 404)
+            active_version = versions[0]
+        versions = db.list_post_versions(post_id)
+        active_version_id = int(active_version["id"])
+        attachments = db.list_attachments(post_id, version_id=active_version_id)
+        local_media_map, local_media_by_name = _build_local_media_maps(active_version, attachments)
+        remote_media_by_name = _build_remote_media_by_name(active_version, attachments)
         files_base = Path(app.config["FILES_DIR"])
         attachment_rows = []
         for row in attachments:
@@ -500,7 +543,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             )
 
         rendered_content = render_post_content(
-            post["content"],
+            active_version["content"],
             current_service=post["service"],
             current_user_id=post["external_user_id"],
             current_post_id=post_id,
@@ -511,6 +554,8 @@ def create_app(test_config: dict | None = None) -> Flask:
         return render_template(
             "post_detail.html",
             post=post,
+            versions=versions,
+            active_version=active_version,
             attachments=attachment_rows,
             rendered_content=rendered_content,
         )
@@ -520,9 +565,19 @@ def create_app(test_config: dict | None = None) -> Flask:
         post = db.get_post(post_id)
         if not post:
             return ("Post not found", 404)
+        version_id = request.args.get("version_id", type=int) or request.form.get("version_id", type=int)
+        active_version = db.get_post_version(post_id, version_id)
+        if not active_version:
+            return ("Post version not found", 404)
+        active_version_id = int(active_version["id"])
+        detail_url = (
+            url_for("post_detail", post_id=post_id)
+            if active_version["is_default"]
+            else url_for("post_detail", post_id=post_id, version_id=active_version_id)
+        )
 
         attachment = next(
-            (row for row in db.list_attachments(post_id) if int(row["id"]) == attachment_id),
+            (row for row in db.list_attachments(post_id, version_id=active_version_id) if int(row["id"]) == attachment_id),
             None,
         )
         if attachment is None:
@@ -545,16 +600,16 @@ def create_app(test_config: dict | None = None) -> Flask:
                 raise RuntimeError("all download URL variants failed")
         except Exception as exc:  # noqa: BLE001
             flash(f"Retry failed for {attachment['name']}: {exc}", "error")
-            return redirect(url_for("post_detail", post_id=post_id))
+            return redirect(detail_url)
 
         if not _is_valid_file(destination):
             flash(f"Retry failed for {attachment['name']}: downloaded file is empty.", "error")
-            return redirect(url_for("post_detail", post_id=post_id))
+            return redirect(detail_url)
 
         local_rel = destination.relative_to(files_base).as_posix()
         db.update_attachment_local_path(attachment_id, local_rel)
         flash(f"Downloaded {attachment['name']}.", "success")
-        return redirect(url_for("post_detail", post_id=post_id))
+        return redirect(detail_url)
 
     @app.post("/posts/<int:post_id>/delete")
     def delete_post(post_id: int):
@@ -580,23 +635,101 @@ def create_app(test_config: dict | None = None) -> Flask:
         post = db.get_post(post_id)
         if not post:
             return ("Post not found", 404)
+        requested_version_id = request.args.get("version_id", type=int) or request.form.get("version_id", type=int)
+        active_version = db.get_post_version(post_id, requested_version_id)
+        if not active_version:
+            return ("Post version not found", 404)
+        active_version_id = int(active_version["id"])
+        versions = db.list_post_versions(post_id)
         series_list = db.list_series(post["creator_id"])
         if request.method == "POST":
             title = request.form.get("title", "").strip()
             content = request.form.get("content", "")
             series_id = request.form.get("series_id", type=int)
+            version_label = request.form.get("version_label", "").strip() or "Version"
+            version_language = request.form.get("version_language")
             if not title:
-                flash("Title is required.", "error")
-                return redirect(url_for("edit_post", post_id=post_id))
-            db.update_post(post_id=post_id, title=title, content=content, series_id=series_id)
+                flash("Version title is required.", "error")
+                return redirect(url_for("edit_post", post_id=post_id, version_id=active_version_id))
+            db.update_post_series(post_id=post_id, series_id=series_id)
+            db.update_post_version(
+                version_id=active_version_id,
+                label=version_label,
+                language=version_language,
+                title=title,
+                content=content,
+                thumbnail_name=active_version["thumbnail_name"],
+                thumbnail_remote_url=active_version["thumbnail_remote_url"],
+                thumbnail_local_path=active_version["thumbnail_local_path"],
+                published_at=active_version["published_at"],
+                edited_at=active_version["edited_at"],
+                next_external_post_id=active_version["next_external_post_id"],
+                prev_external_post_id=active_version["prev_external_post_id"],
+                metadata=_safe_load_metadata(active_version["metadata_json"]),
+                source_url=active_version["source_url"],
+            )
             flash("Post updated.", "success")
-            return redirect(url_for("post_detail", post_id=post_id))
+            return redirect(url_for("post_detail", post_id=post_id, version_id=active_version_id))
         return render_template(
             "post_edit.html",
             post=post,
+            versions=versions,
+            active_version=active_version,
             series_list=series_list,
-            edit_content=_prettify_content_for_edit(post["content"]),
+            edit_content=_prettify_content_for_edit(active_version["content"]),
         )
+
+    @app.post("/posts/<int:post_id>/versions/<int:version_id>/set-default")
+    def set_default_post_version(post_id: int, version_id: int):
+        post = db.get_post(post_id)
+        if not post:
+            return ("Post not found", 404)
+        try:
+            db.set_default_post_version(post_id, version_id)
+        except ValueError:
+            return ("Post version not found", 404)
+        flash("Default version updated.", "success")
+        return redirect(url_for("post_detail", post_id=post_id, version_id=version_id))
+
+    @app.post("/posts/<int:post_id>/versions/clone")
+    def clone_post_version(post_id: int):
+        post = db.get_post(post_id)
+        if not post:
+            return ("Post not found", 404)
+        source_version_id = request.form.get("source_version_id", type=int)
+        if not source_version_id:
+            return ("Missing source version", 400)
+        label = request.form.get("version_label", "").strip() or "Manual translation"
+        language = request.form.get("version_language")
+        set_default = request.form.get("set_as_default") == "1"
+        try:
+            new_version_id = db.clone_post_version(
+                post_id=post_id,
+                source_version_id=source_version_id,
+                label=label,
+                language=language,
+                set_default=set_default,
+            )
+        except ValueError as exc:
+            flash(str(exc), "error")
+            return redirect(url_for("post_detail", post_id=post_id, version_id=source_version_id))
+        flash("Manual version created.", "success")
+        return redirect(url_for("post_detail", post_id=post_id, version_id=new_version_id))
+
+    @app.post("/posts/<int:post_id>/versions/<int:version_id>/delete")
+    def delete_post_version(post_id: int, version_id: int):
+        post = db.get_post(post_id)
+        if not post:
+            return ("Post not found", 404)
+        deleted = db.delete_post_version(post_id, version_id)
+        if not deleted:
+            return ("Post version not found", 404)
+        remaining = db.list_post_versions(post_id)
+        if not remaining:
+            flash("Version deleted. Post has no versions left.", "success")
+            return redirect(url_for("creator_detail", creator_id=post["creator_id"]))
+        flash("Version deleted.", "success")
+        return redirect(url_for("post_detail", post_id=post_id, version_id=int(remaining[0]["id"])))
 
     @app.get("/links/resolve")
     def resolve_link():
@@ -662,8 +795,9 @@ def create_app(test_config: dict | None = None) -> Flask:
 def _build_existing_file_indexes(
     files_base: Path,
     existing_rows: list[Any],
-) -> tuple[dict[str, Path], dict[str, Path]]:
+) -> tuple[dict[str, Path], dict[str, Path], dict[str, Path]]:
     by_remote: dict[str, Path] = {}
+    by_path_key: dict[str, Path] = {}
     by_name: dict[str, Path] = {}
     for row in existing_rows:
         rel = row["local_path"]
@@ -673,10 +807,13 @@ def _build_existing_file_indexes(
         if not _is_valid_file(abs_path):
             continue
         by_remote[row["remote_url"]] = abs_path
+        path_key = _remote_path_key(str(row["remote_url"]))
+        if path_key and path_key not in by_path_key:
+            by_path_key[path_key] = abs_path
         normalized_name = sanitize_filename(row["name"])
         if normalized_name and normalized_name not in by_name:
             by_name[normalized_name] = abs_path
-    return by_remote, by_name
+    return by_remote, by_path_key, by_name
 
 
 def _is_valid_file(path: Path | None) -> bool:
@@ -1077,6 +1214,12 @@ def _import_post_into_library(
     service: str,
     user_id: str,
     post_id: str,
+    import_target_mode: str,
+    target_post_id: int | None,
+    overwrite_matching_version: bool,
+    set_as_default: bool,
+    version_label: str | None,
+    version_language: str | None,
     requested_title: str | None,
     requested_content: str | None,
     requested_published_at: str | None,
@@ -1087,7 +1230,7 @@ def _import_post_into_library(
     field_presence: dict[str, bool],
     selected_attachment_indices: set[str],
     progress_callback: Callable[[int, int, str | None], None] | None = None,
-) -> int:
+) -> tuple[int, int]:
     creator = db.get_creator(creator_id)
     if not creator:
         raise ValueError("Creator not found.")
@@ -1136,35 +1279,110 @@ def _import_post_into_library(
         field_present=field_presence.get("prev_external_post_id", False),
     )
     source_url = post_ref.canonical_url
-    local_post_id = db.upsert_post(
-        creator_id=creator_id,
-        series_id=series_id,
+    exact_match_post = db.find_post_by_source(service, user_id, post_id)
+    local_post_id: int
+    if exact_match_post:
+        local_post_id = int(exact_match_post["id"])
+        if import_target_mode == "new":
+            raise ValueError("This source already exists locally. Import as a version or overwrite it.")
+    elif import_target_mode == "existing":
+        if not target_post_id:
+            raise ValueError("Pick a target post for version import.")
+        target_post = db.get_post(target_post_id)
+        if not target_post or int(target_post["creator_id"]) != creator_id:
+            raise ValueError("Target post was not found for this creator.")
+        local_post_id = target_post_id
+    else:
+        local_post_id = db.upsert_post(
+            creator_id=creator_id,
+            series_id=series_id,
+            service=service,
+            external_user_id=user_id,
+            external_post_id=post_id,
+            title=str(title),
+            content=str(content),
+            metadata=raw_payload,
+            source_url=source_url,
+            thumbnail_name=thumbnail_name,
+            thumbnail_remote_url=thumbnail_remote_url,
+            thumbnail_local_path=None,
+            published_at=published_at,
+            edited_at=edited_at,
+            next_external_post_id=next_external_post_id,
+            prev_external_post_id=prev_external_post_id,
+        )
+
+    if series_id is not None:
+        db.update_post_series(local_post_id, series_id)
+
+    existing_version = db.find_version_by_source(
+        post_id=local_post_id,
         service=service,
         external_user_id=user_id,
         external_post_id=post_id,
-        title=str(title),
-        content=str(content),
-        metadata=raw_payload,
-        source_url=source_url,
-        thumbnail_name=thumbnail_name,
-        thumbnail_remote_url=thumbnail_remote_url,
-        thumbnail_local_path=None,
-        published_at=published_at,
-        edited_at=edited_at,
-        next_external_post_id=next_external_post_id,
-        prev_external_post_id=prev_external_post_id,
     )
+    if existing_version and not overwrite_matching_version:
+        raise ValueError("Matching source version already exists. Enable overwrite to replace it.")
+
+    resolved_version_label = _resolve_import_version_label(version_label, payload.get("title"), existing_version is None)
+    resolved_version_language = _optional_str(version_language)
+
+    if existing_version:
+        version_id = int(existing_version["id"])
+        db.update_post_version(
+            version_id=version_id,
+            label=resolved_version_label,
+            language=resolved_version_language,
+            title=str(title),
+            content=str(content),
+            thumbnail_name=thumbnail_name,
+            thumbnail_remote_url=thumbnail_remote_url,
+            thumbnail_local_path=None,
+            published_at=published_at,
+            edited_at=edited_at,
+            next_external_post_id=next_external_post_id,
+            prev_external_post_id=prev_external_post_id,
+            metadata=raw_payload,
+            source_url=source_url,
+        )
+    else:
+        version_id = db.create_post_version(
+            post_id=local_post_id,
+            label=resolved_version_label,
+            language=resolved_version_language,
+            is_manual=False,
+            source_service=service,
+            source_user_id=user_id,
+            source_post_id=post_id,
+            title=str(title),
+            content=str(content),
+            metadata=raw_payload,
+            source_url=source_url,
+            thumbnail_name=thumbnail_name,
+            thumbnail_remote_url=thumbnail_remote_url,
+            thumbnail_local_path=None,
+            published_at=published_at,
+            edited_at=edited_at,
+            next_external_post_id=next_external_post_id,
+            prev_external_post_id=prev_external_post_id,
+            set_default=set_as_default,
+        )
 
     download_root = files_base / f"post_{local_post_id}"
-    existing_rows = db.list_attachments(local_post_id)
-    existing_by_remote, existing_by_name = _build_existing_file_indexes(files_base, existing_rows)
+    existing_rows = db.list_all_attachments_for_post(local_post_id)
+    existing_by_remote, existing_by_path_key, existing_by_name = _build_existing_file_indexes(
+        files_base,
+        existing_rows,
+    )
 
     saved: list[dict[str, Any]] = []
     total = len(selected_attachments)
     for idx, candidate in enumerate(selected_attachments, start=1):
         filename = sanitize_filename(candidate.name)
+        path_key = _remote_path_key(candidate.remote_url)
         destination = (
             existing_by_remote.get(candidate.remote_url)
+            or existing_by_path_key.get(path_key)
             or existing_by_name.get(filename)
             or (download_root / filename)
         )
@@ -1192,19 +1410,36 @@ def _import_post_into_library(
         if progress_callback:
             progress_callback(idx, total, candidate.name)
 
-    db.replace_attachments(local_post_id, saved)
-    db.update_post_thumbnail(
-        local_post_id,
-        _find_thumbnail_local_path(
-            saved,
-            thumbnail_name=thumbnail_name,
-            thumbnail_remote_url=thumbnail_remote_url,
-        ),
+    thumbnail_local_path = _find_thumbnail_local_path(
+        saved,
+        thumbnail_name=thumbnail_name,
+        thumbnail_remote_url=thumbnail_remote_url,
+    )
+    db.replace_attachments(local_post_id, saved, version_id=version_id)
+    db.update_post_version(
+        version_id=version_id,
+        label=resolved_version_label,
+        language=resolved_version_language,
+        title=str(title),
+        content=str(content),
+        thumbnail_name=thumbnail_name,
+        thumbnail_remote_url=thumbnail_remote_url,
+        thumbnail_local_path=thumbnail_local_path,
+        published_at=published_at,
+        edited_at=edited_at,
+        next_external_post_id=next_external_post_id,
+        prev_external_post_id=prev_external_post_id,
+        metadata=raw_payload,
+        source_url=source_url,
     )
     tags = _parse_tags_text(tags_text) if tags_text is not None else _extract_tags(payload)
-    db.replace_tags(local_post_id, tags)
-    db.replace_previews(local_post_id, _extract_previews(raw_payload))
-    return local_post_id
+    db.replace_tags(local_post_id, tags, version_id=version_id)
+    db.replace_previews(local_post_id, _extract_previews(raw_payload), version_id=version_id)
+    if set_as_default:
+        db.set_default_post_version(local_post_id, version_id)
+    else:
+        db.sync_post_from_default_version(local_post_id)
+    return local_post_id, version_id
 
 
 def _extract_tags(payload: dict[str, Any]) -> list[str]:
@@ -1232,6 +1467,14 @@ def _parse_tags_text(raw_tags: str | None) -> list[str]:
         seen.add(tag)
         out.append(tag)
     return out
+
+
+def _resolve_import_version_label(requested_label: str | None, payload_title: Any, is_new_version: bool) -> str:
+    if isinstance(requested_label, str) and requested_label.strip():
+        return requested_label.strip()
+    if is_new_version:
+        return "Original" if _optional_str(payload_title) else "Version"
+    return "Version"
 
 
 def _resolve_import_title(

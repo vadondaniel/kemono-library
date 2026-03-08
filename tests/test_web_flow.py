@@ -1246,3 +1246,184 @@ def test_delete_creator_removes_posts_files_and_icon(tmp_path):
     assert db.get_post(post_id) is None
     assert not post_dir.exists()
     assert not icon_path.exists()
+
+
+def test_import_can_add_non_default_version_to_existing_post(tmp_path, monkeypatch):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+
+    payload = {
+        "post": {
+            "title": "Translated Title",
+            "content": "translated content",
+            "user": "70479526",
+            "attachments": [],
+        },
+        "attachments": [],
+    }
+
+    def fake_fetch(ref, fallback_user_id=None):  # noqa: ARG001
+        return payload
+
+    def fake_download(remote_url, destination):  # noqa: ARG001
+        Path(destination).parent.mkdir(parents=True, exist_ok=True)
+        Path(destination).write_bytes(b"ok")
+
+    def fake_icon_download(service, user_id, icons_root):  # noqa: ARG001
+        destination = Path(icons_root) / f"{service}_{user_id}.jpg"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"icon")
+        return (f"https://img.kemono.cr/icons/{service}/{user_id}", destination)
+
+    monkeypatch.setattr("kemono_library.web.fetch_post_json", fake_fetch)
+    monkeypatch.setattr("kemono_library.web.download_attachment", fake_download)
+    monkeypatch.setattr("kemono_library.web.download_creator_icon", fake_icon_download)
+
+    creator_id = db.create_creator("Versioned Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="70479526",
+        external_post_id="100",
+        title="Original Title",
+        content="jp content",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/70479526/post/100",
+    )
+
+    client = app.test_client()
+    response = client.post(
+        "/import/commit",
+        data={
+            "creator_id": str(creator_id),
+            "series_id": "",
+            "service": "fanbox",
+            "user_id": "70479526",
+            "post_id": "200",
+            "import_target_mode": "existing",
+            "target_post_id": str(post_id),
+            "set_as_default": "0",
+            "version_label": "EN TL",
+            "version_language": "en",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    assert response.headers["Location"].startswith(f"/posts/{post_id}?version_id=")
+
+    versions = db.list_post_versions(post_id)
+    assert len(versions) == 2
+    default_version = next(row for row in versions if row["is_default"])
+    assert default_version["source_post_id"] == "100"
+    imported = next(row for row in versions if row["source_post_id"] == "200")
+    assert imported["label"] == "EN TL"
+    assert imported["language"] == "en"
+
+
+def test_post_detail_uses_requested_version_id(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Version Switch Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="321",
+        external_post_id="654",
+        title="JP title",
+        content="jp body",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/321/post/654",
+    )
+
+    base_version = db.list_post_versions(post_id)[0]
+    clone_id = db.clone_post_version(
+        post_id=post_id,
+        source_version_id=int(base_version["id"]),
+        label="EN",
+        language="en",
+        set_default=False,
+    )
+    clone_row = db.get_post_version(post_id, clone_id)
+    assert clone_row is not None
+    db.update_post_version(
+        version_id=clone_id,
+        label="EN",
+        language="en",
+        title="English title",
+        content="english body",
+        thumbnail_name=clone_row["thumbnail_name"],
+        thumbnail_remote_url=clone_row["thumbnail_remote_url"],
+        thumbnail_local_path=clone_row["thumbnail_local_path"],
+        published_at=clone_row["published_at"],
+        edited_at=clone_row["edited_at"],
+        next_external_post_id=clone_row["next_external_post_id"],
+        prev_external_post_id=clone_row["prev_external_post_id"],
+        metadata={},
+        source_url=clone_row["source_url"],
+    )
+
+    detail = app.test_client().get(f"/posts/{post_id}?version_id={clone_id}")
+    assert detail.status_code == 200
+    assert b"English title" in detail.data
+
+
+def test_resolve_link_matches_version_source_tuple(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Resolver Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="700",
+        external_post_id="100",
+        title="Base",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/700/post/100",
+    )
+
+    db.create_post_version(
+        post_id=post_id,
+        label="EN",
+        language="en",
+        is_manual=False,
+        source_service="fanbox",
+        source_user_id="700",
+        source_post_id="200",
+        title="EN",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/700/post/200",
+        set_default=False,
+    )
+
+    response = app.test_client().get("/links/resolve?service=fanbox&user=700&post=200")
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith(f"/posts/{post_id}")

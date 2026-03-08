@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <section class="panel">
-  <h1>{{ post['title'] }}</h1>
+  <h1>{{ active_version['title'] }}</h1>
   <p>
     <strong>Creator:</strong>
     <a href="{{ url_for('creator_detail', creator_id=post['creator_id']) }}">{{ post['creator_name'] }}</a>
@@ -11,13 +11,46 @@
   </p>
   <p>
     <strong>Original:</strong>
-    <a href="{{ post['source_url'] }}" target="_blank" rel="noopener">{{ post['source_url'] }}</a>
+    {% if active_version['source_url'] %}
+      <a href="{{ active_version['source_url'] }}" target="_blank" rel="noopener">{{ active_version['source_url'] }}</a>
+    {% else %}
+      <span>Manual version</span>
+    {% endif %}
   </p>
-  {% if post['published_at'] %}
-    <p><strong>Published:</strong> {{ post['published_at'] }}</p>
+  {% if active_version['published_at'] %}
+    <p><strong>Published:</strong> {{ active_version['published_at'] }}</p>
   {% endif %}
+  <div class="post-version-tools">
+    <form method="get" action="{{ url_for('post_detail', post_id=post['id']) }}" class="inline-form">
+      <label for="version-id"><strong>Version:</strong></label>
+      <select id="version-id" name="version_id" onchange="this.form.submit()">
+        {% for version in versions %}
+          <option value="{{ version['id'] }}" {% if version['id'] == active_version['id'] %}selected{% endif %}>
+            {{ version['label'] }}{% if version['language'] %} ({{ version['language'] }}){% endif %}{% if version['is_default'] %} [default]{% endif %}
+          </option>
+        {% endfor %}
+      </select>
+    </form>
+    {% if not active_version['is_default'] %}
+      <form method="post" action="{{ url_for('set_default_post_version', post_id=post['id'], version_id=active_version['id']) }}" class="inline-form">
+        <button type="submit" class="button-ghost">Set default</button>
+      </form>
+    {% endif %}
+  </div>
   <div class="post-actions">
-    <a class="button-link" href="{{ url_for('edit_post', post_id=post['id']) }}">Edit Post</a>
+    <a class="button-link" href="{{ url_for('edit_post', post_id=post['id'], version_id=active_version['id']) }}">Edit Version</a>
+    <form method="post" action="{{ url_for('clone_post_version', post_id=post['id']) }}" class="inline-form">
+      <input type="hidden" name="source_version_id" value="{{ active_version['id'] }}">
+      <input type="hidden" name="set_as_default" value="0">
+      <input type="hidden" name="version_label" value="Manual translation">
+      <input type="hidden" name="version_language" value="">
+      <button type="submit" class="button-ghost">New manual version</button>
+    </form>
+    {% if versions|length > 1 %}
+      <form method="post" action="{{ url_for('delete_post_version', post_id=post['id'], version_id=active_version['id']) }}" class="inline-form" onsubmit="return confirm('Delete this version?');">
+        <button type="submit" class="button-ghost button-danger-quiet">Delete version</button>
+      </form>
+    {% endif %}
   </div>
 </section>
 
@@ -40,11 +73,12 @@
           {% if not file['local_available'] %}
             <form
               method="post"
-              action="{{ url_for('retry_attachment_download', post_id=post['id'], attachment_id=file['id']) }}"
+              action="{{ url_for('retry_attachment_download', post_id=post['id'], attachment_id=file['id'], version_id=active_version['id']) }}"
               class="inline-form post-file-retry-form"
             >
+              <input type="hidden" name="version_id" value="{{ active_version['id'] }}">
               <a
-                href="{{ url_for('retry_attachment_download', post_id=post['id'], attachment_id=file['id']) }}"
+                href="{{ url_for('retry_attachment_download', post_id=post['id'], attachment_id=file['id'], version_id=active_version['id']) }}"
                 class="post-file-retry-link"
                 onclick="event.preventDefault(); this.closest('form').submit();"
               >retry</a>

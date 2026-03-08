@@ -49,6 +49,53 @@
     </details>
   </div>
 
+  <div class="import-version-target">
+    <h3>Version Target</h3>
+    {% if can_create_new %}
+      <label>
+        <input type="radio" name="import_target_mode" value="new" {% if not default_target_post_id %}checked{% endif %}>
+        Create new post
+      </label>
+      <label>
+        <input type="radio" name="import_target_mode" value="existing" {% if default_target_post_id %}checked{% endif %}>
+        Add as version to existing post
+      </label>
+      <label for="target-post-id">Target post</label>
+      <select id="target-post-id" name="target_post_id">
+        <option value="">Select post</option>
+        {% for creator_post in creator_posts %}
+          <option value="{{ creator_post['id'] }}" {% if default_target_post_id and default_target_post_id == creator_post['id'] %}selected{% endif %}>
+            #{{ creator_post['id'] }} - {{ creator_post['title'] }}
+          </option>
+        {% endfor %}
+      </select>
+    {% else %}
+      <p class="import-target-note">This source already exists locally, so this import must target that post.</p>
+      <input type="hidden" name="import_target_mode" value="existing">
+      <input type="hidden" name="target_post_id" value="{{ exact_match_post['id'] }}">
+    {% endif %}
+
+    <label>
+      <input type="checkbox" name="overwrite_matching_version" value="1" {% if exact_match_post %}checked{% endif %}>
+      Overwrite matching source version if it exists
+    </label>
+    <label>
+      <input type="checkbox" name="set_as_default" value="1" checked>
+      Set imported version as default
+    </label>
+
+    <div class="import-version-meta-grid">
+      <div>
+        <label for="version-label">Version label</label>
+        <input id="version-label" name="version_label" value="Original" placeholder="EN TL / JP / Manual">
+      </div>
+      <div>
+        <label for="version-language">Language (optional)</label>
+        <input id="version-language" name="version_language" placeholder="en / ja / ko">
+      </div>
+    </div>
+  </div>
+
   <input type="hidden" name="creator_id" value="{{ creator_id }}">
   <input type="hidden" name="series_id" value="{{ series_id or '' }}">
   <input type="hidden" name="service" value="{{ post_ref.service }}">
