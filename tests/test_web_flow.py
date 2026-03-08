@@ -576,6 +576,73 @@ def test_post_detail_falls_back_to_attachment_remote_when_local_missing(tmp_path
     assert b"retry" in detail.data
 
 
+def test_post_detail_dedupes_saved_files_that_point_to_same_local_file(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Saved Files Dedupe Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="70479526",
+        external_post_id="2001",
+        title="Dedupe Case",
+        content="<p>body</p>",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/70479526/post/2001",
+    )
+    version = db.get_post_version(post_id)
+    assert version is not None
+    version_id = int(version["id"])
+
+    local_rel = f"post_{post_id}/same.jpg"
+    local_abs = tmp_path / "files" / local_rel
+    local_abs.parent.mkdir(parents=True, exist_ok=True)
+    local_abs.write_bytes(b"same")
+
+    db.replace_attachments(
+        post_id,
+        [
+            {
+                "name": "same.jpg",
+                "remote_url": "https://n1.kemono.cr/aa/bb/shared.jpg",
+                "local_path": local_rel,
+                "kind": "inline_media",
+            },
+            {
+                "name": "same.jpg",
+                "remote_url": "https://n2.kemono.cr/aa/bb/shared.jpg",
+                "local_path": local_rel,
+                "kind": "attachment",
+            },
+            {
+                "name": "other.jpg",
+                "remote_url": "https://n3.kemono.cr/xx/yy/other.jpg",
+                "local_path": None,
+                "kind": "attachment",
+            },
+        ],
+        version_id=version_id,
+    )
+
+    response = app.test_client().get(f"/posts/{post_id}?version_id={version_id}")
+    assert response.status_code == 200
+
+    soup = BeautifulSoup(response.data, "html.parser")
+    rows = soup.select(".post-file-list li")
+    assert len(rows) == 2
+    same_links = soup.select('.post-file-list a[title="same.jpg"]')
+    assert len(same_links) == 1
+
+
 def test_post_detail_uses_metadata_kemono_url_for_fanbox_file_link_without_attachment_row(tmp_path):
     app = create_app(
         {
@@ -971,6 +1038,107 @@ def test_edit_post_attachment_management_is_save_based_and_updates_inline_media(
     html_after = after_detail.data.decode("utf-8")
     assert f"/files/{local_rel}" not in html_after
     assert "/a1/b2/local_one.jpg" in html_after
+
+
+def test_edit_post_dedupes_local_file_for_same_name_and_same_bytes(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Collapse Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="u-2",
+        external_post_id="p-2",
+        title="Collapse Post",
+        content="<p>Body</p>",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/u-2/post/p-2",
+    )
+    source_version = db.get_post_version(post_id)
+    assert source_version is not None
+    source_version_id = int(source_version["id"])
+    manual_version_id = db.clone_post_version(
+        post_id=post_id,
+        source_version_id=source_version_id,
+        label="Manual",
+        language=None,
+        set_default=False,
+    )
+
+    db.replace_attachments(
+        post_id,
+        [
+            {
+                "name": "first.jpg",
+                "remote_url": "https://n1.kemono.cr/a/1/first-source.jpg",
+                "local_path": f"post_{post_id}/first.jpg",
+                "kind": "attachment",
+            },
+            {
+                "name": "second.jpg",
+                "remote_url": "https://n2.kemono.cr/b/2/second-source.jpg",
+                "local_path": f"post_{post_id}/second.jpg",
+                "kind": "attachment",
+            },
+        ],
+        version_id=manual_version_id,
+    )
+    files_dir = tmp_path / "files" / f"post_{post_id}"
+    files_dir.mkdir(parents=True, exist_ok=True)
+    (files_dir / "first.jpg").write_bytes(b"same-image")
+    (files_dir / "second.jpg").write_bytes(b"same-image")
+    rows = db.list_attachments(post_id, version_id=manual_version_id)
+    by_name = {str(row["name"]): int(row["id"]) for row in rows}
+    first_id = by_name["first.jpg"]
+    second_id = by_name["second.jpg"]
+
+    client = app.test_client()
+    response = client.post(
+        f"/posts/{post_id}/edit",
+        data=MultiDict(
+            [
+                ("version_id", str(manual_version_id)),
+                ("version_label", "Manual"),
+                ("version_language", ""),
+                ("title", "Collapse Post"),
+                ("series_id", ""),
+                ("thumbnail_attachment_id", "__keep__"),
+                ("thumbnail_focus_x", "50"),
+                ("thumbnail_focus_y", "50"),
+                ("content", "<p>Body</p>"),
+                (f"attachment_keep_id_{first_id}", "0"),
+                (f"attachment_keep_id_{first_id}", "1"),
+                (f"attachment_keep_id_{second_id}", "0"),
+                (f"attachment_keep_id_{second_id}", "1"),
+                (f"attachment_name_id_{first_id}", "merged name.jpg"),
+                (f"attachment_name_id_{second_id}", "merged name.jpg"),
+            ]
+        ),
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+
+    updated_rows = db.list_attachments(post_id, version_id=manual_version_id)
+    assert len(updated_rows) == 2
+    assert {str(row["name"]) for row in updated_rows} == {"merged_name.jpg"}
+    local_paths = {
+        str(row["local_path"])
+        for row in updated_rows
+        if isinstance(row["local_path"], str) and row["local_path"].strip()
+    }
+    assert len(local_paths) == 1
+    shared_local = next(iter(local_paths))
+    assert (tmp_path / "files" / shared_local).is_file()
+    assert not (files_dir / "merged_name_2.jpg").exists()
 
 
 def test_creator_folder_filter_and_sort_modes(tmp_path):

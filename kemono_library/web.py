@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import hashlib
 import json
 import re
 import shutil
@@ -633,6 +634,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                     "preview_url": preview_url,
                 }
             )
+        attachment_rows = _dedupe_post_detail_attachments(attachment_rows)
 
         rendered_content = render_post_content(
             active_version["content"],
@@ -894,6 +896,11 @@ def create_app(test_config: dict | None = None) -> Flask:
                 }
                 managed_attachments.append(managed)
                 managed_attachments_by_choice[str(item["choice_value"])] = managed
+
+            managed_attachments = _dedupe_managed_attachment_local_files(
+                files_base=files_base,
+                managed_attachments=managed_attachments,
+            )
 
             db.replace_attachments(
                 post_id,
@@ -1438,6 +1445,178 @@ def _parse_thumbnail_focus_inputs(
     )
 
 
+def _dedupe_post_detail_attachments(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    deduped: list[dict[str, Any]] = []
+    by_key: dict[str, dict[str, Any]] = {}
+    key_order: list[str] = []
+
+    for row in rows:
+        key = _post_detail_attachment_key(row)
+        existing = by_key.get(key)
+        if existing is None:
+            by_key[key] = row
+            key_order.append(key)
+            continue
+        if _should_replace_post_detail_attachment(existing, row):
+            by_key[key] = row
+
+    for key in key_order:
+        winner = by_key.get(key)
+        if winner is not None:
+            deduped.append(winner)
+    return deduped
+
+
+def _post_detail_attachment_key(row: dict[str, Any]) -> str:
+    local_path = _optional_str(row.get("local_path"))
+    if local_path:
+        return f"local:{local_path.lower()}"
+
+    name_key = _attachment_collapse_key(row.get("name"))
+    remote_key = _remote_path_key(_optional_str(row.get("remote_url")) or "")
+    if name_key and remote_key:
+        return f"remote_name:{name_key}|{remote_key}"
+    if remote_key:
+        return f"remote:{remote_key}"
+    if name_key:
+        return f"name:{name_key}"
+    return f"id:{row.get('id')}"
+
+
+def _should_replace_post_detail_attachment(existing: dict[str, Any], candidate: dict[str, Any]) -> bool:
+    existing_local = bool(existing.get("local_available"))
+    candidate_local = bool(candidate.get("local_available"))
+    if candidate_local != existing_local:
+        return candidate_local
+    return _media_kind_priority(candidate.get("kind")) > _media_kind_priority(existing.get("kind"))
+
+
+def _dedupe_managed_attachment_local_files(
+    *,
+    files_base: Path,
+    managed_attachments: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for item in managed_attachments:
+        name_key = _attachment_collapse_key(item.get("name"))
+        if not name_key:
+            continue
+        grouped.setdefault(name_key, []).append(item)
+
+    hash_cache: dict[str, str | None] = {}
+
+    for name_key, group in grouped.items():
+        if len(group) < 2:
+            continue
+
+        for idx, left in enumerate(group):
+            for right in group[idx + 1 :]:
+                if not _managed_items_refer_same_file(
+                    left,
+                    right,
+                    files_base=files_base,
+                    hash_cache=hash_cache,
+                ):
+                    continue
+                canonical_local = _pick_canonical_local_path(
+                    files_base=files_base,
+                    name_key=name_key,
+                    local_paths=[
+                        _optional_str(left.get("local_path")),
+                        _optional_str(right.get("local_path")),
+                    ],
+                )
+                if not canonical_local:
+                    continue
+                for item in (left, right):
+                    local_path = _optional_str(item.get("local_path"))
+                    if local_path == canonical_local:
+                        continue
+                    if local_path:
+                        _remove_local_attachment_file(files_base, local_path)
+                    item["local_path"] = canonical_local
+                    if local_path:
+                        hash_cache.pop(local_path, None)
+                canonical_hash = _local_file_content_hash(files_base, canonical_local, hash_cache)
+                if canonical_hash:
+                    hash_cache[canonical_local] = canonical_hash
+    return managed_attachments
+
+
+def _managed_items_refer_same_file(
+    left: dict[str, Any],
+    right: dict[str, Any],
+    *,
+    files_base: Path,
+    hash_cache: dict[str, str | None],
+) -> bool:
+    left_remote = _optional_str(left.get("remote_url"))
+    right_remote = _optional_str(right.get("remote_url"))
+    if left_remote and right_remote and _remote_path_key(left_remote) == _remote_path_key(right_remote):
+        return True
+
+    left_local = _optional_str(left.get("local_path"))
+    right_local = _optional_str(right.get("local_path"))
+    if left_local and right_local and left_local == right_local:
+        return True
+
+    if not left_local or not right_local:
+        return False
+    left_hash = _local_file_content_hash(files_base, left_local, hash_cache)
+    right_hash = _local_file_content_hash(files_base, right_local, hash_cache)
+    return bool(left_hash and right_hash and left_hash == right_hash)
+
+
+def _pick_canonical_local_path(
+    *,
+    files_base: Path,
+    name_key: str,
+    local_paths: list[str | None],
+) -> str | None:
+    cleaned = [path for path in local_paths if isinstance(path, str) and path.strip()]
+    if not cleaned:
+        return None
+
+    existing = [path for path in cleaned if _is_valid_file(files_base / path)]
+    for path in existing:
+        if _attachment_collapse_key(Path(path).name) == name_key:
+            return path
+    if existing:
+        return existing[0]
+    for path in cleaned:
+        if _attachment_collapse_key(Path(path).name) == name_key:
+            return path
+    return cleaned[0]
+
+
+def _local_file_content_hash(
+    files_base: Path,
+    local_path: str,
+    cache: dict[str, str | None],
+) -> str | None:
+    if local_path in cache:
+        return cache[local_path]
+
+    path = files_base / local_path
+    if not _is_valid_file(path):
+        cache[local_path] = None
+        return None
+
+    digest = hashlib.sha256()
+    try:
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(64 * 1024), b""):
+                if not chunk:
+                    break
+                digest.update(chunk)
+    except OSError:
+        cache[local_path] = None
+        return None
+    value = digest.hexdigest()
+    cache[local_path] = value
+    return value
+
+
 def _iter_metadata_media_entries(metadata: dict[str, Any]) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
     sources: list[dict[str, Any]] = [metadata]
@@ -1628,6 +1807,13 @@ def _detect_image_mime(path: Path) -> str | None:
     return None
 
 
+def _attachment_collapse_key(name: Any) -> str:
+    if not isinstance(name, str):
+        return ""
+    normalized = sanitize_filename(name).strip().lower()
+    return normalized
+
+
 def _remove_local_attachment_file(files_base: Path, local_path: str) -> None:
     target = files_base / local_path
     try:
@@ -1660,6 +1846,12 @@ def _rename_local_attachment_file(
         return local_path
 
     if destination.exists():
+        if _paths_have_same_content(current, destination):
+            try:
+                current.unlink()
+            except OSError:
+                pass
+            return destination.relative_to(files_base).as_posix()
         stem = destination.stem
         ext = destination.suffix
         counter = 2
@@ -1676,6 +1868,33 @@ def _rename_local_attachment_file(
         return local_path
 
     return destination.relative_to(files_base).as_posix()
+
+
+def _paths_have_same_content(first: Path, second: Path) -> bool:
+    if not first.is_file() or not second.is_file():
+        return False
+    try:
+        if first.stat().st_size != second.stat().st_size:
+            return False
+    except OSError:
+        return False
+
+    left = hashlib.sha256()
+    right = hashlib.sha256()
+    try:
+        with first.open("rb") as left_handle:
+            for chunk in iter(lambda: left_handle.read(64 * 1024), b""):
+                if not chunk:
+                    break
+                left.update(chunk)
+        with second.open("rb") as right_handle:
+            for chunk in iter(lambda: right_handle.read(64 * 1024), b""):
+                if not chunk:
+                    break
+                right.update(chunk)
+    except OSError:
+        return False
+    return left.digest() == right.digest()
 
 
 def _extract_thumbnail_from_payload(
