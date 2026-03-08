@@ -1862,19 +1862,54 @@ small {
 
 .post-edit-attachment-list {
   list-style: none;
-  padding-left: 0;
-  gap: 0.55rem;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.72rem;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
 }
 
 .post-edit-attachment-item {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.7rem;
-  align-items: center;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0.55rem;
   border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
   border-radius: 0.66rem;
-  padding: 0.56rem 0.62rem;
+  padding: 0.62rem;
   background: color-mix(in srgb, var(--card-solid) 94%, transparent);
+}
+
+.post-edit-attachments-note {
+  margin: 0 0 0.6rem;
+  color: var(--muted);
+}
+
+.post-edit-attachment-preview {
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: 0.56rem;
+  min-height: 140px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--card-solid) 90%, transparent);
+  display: grid;
+  place-items: center;
+}
+
+.post-edit-attachment-preview img {
+  width: 100%;
+  height: 170px;
+  object-fit: cover;
+  display: block;
+}
+
+.post-edit-attachment-preview-fallback {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.post-edit-attachment-body {
+  display: grid;
+  gap: 0.46rem;
+  min-width: 0;
 }
 
 .post-edit-attachment-meta {
@@ -1900,11 +1935,37 @@ small {
   text-transform: lowercase;
 }
 
+.post-edit-attachment-source-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.14rem 0.46rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  background: color-mix(in srgb, var(--card-solid) 92%, transparent);
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.post-edit-attachment-keep,
+.post-edit-attachment-keep-local {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.36rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.post-edit-attachment-keep input,
+.post-edit-attachment-keep-local input {
+  width: auto;
+  margin: 0;
+}
+
 .post-edit-attachment-actions {
   display: flex;
   gap: 0.4rem;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 
 .post-edit-tool-row .button-danger-quiet,

@@ -723,34 +723,63 @@ def create_app(test_config: dict | None = None) -> Flask:
         attachments = db.list_attachments(post_id, version_id=active_version_id)
 
         attachment_rows: list[dict[str, Any]] = []
-        selected_thumbnail_attachment_id: int | None = None
+        selected_thumbnail_choice: str | None = None
         thumbnail_remote_url = _optional_str(active_version["thumbnail_remote_url"])
         thumbnail_name = _optional_str(active_version["thumbnail_name"])
         thumbnail_local_path = _optional_str(active_version["thumbnail_local_path"])
         thumbnail_preview_url: str | None = None
         active_metadata = _safe_load_metadata(active_version["metadata_json"])
         thumbnail_focus_x, thumbnail_focus_y = _extract_thumbnail_focus_from_metadata(active_metadata)
+        tracked_remote_urls: set[str] = set()
 
-        for row in attachments:
+        for idx, row in enumerate(attachments):
             local_path = _optional_str(row["local_path"])
+            remote_url = str(row["remote_url"])
             local_available = _is_valid_file(files_base / local_path) if local_path else False
             row_data = {
                 "id": int(row["id"]),
+                "form_key": f"id_{int(row['id'])}",
+                "choice_value": f"id:{int(row['id'])}",
+                "tracked": True,
                 "name": str(row["name"]),
                 "kind": str(row["kind"]),
-                "remote_url": str(row["remote_url"]),
-                "remote_url_display": _preferred_remote_url_for_access(str(row["remote_url"]), row["name"]),
+                "remote_url": remote_url,
+                "remote_url_display": _preferred_remote_url_for_access(remote_url, row["name"]),
                 "local_path": local_path,
                 "local_available": local_available,
             }
             attachment_rows.append(row_data)
-            if selected_thumbnail_attachment_id is None:
+            tracked_remote_urls.add(remote_url)
+            if selected_thumbnail_choice is None:
                 if thumbnail_remote_url and row_data["remote_url"] == thumbnail_remote_url:
-                    selected_thumbnail_attachment_id = row_data["id"]
+                    selected_thumbnail_choice = row_data["choice_value"]
                 elif thumbnail_local_path and row_data["local_path"] == thumbnail_local_path:
-                    selected_thumbnail_attachment_id = row_data["id"]
+                    selected_thumbnail_choice = row_data["choice_value"]
                 elif thumbnail_name and row_data["name"] == thumbnail_name:
-                    selected_thumbnail_attachment_id = row_data["id"]
+                    selected_thumbnail_choice = row_data["choice_value"]
+
+        source_candidates = extract_attachments(active_metadata)
+        source_candidate_index = 0
+        for candidate in source_candidates:
+            remote_url = str(candidate.remote_url)
+            if remote_url in tracked_remote_urls:
+                continue
+            row_data = {
+                "id": None,
+                "form_key": f"src_{source_candidate_index}",
+                "choice_value": f"remote:{remote_url}",
+                "tracked": False,
+                "name": str(candidate.name),
+                "kind": str(candidate.kind),
+                "remote_url": remote_url,
+                "remote_url_display": _preferred_remote_url_for_access(remote_url, candidate.name),
+                "local_path": None,
+                "local_available": False,
+            }
+            source_candidate_index += 1
+            attachment_rows.append(row_data)
+            if selected_thumbnail_choice is None and thumbnail_remote_url and remote_url == thumbnail_remote_url:
+                selected_thumbnail_choice = row_data["choice_value"]
 
         if thumbnail_local_path and _is_valid_file(files_base / thumbnail_local_path):
             thumbnail_preview_url = url_for("serve_file", relative_path=thumbnail_local_path)
@@ -759,52 +788,8 @@ def create_app(test_config: dict | None = None) -> Flask:
 
         if request.method == "POST":
             action = request.form.get("action", "save").strip().lower()
-
             if action == "remove_attachment":
-                attachment_id = request.form.get("attachment_id", type=int)
-                if not attachment_id:
-                    flash("Attachment not found.", "error")
-                    return redirect(url_for("edit_post", post_id=post_id, version_id=active_version_id))
-
-                removed = next((item for item in attachment_rows if item["id"] == attachment_id), None)
-                if not removed:
-                    flash("Attachment not found.", "error")
-                    return redirect(url_for("edit_post", post_id=post_id, version_id=active_version_id))
-
-                remaining = [
-                    {
-                        "name": item["name"],
-                        "remote_url": item["remote_url"],
-                        "local_path": item["local_path"],
-                        "kind": item["kind"],
-                    }
-                    for item in attachment_rows
-                    if item["id"] != attachment_id
-                ]
-                db.replace_attachments(post_id, remaining, version_id=active_version_id)
-
-                if (
-                    (thumbnail_remote_url and removed["remote_url"] == thumbnail_remote_url)
-                    or (thumbnail_local_path and removed["local_path"] == thumbnail_local_path)
-                ):
-                    updated_metadata = _set_thumbnail_focus_in_metadata(active_metadata, None, None)
-                    db.update_post_version(
-                        version_id=active_version_id,
-                        label=active_version["label"],
-                        language=active_version["language"],
-                        title=active_version["title"],
-                        content=active_version["content"],
-                        thumbnail_name=None,
-                        thumbnail_remote_url=None,
-                        thumbnail_local_path=None,
-                        published_at=active_version["published_at"],
-                        edited_at=active_version["edited_at"],
-                        next_external_post_id=active_version["next_external_post_id"],
-                        prev_external_post_id=active_version["prev_external_post_id"],
-                        metadata=updated_metadata,
-                        source_url=active_version["source_url"],
-                    )
-                flash("Attachment removed from this version.", "success")
+                flash("Attachment changes are now applied on Save Changes.", "success")
                 return redirect(url_for("edit_post", post_id=post_id, version_id=active_version_id))
 
             title = request.form.get("title", "").strip()
@@ -823,6 +808,69 @@ def create_app(test_config: dict | None = None) -> Flask:
                 flash("Version title is required.", "error")
                 return redirect(url_for("edit_post", post_id=post_id, version_id=active_version_id))
 
+            # Apply attachment edits only on Save.
+            allow_detach = bool(active_version["is_manual"])
+            managed_attachments_by_choice: dict[str, dict[str, Any]] = {}
+            managed_attachments: list[dict[str, Any]] = []
+            for item in attachment_rows:
+                form_key = str(item["form_key"])
+                tracked = bool(item["tracked"])
+                keep_in_version: bool
+                if tracked:
+                    if allow_detach:
+                        keep_values = request.form.getlist(f"attachment_keep_{form_key}")
+                        keep_in_version = True if not keep_values else "1" in keep_values
+                    else:
+                        keep_in_version = True
+                else:
+                    add_values = request.form.getlist(f"attachment_add_{form_key}")
+                    keep_in_version = "1" in add_values or thumbnail_choice == str(item["choice_value"])
+                if not keep_in_version:
+                    continue
+
+                desired_name_raw = request.form.get(f"attachment_name_{form_key}", item["name"])
+                desired_name = sanitize_filename(str(desired_name_raw or "").strip()) or str(item["name"])
+
+                local_path = _optional_str(item["local_path"])
+                local_available = bool(local_path and _is_valid_file(files_base / local_path))
+                keep_local_values = request.form.getlist(f"attachment_keep_local_{form_key}")
+                keep_local_file = (True if not keep_local_values else "1" in keep_local_values) if local_available else False
+                if local_available and not keep_local_file and local_path:
+                    _remove_local_attachment_file(files_base, local_path)
+                    local_path = None
+                elif local_available and keep_local_file and local_path:
+                    local_path = _rename_local_attachment_file(
+                        files_base=files_base,
+                        local_path=local_path,
+                        desired_name=desired_name,
+                        fallback_name=str(item["name"]),
+                    )
+
+                managed = {
+                    "id": item["id"],
+                    "choice_value": str(item["choice_value"]),
+                    "name": desired_name,
+                    "remote_url": str(item["remote_url"]),
+                    "local_path": local_path,
+                    "kind": str(item["kind"]),
+                }
+                managed_attachments.append(managed)
+                managed_attachments_by_choice[str(item["choice_value"])] = managed
+
+            db.replace_attachments(
+                post_id,
+                [
+                    {
+                        "name": item["name"],
+                        "remote_url": item["remote_url"],
+                        "local_path": item["local_path"],
+                        "kind": item["kind"],
+                    }
+                    for item in managed_attachments
+                ],
+                version_id=active_version_id,
+            )
+
             resolved_thumbnail_name = active_version["thumbnail_name"]
             resolved_thumbnail_remote_url = active_version["thumbnail_remote_url"]
             resolved_thumbnail_local_path = active_version["thumbnail_local_path"]
@@ -833,25 +881,28 @@ def create_app(test_config: dict | None = None) -> Flask:
                 resolved_thumbnail_local_path = None
                 focus_x = None
                 focus_y = None
+            elif thumbnail_choice == "__keep__":
+                if selected_thumbnail_choice:
+                    kept_current = managed_attachments_by_choice.get(selected_thumbnail_choice)
+                    if kept_current is None:
+                        if allow_detach and selected_thumbnail_choice.startswith("id:"):
+                            resolved_thumbnail_name = None
+                            resolved_thumbnail_remote_url = None
+                            resolved_thumbnail_local_path = None
+                            focus_x = None
+                            focus_y = None
+                    else:
+                        resolved_thumbnail_name = kept_current["name"]
+                        resolved_thumbnail_remote_url = kept_current["remote_url"]
+                        resolved_thumbnail_local_path = kept_current["local_path"]
             elif thumbnail_choice != "__keep__":
-                try:
-                    selected_thumbnail_id = int(thumbnail_choice)
-                except (TypeError, ValueError):
-                    flash("Selected thumbnail file was not found.", "error")
-                    return redirect(url_for("edit_post", post_id=post_id, version_id=active_version_id))
-                selected_attachment = next(
-                    (item for item in attachment_rows if item["id"] == selected_thumbnail_id),
-                    None,
-                )
+                selected_attachment = managed_attachments_by_choice.get(thumbnail_choice)
                 if selected_attachment is None:
                     flash("Selected thumbnail file was not found.", "error")
                     return redirect(url_for("edit_post", post_id=post_id, version_id=active_version_id))
                 resolved_thumbnail_name = selected_attachment["name"]
                 resolved_thumbnail_remote_url = selected_attachment["remote_url"]
-                if selected_attachment["local_path"] and selected_attachment["local_available"]:
-                    resolved_thumbnail_local_path = selected_attachment["local_path"]
-                else:
-                    resolved_thumbnail_local_path = None
+                resolved_thumbnail_local_path = _optional_str(selected_attachment["local_path"])
 
             metadata_for_save = _set_thumbnail_focus_in_metadata(active_metadata, focus_x, focus_y)
             db.update_post_series(post_id=post_id, series_id=series_id)
@@ -881,7 +932,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             series_list=series_list,
             edit_content=_prettify_content_for_edit(active_version["content"]),
             attachments=attachment_rows,
-            selected_thumbnail_attachment_id=selected_thumbnail_attachment_id,
+            selected_thumbnail_choice=selected_thumbnail_choice,
             thumbnail_preview_url=thumbnail_preview_url,
             thumbnail_focus_x=thumbnail_focus_x,
             thumbnail_focus_y=thumbnail_focus_y,
@@ -1441,6 +1492,56 @@ def _optional_str(value: Any) -> str | None:
         cleaned = value.strip()
         return cleaned or None
     return None
+
+
+def _remove_local_attachment_file(files_base: Path, local_path: str) -> None:
+    target = files_base / local_path
+    try:
+        if target.is_file():
+            target.unlink()
+    except OSError:
+        return
+
+
+def _rename_local_attachment_file(
+    *,
+    files_base: Path,
+    local_path: str,
+    desired_name: str,
+    fallback_name: str,
+) -> str:
+    current = files_base / local_path
+    if not current.exists() or not current.is_file():
+        return local_path
+
+    safe_name = sanitize_filename(desired_name.strip()) or sanitize_filename(fallback_name.strip()) or current.name
+    suffix = Path(safe_name).suffix
+    if not suffix:
+        inherited_suffix = Path(current.name).suffix or Path(fallback_name).suffix
+        if inherited_suffix:
+            safe_name = f"{safe_name}{inherited_suffix}"
+
+    destination = current.with_name(safe_name)
+    if destination == current:
+        return local_path
+
+    if destination.exists():
+        stem = destination.stem
+        ext = destination.suffix
+        counter = 2
+        while True:
+            candidate = destination.with_name(f"{stem}_{counter}{ext}")
+            if not candidate.exists():
+                destination = candidate
+                break
+            counter += 1
+
+    try:
+        current.rename(destination)
+    except OSError:
+        return local_path
+
+    return destination.relative_to(files_base).as_posix()
 
 
 def _extract_thumbnail_from_payload(

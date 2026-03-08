@@ -1,6 +1,7 @@
 from pathlib import Path
 import time
 from bs4 import BeautifulSoup
+from werkzeug.datastructures import MultiDict
 
 from kemono_library.web import create_app
 
@@ -848,6 +849,128 @@ def test_edit_post_saves_thumbnail_focus_and_applies_to_creator_grid(tmp_path):
     assert creator_page.status_code == 200
     html = creator_page.data.decode("utf-8")
     assert "object-position: 22.5% 77.5%" in html
+
+
+def test_edit_post_attachment_management_is_save_based_and_updates_inline_media(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+
+    creator_id = db.create_creator("Attachment Creator")
+    remote_local = "https://n1.kemono.cr/a1/b2/local_one.jpg"
+    remote_missing = "https://n2.kemono.cr/c3/d4/missing_two.jpg"
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="u-1",
+        external_post_id="p-1",
+        title="Attachment Post",
+        content=f'<p><a href="{remote_local}">local</a></p>',
+        metadata={
+            "post": {
+                "attachments": [
+                    {"name": "extra.png", "path": "/z9/y8/extra.png"},
+                ]
+            }
+        },
+        source_url="https://kemono.cr/fanbox/user/u-1/post/p-1",
+    )
+    version = db.get_post_version(post_id)
+    assert version is not None
+    version_id = int(version["id"])
+
+    local_rel = f"post_{post_id}/local_one.jpg"
+    local_abs = Path(tmp_path / "files" / local_rel)
+    local_abs.parent.mkdir(parents=True, exist_ok=True)
+    local_abs.write_bytes(b"local-bytes")
+
+    db.replace_attachments(
+        post_id,
+        [
+            {"name": "local_one.jpg", "remote_url": remote_local, "local_path": local_rel, "kind": "attachment"},
+            {"name": "missing_two.jpg", "remote_url": remote_missing, "local_path": None, "kind": "attachment"},
+        ],
+        version_id=version_id,
+    )
+    manual_version_id = db.clone_post_version(
+        post_id=post_id,
+        source_version_id=version_id,
+        label="Manual edit",
+        language=None,
+        set_default=False,
+    )
+
+    rows = db.list_attachments(post_id, version_id=manual_version_id)
+    by_name = {str(row["name"]): int(row["id"]) for row in rows}
+    local_id = by_name["local_one.jpg"]
+    missing_id = by_name["missing_two.jpg"]
+
+    client = app.test_client()
+    edit_page = client.get(f"/posts/{post_id}/edit?version_id={manual_version_id}")
+    assert edit_page.status_code == 200
+    assert "extra.png" in edit_page.data.decode("utf-8")
+
+    before_detail = client.get(f"/posts/{post_id}?version_id={manual_version_id}")
+    assert before_detail.status_code == 200
+    assert f"/files/{local_rel}" in before_detail.data.decode("utf-8")
+
+    response = client.post(
+        f"/posts/{post_id}/edit",
+        data=MultiDict(
+            [
+                ("version_id", str(manual_version_id)),
+                ("version_label", "Manual edit"),
+                ("version_language", ""),
+                ("title", "Attachment Post"),
+                ("series_id", ""),
+                ("thumbnail_attachment_id", "__keep__"),
+                ("thumbnail_focus_x", "50"),
+                ("thumbnail_focus_y", "50"),
+                ("content", f'<p><a href="{remote_local}">local</a></p>'),
+                (f"attachment_keep_id_{local_id}", "0"),
+                (f"attachment_keep_id_{local_id}", "1"),
+                (f"attachment_name_id_{local_id}", "renamed local"),
+                (f"attachment_keep_local_id_{local_id}", "0"),
+                (f"attachment_keep_id_{missing_id}", "0"),
+                (f"attachment_keep_id_{missing_id}", "1"),
+                (f"attachment_name_id_{missing_id}", "missing-two.txt"),
+                ("attachment_add_src_0", "0"),
+                ("attachment_add_src_0", "1"),
+                ("attachment_name_src_0", "extra-localized.png"),
+            ]
+        ),
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+
+    updated_rows = db.list_attachments(post_id, version_id=manual_version_id)
+    assert len(updated_rows) == 3
+    updated_by_remote = {str(row["remote_url"]): row for row in updated_rows}
+    updated_local = updated_by_remote[remote_local]
+    updated_missing = updated_by_remote[remote_missing]
+    updated_extra = updated_by_remote["https://kemono.cr/z9/y8/extra.png"]
+
+    assert str(updated_local["name"]).startswith("renamed_local")
+    assert updated_local["local_path"] is None
+    assert not local_abs.exists()
+    assert str(updated_missing["name"]) == "missing-two.txt"
+    assert updated_missing["local_path"] is None
+    assert str(updated_extra["name"]) == "extra-localized.png"
+    assert updated_extra["local_path"] is None
+
+    after_detail = client.get(f"/posts/{post_id}?version_id={manual_version_id}")
+    assert after_detail.status_code == 200
+    html_after = after_detail.data.decode("utf-8")
+    assert f"/files/{local_rel}" not in html_after
+    assert "/a1/b2/local_one.jpg" in html_after
 
 
 def test_creator_folder_filter_and_sort_modes(tmp_path):

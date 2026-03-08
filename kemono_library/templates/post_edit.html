@@ -42,7 +42,7 @@
     </div>
   </header>
 
-  <form method="post" class="form post-edit-form">
+  <form method="post" id="post-edit-main-form" class="form post-edit-form">
     <input type="hidden" name="version_id" value="{{ active_version['id'] }}">
     <section class="post-edit-block">
       <h2>Version Metadata</h2>
@@ -75,7 +75,7 @@
         <div>
           <label for="thumbnail_attachment_id">Thumbnail source</label>
           <select id="thumbnail_attachment_id" name="thumbnail_attachment_id">
-            <option value="__keep__" data-preview-url="{{ thumbnail_preview_url or '' }}" {% if not selected_thumbnail_attachment_id %}selected{% endif %}>Keep current thumbnail</option>
+            <option value="__keep__" data-preview-url="{{ thumbnail_preview_url or '' }}" {% if not selected_thumbnail_choice %}selected{% endif %}>Keep current thumbnail</option>
             <option value="__none__" data-preview-url="">No thumbnail</option>
             {% for file in attachments %}
               {% set lowered_url = file['remote_url']|lower %}
@@ -83,7 +83,7 @@
               {% set is_image = lowered_url_no_query.endswith('.jpg') or lowered_url_no_query.endswith('.jpeg') or lowered_url_no_query.endswith('.png') or lowered_url_no_query.endswith('.gif') or lowered_url_no_query.endswith('.webp') or lowered_url_no_query.endswith('.bmp') or lowered_url_no_query.endswith('.svg') %}
               {% if is_image %}
                 {% set option_preview_url = url_for('serve_file', relative_path=file['local_path']) if file['local_available'] and file['local_path'] else file['remote_url_display'] %}
-                <option value="{{ file['id'] }}" data-preview-url="{{ option_preview_url }}" {% if selected_thumbnail_attachment_id == file['id'] %}selected{% endif %}>
+                <option value="{{ file['choice_value'] }}" data-preview-url="{{ option_preview_url }}" {% if selected_thumbnail_choice == file['choice_value'] %}selected{% endif %}>
                   {{ file['name'] }}{% if not file['local_available'] %} (remote only){% endif %}
                 </option>
               {% endif %}
@@ -165,32 +165,72 @@
 <section class="panel post-edit-attachments">
   <h2>Attachment Management</h2>
   {% if attachments %}
-    <ul class="list post-edit-attachment-list">
+    <p class="post-edit-attachments-note">Attachment edits are applied when you click <strong>Save Changes</strong>.</p>
+    <ul class="post-edit-attachment-list">
       {% for file in attachments %}
+        {% set lowered_url = file['remote_url']|lower %}
+        {% set lowered_url_no_query = lowered_url.split('?')[0] %}
+        {% set is_image = lowered_url_no_query.endswith('.jpg') or lowered_url_no_query.endswith('.jpeg') or lowered_url_no_query.endswith('.png') or lowered_url_no_query.endswith('.gif') or lowered_url_no_query.endswith('.webp') or lowered_url_no_query.endswith('.bmp') or lowered_url_no_query.endswith('.svg') %}
+        {% set preview_url = url_for('serve_file', relative_path=file['local_path']) if file['local_available'] and file['local_path'] else file['remote_url_display'] %}
         <li class="post-edit-attachment-item">
-          <div class="post-edit-attachment-meta">
-            <span class="post-edit-attachment-name">{{ file['name'] }}</span>
-            <small class="post-edit-attachment-kind">{{ file['kind'] }}</small>
-            {% if not file['local_available'] %}
-              <small class="post-file-missing">download skipped/missing</small>
+          <div class="post-edit-attachment-preview">
+            {% if is_image %}
+              <img src="{{ preview_url }}" alt="{{ file['name'] }}" loading="lazy" referrerpolicy="no-referrer">
+            {% else %}
+              <span class="post-edit-attachment-preview-fallback">File</span>
             {% endif %}
           </div>
-          <div class="post-edit-attachment-actions">
+          <div class="post-edit-attachment-body">
+            <div class="post-edit-attachment-meta">
+              {% if file['tracked'] %}
+                {% if active_version['is_manual'] %}
+                  <label class="post-edit-attachment-keep">
+                    <input type="hidden" name="attachment_keep_{{ file['form_key'] }}" value="0" form="post-edit-main-form">
+                    <input type="checkbox" name="attachment_keep_{{ file['form_key'] }}" value="1" checked form="post-edit-main-form">
+                    <span>Keep in version</span>
+                  </label>
+                {% else %}
+                  <span class="post-edit-attachment-source-badge">Tracked source file</span>
+                {% endif %}
+              {% else %}
+                <label class="post-edit-attachment-keep">
+                  <input type="hidden" name="attachment_add_{{ file['form_key'] }}" value="0" form="post-edit-main-form">
+                  <input type="checkbox" name="attachment_add_{{ file['form_key'] }}" value="1" form="post-edit-main-form">
+                  <span>Add to version</span>
+                </label>
+              {% endif %}
+              <small class="post-edit-attachment-kind">{{ file['kind'] }}</small>
+              {% if not file['local_available'] %}
+                <small class="post-file-missing">download skipped/missing</small>
+              {% endif %}
+            </div>
+            <label for="attachment-name-{{ file['form_key'] }}">File name</label>
+            <input
+              id="attachment-name-{{ file['form_key'] }}"
+              name="attachment_name_{{ file['form_key'] }}"
+              value="{{ file['name'] }}"
+              form="post-edit-main-form"
+            >
+            {% if file['local_available'] %}
+              <label class="post-edit-attachment-keep-local">
+                <input type="hidden" name="attachment_keep_local_{{ file['form_key'] }}" value="0" form="post-edit-main-form">
+                <input type="checkbox" name="attachment_keep_local_{{ file['form_key'] }}" value="1" checked form="post-edit-main-form">
+                <span>Keep downloaded file</span>
+              </label>
+            {% endif %}
+            <div class="post-edit-attachment-actions">
             {% if file['local_available'] %}
               <a class="button-link button-ghost" href="{{ url_for('serve_file', relative_path=file['local_path']) }}" target="_blank" rel="noopener">Open local</a>
             {% else %}
               <a class="button-link button-ghost" href="{{ file['remote_url_display'] }}" target="_blank" rel="noopener noreferrer">Open remote</a>
-              <form method="post" action="{{ url_for('retry_attachment_download', post_id=post['id'], attachment_id=file['id'], version_id=active_version['id']) }}" class="inline-form">
-                <input type="hidden" name="version_id" value="{{ active_version['id'] }}">
-                <button type="submit" class="button-ghost">Retry download</button>
-              </form>
+              {% if file['id'] is not none %}
+                <form method="post" action="{{ url_for('retry_attachment_download', post_id=post['id'], attachment_id=file['id'], version_id=active_version['id']) }}" class="inline-form">
+                  <input type="hidden" name="version_id" value="{{ active_version['id'] }}">
+                  <button type="submit" class="button-ghost">Retry download</button>
+                </form>
+              {% endif %}
             {% endif %}
-            <form method="post" class="inline-form" onsubmit="return confirm('Remove this attachment from this version?');">
-              <input type="hidden" name="action" value="remove_attachment">
-              <input type="hidden" name="version_id" value="{{ active_version['id'] }}">
-              <input type="hidden" name="attachment_id" value="{{ file['id'] }}">
-              <button type="submit" class="button-ghost button-danger-quiet">Remove</button>
-            </form>
+            </div>
           </div>
         </li>
       {% endfor %}
