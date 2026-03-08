@@ -321,6 +321,11 @@ def create_app(test_config: dict | None = None) -> Flask:
         default_import_target_mode = "existing" if target_post_id else "new"
         if prefill_import_target_mode in {"new", "existing"} and exact_match is None:
             default_import_target_mode = prefill_import_target_mode
+        target_attachment_index = _build_target_attachment_index(
+            db,
+            files_base=Path(app.config["FILES_DIR"]),
+            post_ids=[int(row["id"]) for row in creator_posts],
+        )
 
         return render_template(
             "import_preview.html",
@@ -339,6 +344,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             default_set_as_default=prefill_set_as_default,
             default_version_label=prefill_version_label or "Original",
             default_version_language=prefill_version_language,
+            target_attachment_index=target_attachment_index,
         )
 
     @app.post("/import/commit")
@@ -1170,6 +1176,42 @@ def _remote_path_key(raw_path_or_url: str) -> str:
     path = parsed.path if parsed.path else raw_path_or_url
     cleaned = path.strip()
     return cleaned.lower() if cleaned else ""
+
+
+def _build_target_attachment_index(
+    db: LibraryDB,
+    *,
+    files_base: Path,
+    post_ids: list[int],
+) -> dict[str, dict[str, int]]:
+    index: dict[str, dict[str, int]] = {}
+    for post_id in post_ids:
+        key_state: dict[str, int] = {}
+        for row in db.list_all_attachments_for_post(post_id):
+            name = row["name"]
+            remote_url = row["remote_url"]
+            local_path = row["local_path"]
+
+            has_local = False
+            if isinstance(local_path, str) and local_path.strip():
+                has_local = _is_valid_file(files_base / local_path)
+
+            raw_keys: list[str] = []
+            if isinstance(name, str) and name.strip():
+                raw_keys.append(f"name:{sanitize_filename(name).lower()}")
+            if isinstance(remote_url, str) and remote_url.strip():
+                path_key = _remote_path_key(remote_url)
+                if path_key:
+                    raw_keys.append(f"path:{path_key}")
+
+            for item_key in raw_keys:
+                existing_state = key_state.get(item_key, 0)
+                if has_local:
+                    key_state[item_key] = 2
+                elif existing_state == 0:
+                    key_state[item_key] = 1
+        index[str(post_id)] = key_state
+    return index
 
 
 def _media_kind_priority(kind: Any) -> int:
