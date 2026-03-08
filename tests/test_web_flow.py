@@ -532,7 +532,7 @@ def test_post_detail_series_name_links_to_series_view(tmp_path):
     assert detail.status_code == 200
     expected_series_link = f'href="/creators/{creator_id}?series_id={series_id}"'.encode()
     assert expected_series_link in detail.data
-    assert b">Folder A</a>" in detail.data
+    assert b"Folder A" in detail.data
 
 
 def test_post_detail_prefers_attachment_over_inline_same_name(tmp_path):

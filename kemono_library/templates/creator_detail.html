@@ -16,55 +16,52 @@
   {% set import_post_url = url_for('import_form', creator_id=creator['id']) %}
 {% endif %}
 
-<section class="panel creator-hero">
-  <div class="creator-hero-main">
-    <div class="creator-hero-avatar">
-      {% if creator['icon_local_path'] %}
-        <img class="creator-icon creator-icon-xl" src="{{ url_for('serve_creator_icon', relative_path=creator['icon_local_path']) }}" alt="{{ creator['name'] }} icon" loading="lazy">
-      {% elif creator['icon_remote_url'] %}
-        <img class="creator-icon creator-icon-xl" src="{{ creator['icon_remote_url'] }}" alt="{{ creator['name'] }} icon" loading="lazy" referrerpolicy="no-referrer">
-      {% else %}
-        <span class="creator-icon creator-icon-xl creator-icon-placeholder" aria-hidden="true"></span>
-      {% endif %}
-    </div>
-    <div class="creator-hero-copy">
-      <h1 class="creator-title">{{ creator['name'] }}</h1>
-      <div class="creator-meta-row">
-        <span class="creator-meta-pill">
-          {% if creator['service'] %}{{ creator['service']|upper }}{% else %}UNLINKED{% endif %}
-        </span>
-        <span class="creator-meta-pill">
-          {% if creator['external_user_id'] %}User {{ creator['external_user_id'] }}{% else %}No external user{% endif %}
-        </span>
+{% if not selected_series %}
+  <section class="panel creator-hero">
+    <div class="creator-hero-main">
+      <div class="creator-hero-avatar">
+        {% if creator['icon_local_path'] %}
+          <img class="creator-icon creator-icon-xl" src="{{ url_for('serve_creator_icon', relative_path=creator['icon_local_path']) }}" alt="{{ creator['name'] }} icon" loading="lazy">
+        {% elif creator['icon_remote_url'] %}
+          <img class="creator-icon creator-icon-xl" src="{{ creator['icon_remote_url'] }}" alt="{{ creator['name'] }} icon" loading="lazy" referrerpolicy="no-referrer">
+        {% else %}
+          <span class="creator-icon creator-icon-xl creator-icon-placeholder" aria-hidden="true"></span>
+        {% endif %}
+      </div>
+      <div class="creator-hero-copy">
+        <h1 class="creator-title">{{ creator['name'] }}</h1>
+        <div class="creator-meta-row">
+          <span class="creator-meta-pill">
+            {% if creator['service'] %}{{ creator['service']|upper }}{% else %}UNLINKED{% endif %}
+          </span>
+          <span class="creator-meta-pill">
+            {% if creator['external_user_id'] %}User {{ creator['external_user_id'] }}{% else %}No external user{% endif %}
+          </span>
+        </div>
+      </div>
+      <div class="creator-hero-actions">
+        <a class="button-link button-ghost" href="{{ url_for('edit_creator', creator_id=creator['id']) }}">Edit</a>
       </div>
     </div>
-    <div class="creator-hero-actions">
-      {% if selected_series %}
-        <a class="button-link button-ghost" href="{{ url_for('creator_detail', creator_id=creator['id'], sort=sort_by, direction=sort_direction) }}">Back to all posts</a>
-      {% else %}
-        <a class="button-link button-ghost" href="{{ url_for('edit_creator', creator_id=creator['id']) }}">Edit</a>
-      {% endif %}
-    </div>
-  </div>
-  {% if not selected_series and (creator['description'] or creator['tags_text']) %}
-    <div class="creator-profile-meta">
-      {% if creator['description'] %}
-        <div class="creator-profile-description">{{ creator['description']|render_markdown }}</div>
-      {% endif %}
-      {% if creator['tags_text'] %}
-        <div class="creator-profile-tags">
-          {% for tag in creator['tags_text'].split(',') %}
-            {% set normalized_tag = tag.strip() %}
-            {% if normalized_tag %}
-              <span class="creator-profile-tag">{{ normalized_tag }}</span>
-            {% endif %}
-          {% endfor %}
-        </div>
-      {% endif %}
-    </div>
-  {% endif %}
-
-</section>
+    {% if creator['description'] or creator['tags_text'] %}
+      <div class="creator-profile-meta">
+        {% if creator['description'] %}
+          <div class="creator-profile-description">{{ creator['description']|render_markdown }}</div>
+        {% endif %}
+        {% if creator['tags_text'] %}
+          <div class="creator-profile-tags">
+            {% for tag in creator['tags_text'].split(',') %}
+              {% set normalized_tag = tag.strip() %}
+              {% if normalized_tag %}
+                <span class="creator-profile-tag">{{ normalized_tag }}</span>
+              {% endif %}
+            {% endfor %}
+          </div>
+        {% endif %}
+      </div>
+    {% endif %}
+  </section>
+{% endif %}
 
 <section class="creator-layout">
   <article class="panel creator-series-panel">

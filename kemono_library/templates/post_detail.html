@@ -3,13 +3,6 @@
 <section class="panel">
   <h1>{{ active_version['title'] }}</h1>
   <p>
-    <strong>Creator:</strong>
-    <a href="{{ url_for('creator_detail', creator_id=post['creator_id']) }}">{{ post['creator_name'] }}</a>
-    {% if post['series_name'] %}
-      / <a href="{{ url_for('creator_detail', creator_id=post['creator_id'], series_id=post['series_id']) }}">{{ post['series_name'] }}</a>
-    {% endif %}
-  </p>
-  <p>
     <strong>Original:</strong>
     {% if active_version['source_url'] %}
       <a href="{{ active_version['source_url'] }}" target="_blank" rel="noopener">{{ active_version['source_url'] }}</a>

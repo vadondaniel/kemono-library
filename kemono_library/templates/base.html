@@ -20,7 +20,27 @@
 </head>
 <body>
   <header class="site-header">
-    <a class="brand" href="{{ url_for('index') }}">Kemono Library</a>
+    {% if header_context %}
+      <div class="brand brand-context">
+        <a class="brand-context-icon-link" href="{{ header_context['creator_href'] }}">
+          {% if header_context['icon_local_path'] %}
+            <img class="creator-icon creator-icon-lg brand-context-icon" src="{{ url_for('serve_creator_icon', relative_path=header_context['icon_local_path']) }}" alt="{{ header_context['title'] }} icon" loading="lazy">
+          {% elif header_context['icon_remote_url'] %}
+            <img class="creator-icon creator-icon-lg brand-context-icon" src="{{ header_context['icon_remote_url'] }}" alt="{{ header_context['title'] }} icon" loading="lazy" referrerpolicy="no-referrer">
+          {% else %}
+            <span class="creator-icon creator-icon-lg creator-icon-placeholder brand-context-icon" aria-hidden="true"></span>
+          {% endif %}
+        </a>
+        <span class="brand-context-links">
+          <a class="brand-context-link brand-context-link-creator" href="{{ header_context['creator_href'] }}">{{ header_context['title'] }}</a>
+          {% if header_context['subtitle'] %}
+            <a class="brand-context-link brand-context-link-series" href="{{ header_context['series_href'] or header_context['creator_href'] }}">/ {{ header_context['subtitle'] }}</a>
+          {% endif %}
+        </span>
+      </div>
+    {% else %}
+      <a class="brand" href="{{ url_for('index') }}">Kemono Library</a>
+    {% endif %}
     <div class="header-actions">
       <nav>
         <a href="{{ url_for('index') }}">Home</a>

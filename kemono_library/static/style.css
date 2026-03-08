@@ -120,6 +120,62 @@ h4 {
   text-decoration: none;
 }
 
+.brand-context {
+  font-family: var(--font-body);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+  max-width: min(520px, 58vw);
+}
+
+.brand-context-icon-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.brand-context-icon {
+  width: 2rem;
+  height: 2rem;
+}
+
+.brand-context-links {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.36rem;
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+
+.brand-context-link {
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.brand-context-link-creator {
+  font-family: var(--font-head);
+  font-size: 1.02rem;
+  font-weight: 700;
+  line-height: 1.05;
+  color: var(--text);
+}
+
+.brand-context-link-series {
+  font-size: 0.82rem;
+  line-height: 1.2;
+  color: var(--muted);
+}
+
+.brand-context-link:hover {
+  color: var(--accent-strong);
+}
+
 .theme-toggle {
   border: 1px solid var(--border);
   background: var(--card-solid);
@@ -2147,6 +2203,10 @@ body.is-lightbox-open {
   .site-header nav {
     gap: 0.7rem;
     flex-wrap: wrap;
+  }
+
+  .brand-context {
+    max-width: 100%;
   }
 
   .import-toolbar {

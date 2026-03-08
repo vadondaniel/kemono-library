@@ -150,15 +150,18 @@ def create_app(test_config: dict | None = None) -> Flask:
             item["thumbnail_focus_x"] = focus_x
             item["thumbnail_focus_y"] = focus_y
             posts.append(item)
+        selected_series = series_by_id.get(selected_series_id) if selected_series_id is not None else None
+        header_context = _build_creator_header_context(creator=creator, selected_series=selected_series)
         return render_template(
             "creator_detail.html",
             creator=creator,
             series_list=series_list,
             posts=posts,
-            selected_series=series_by_id.get(selected_series_id) if selected_series_id is not None else None,
+            selected_series=selected_series,
             active_folder=active_folder,
             sort_by=sort_by,
             sort_direction=sort_direction,
+            header_context=header_context if selected_series else None,
         )
 
     @app.post("/creators/<int:creator_id>/series")
@@ -661,6 +664,8 @@ def create_app(test_config: dict | None = None) -> Flask:
         post = db.get_post(post_id)
         if not post:
             return ("Post not found", 404)
+        creator = db.get_creator(int(post["creator_id"]))
+        header_context = _build_post_header_context(post=post, creator=creator)
         requested_version_id = request.args.get("version_id", type=int)
         active_version = db.get_post_version(post_id, requested_version_id)
         if not active_version:
@@ -726,6 +731,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             active_version=active_version,
             attachments=attachment_rows,
             rendered_content=rendered_content,
+            header_context=header_context,
         )
 
     @app.post("/posts/<int:post_id>/attachments/<int:attachment_id>/retry")
@@ -803,6 +809,8 @@ def create_app(test_config: dict | None = None) -> Flask:
         post = db.get_post(post_id)
         if not post:
             return ("Post not found", 404)
+        creator = db.get_creator(int(post["creator_id"]))
+        header_context = _build_post_header_context(post=post, creator=creator)
         requested_version_id = request.args.get("version_id", type=int) or request.form.get("version_id", type=int)
         active_version = db.get_post_version(post_id, requested_version_id)
         if not active_version:
@@ -1055,6 +1063,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             thumbnail_preview_url=thumbnail_preview_url,
             thumbnail_focus_x=thumbnail_focus_x,
             thumbnail_focus_y=thumbnail_focus_y,
+            header_context=header_context,
         )
 
     @app.post("/posts/<int:post_id>/versions/<int:version_id>/set-default")
@@ -1296,6 +1305,68 @@ def _ensure_creator_icon(
         icon_remote_url=remote_url,
         icon_local_path=local_rel,
     )
+
+
+def _build_post_header_context(*, post: Any, creator: Any | None) -> dict[str, Any]:
+    creator_id = int(post["creator_id"])
+    raw_series_id = post["series_id"]
+    series_id = int(raw_series_id) if raw_series_id is not None else None
+    creator_name = str(post["creator_name"]) if post["creator_name"] else "Creator"
+    series_name = str(post["series_name"]).strip() if post["series_name"] else ""
+    creator_href = url_for("creator_detail", creator_id=creator_id)
+    series_href = (
+        url_for("creator_detail", creator_id=creator_id, series_id=series_id) if series_id is not None else None
+    )
+
+    icon_local_path = None
+    icon_remote_url = None
+    if creator is not None:
+        raw_local = creator["icon_local_path"]
+        raw_remote = creator["icon_remote_url"]
+        if isinstance(raw_local, str) and raw_local.strip():
+            icon_local_path = raw_local
+        if isinstance(raw_remote, str) and raw_remote.strip():
+            icon_remote_url = raw_remote
+
+    return {
+        "title": creator_name,
+        "subtitle": series_name,
+        "creator_href": creator_href,
+        "series_href": series_href,
+        "icon_local_path": icon_local_path,
+        "icon_remote_url": icon_remote_url,
+    }
+
+
+def _build_creator_header_context(*, creator: Any, selected_series: Any | None) -> dict[str, Any]:
+    creator_id = int(creator["id"])
+    creator_name = str(creator["name"]) if creator["name"] else "Creator"
+    # In creator folder view we only show creator context in the global header.
+    subtitle = ""
+    creator_href = url_for("creator_detail", creator_id=creator_id)
+    series_href = (
+        url_for("creator_detail", creator_id=creator_id, series_id=int(selected_series["id"]))
+        if selected_series is not None
+        else None
+    )
+
+    icon_local_path = None
+    icon_remote_url = None
+    raw_local = creator["icon_local_path"]
+    raw_remote = creator["icon_remote_url"]
+    if isinstance(raw_local, str) and raw_local.strip():
+        icon_local_path = raw_local
+    if isinstance(raw_remote, str) and raw_remote.strip():
+        icon_remote_url = raw_remote
+
+    return {
+        "title": creator_name,
+        "subtitle": subtitle,
+        "creator_href": creator_href,
+        "series_href": series_href,
+        "icon_local_path": icon_local_path,
+        "icon_remote_url": icon_remote_url,
+    }
 
 
 def _build_local_media_maps(

@@ -6,13 +6,7 @@
     <div class="post-edit-title-wrap">
       <p class="post-edit-kicker">Edit Version</p>
       <h1>{{ active_version['title'] }}</h1>
-      <p class="post-edit-subtitle">
-        <strong>Creator:</strong>
-        <a href="{{ url_for('creator_detail', creator_id=post['creator_id']) }}">{{ post['creator_name'] }}</a>
-        {% if post['series_name'] %}
-          / {{ post['series_name'] }}
-        {% endif %}
-      </p>
+      <p class="post-edit-subtitle">Edit content, files, and thumbnail for this {% if versions|length > 1 %}version{% else %}post{% endif %}.</p>
       <div class="post-edit-chips">
         <span class="post-edit-chip">Version: {{ active_version['label'] }}</span>
         {% if active_version['language'] %}
