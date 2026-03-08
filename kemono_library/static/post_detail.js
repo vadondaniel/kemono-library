@@ -1,4 +1,27 @@
 (() => {
+  const versionMenu = document.querySelector("[data-post-version-menu]");
+  if (versionMenu instanceof HTMLDetailsElement) {
+    const closeVersionMenu = () => {
+      versionMenu.open = false;
+    };
+
+    document.addEventListener("click", (event) => {
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
+      }
+      if (!versionMenu.contains(target)) {
+        closeVersionMenu();
+      }
+    });
+
+    window.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        closeVersionMenu();
+      }
+    });
+  }
+
   const navScrollRoot = document.querySelector(".post-nav-list-wrap");
   const navList = document.querySelector(".post-nav-list");
   const activeNav = document.querySelector(".post-nav-link.is-active");

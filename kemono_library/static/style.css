@@ -2401,9 +2401,18 @@ body.is-lightbox-open {
   gap: 0.5rem;
 }
 
+.post-viewer-title-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
 .post-viewer-title {
   margin: 0;
   line-height: 1.15;
+  min-width: 0;
 }
 
 .post-viewer-chip-row {
@@ -2439,26 +2448,121 @@ body.is-lightbox-open {
   align-items: center;
 }
 
-.post-viewer-details {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.65rem;
-  padding-top: 0.2rem;
+.post-viewer-version-menu {
+  position: relative;
+  margin: 0;
 }
 
-.post-viewer-version-form {
-  display: grid;
-  gap: 0.32rem;
-  align-content: start;
-  width: min(300px, 100%);
+.post-viewer-version-menu summary {
+  list-style: none;
 }
 
-.post-viewer-version-form label {
-  font-size: 0.76rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+.post-viewer-version-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.post-viewer-version-menu-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.42rem;
+  height: 1.42rem;
+  min-width: 1.42rem;
+  flex: 0 0 auto;
+  margin: 0;
+  cursor: pointer;
+  border-radius: 0.44rem;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.post-viewer-version-menu-toggle:hover {
+  background: color-mix(in srgb, var(--accent-soft) 45%, transparent);
+}
+
+.post-viewer-version-menu-toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 26%, transparent);
+}
+
+.post-viewer-version-arrow-icon {
+  pointer-events: none;
+  font-size: 0.92rem;
+  line-height: 1;
   color: var(--muted);
+  margin-top: 0.06rem;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.post-viewer-version-menu[open] .post-viewer-version-arrow-icon {
+  transform: rotate(180deg);
+}
+
+.post-viewer-version-menu-list {
+  position: absolute;
+  top: calc(100% + 0.28rem);
+  right: 0;
+  min-width: 260px;
+  max-width: min(460px, calc(100vw - 2.2rem));
+  max-height: 300px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 0.62rem;
+  background: color-mix(in srgb, var(--card-solid) 96%, transparent);
+  box-shadow: var(--shadow);
+  padding: 0.35rem;
+  display: grid;
+  gap: 0.22rem;
+  z-index: 16;
+}
+
+.post-viewer-version-menu-item {
+  display: grid;
+  gap: 0.08rem;
+  border: 1px solid transparent;
+  border-radius: 0.48rem;
+  padding: 0.34rem 0.42rem;
+  text-decoration: none;
+  color: inherit;
+}
+
+.post-viewer-version-menu-item:hover {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  background: color-mix(in srgb, var(--accent-soft) 28%, var(--card-solid));
+}
+
+.post-viewer-version-menu-item.is-active {
+  border-color: color-mix(in srgb, var(--accent) 56%, var(--border));
+  background: color-mix(in srgb, var(--accent-soft) 46%, var(--card-solid));
+}
+
+.post-viewer-version-menu-item-main {
+  font-family: var(--font-head);
+  font-size: 0.98rem;
   font-weight: 700;
+  line-height: 1.2;
+  color: var(--text);
+}
+
+.post-viewer-version-menu-item-sub {
+  font-size: 0.78rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .post-file-missing {
@@ -2499,10 +2603,6 @@ body.is-lightbox-open {
   .post-nav-panel {
     position: static;
     max-height: none;
-  }
-
-  .post-viewer-details {
-    justify-content: flex-start;
   }
 
   .site-header nav {
