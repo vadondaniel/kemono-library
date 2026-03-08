@@ -1084,7 +1084,6 @@ def create_app(test_config: dict | None = None) -> Flask:
                 return redirect(url_for("edit_post", post_id=post_id, version_id=active_version_id))
 
             # Apply attachment edits only on Save.
-            allow_detach = bool(active_version["is_manual"])
             managed_attachments_by_choice: dict[str, dict[str, Any]] = {}
             managed_attachments: list[dict[str, Any]] = []
             for item in attachment_rows:
@@ -1094,12 +1093,8 @@ def create_app(test_config: dict | None = None) -> Flask:
                 local_available = bool(local_path and _is_valid_file(files_base / local_path))
                 keep_in_version: bool
                 if tracked:
-                    allow_detach_for_item = allow_detach or not local_available
-                    if allow_detach_for_item:
-                        keep_values = request.form.getlist(f"attachment_keep_{form_key}")
-                        keep_in_version = True if not keep_values else "1" in keep_values
-                    else:
-                        keep_in_version = True
+                    keep_values = request.form.getlist(f"attachment_keep_{form_key}")
+                    keep_in_version = True if not keep_values else "1" in keep_values
                 else:
                     add_values = request.form.getlist(f"attachment_add_{form_key}")
                     keep_in_version = "1" in add_values or thumbnail_choice == str(item["choice_value"])
@@ -1183,7 +1178,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                 if selected_thumbnail_choice:
                     kept_current = managed_attachments_by_choice.get(selected_thumbnail_choice)
                     if kept_current is None:
-                        if allow_detach and selected_thumbnail_choice.startswith("id:"):
+                        if selected_thumbnail_choice.startswith("id:"):
                             resolved_thumbnail_name = None
                             resolved_thumbnail_remote_url = None
                             resolved_thumbnail_local_path = None
@@ -1969,8 +1964,13 @@ def _iter_metadata_media_entries(metadata: dict[str, Any]) -> list[dict[str, Any
 def _remote_path_key(raw_path_or_url: str) -> str:
     parsed = urlparse(raw_path_or_url)
     path = parsed.path if parsed.path else raw_path_or_url
-    cleaned = path.strip()
-    return cleaned.lower() if cleaned else ""
+    cleaned = path.strip().lower()
+    if not cleaned:
+        return ""
+    if cleaned.startswith("/data/"):
+        cleaned = cleaned[5:]
+    cleaned = re.sub(r"/{2,}", "/", cleaned)
+    return cleaned
 
 
 def _remote_filename_alias_keys(raw_url: str | None) -> set[str]:
