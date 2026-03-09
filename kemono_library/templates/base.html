@@ -18,7 +18,7 @@
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='icon.svg') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body>
+<body{% if body_class %} class="{{ body_class }}"{% endif %}>
   <header class="site-header">
     {% if header_context %}
       <div class="brand brand-context">
@@ -45,11 +45,46 @@
       <nav>
         <a href="{{ url_for('import_form') }}">Import Post</a>
       </nav>
+      {% if post_view_mode_switcher %}
+        <div
+          class="post-view-mode-switch"
+          data-post-view-mode-switcher
+          data-current-mode="{{ post_view_mode_switcher['current_mode'] }}"
+          data-creator-id="{{ post_view_mode_switcher['creator_id'] }}"
+          data-view-param-present="{% if post_view_mode_switcher['view_param_present'] %}1{% else %}0{% endif %}"
+        >
+          <span class="post-view-mode-label">View</span>
+          <div class="post-view-mode-chip-row">
+            {% for option in post_view_mode_switcher['options'] %}
+              <a
+                class="post-view-mode-chip {% if option['id'] == post_view_mode_switcher['current_mode'] %}is-active{% endif %}"
+                href="{{ option['href'] }}"
+                data-post-view-mode-option
+                data-view-mode="{{ option['id'] }}"
+              >{{ option['label'] }}</a>
+            {% endfor %}
+          </div>
+          <label class="sr-only" for="post-view-mode-select">View mode</label>
+          <select
+            id="post-view-mode-select"
+            class="post-view-mode-select"
+            data-post-view-mode-select
+            aria-label="View mode"
+          >
+            {% for option in post_view_mode_switcher['options'] %}
+              <option value="{{ option['href'] }}" data-view-mode="{{ option['id'] }}" {% if option['id'] == post_view_mode_switcher['current_mode'] %}selected{% endif %}>{{ option['label'] }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      {% endif %}
       <button id="theme-toggle" type="button" class="theme-toggle" aria-label="Switch color theme">Theme: Auto</button>
+      {% if post_view_mode_switcher and post_view_mode_switcher['current_mode'] == 'reader' %}
+        <button type="button" class="button-link button-ghost post-reader-nav-header-button" data-post-reader-nav-open>Navigator</button>
+      {% endif %}
     </div>
   </header>
 
-  <main class="container">
+  <main class="container{% if main_class %} {{ main_class }}{% endif %}">
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
         <section class="flash-stack">

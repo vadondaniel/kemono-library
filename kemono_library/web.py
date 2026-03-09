@@ -374,6 +374,129 @@ def create_app(test_config: dict | None = None) -> Flask:
     def format_bytes_filter(value: Any) -> str:
         return _format_bytes_for_display(value)
 
+    def _normalize_post_view_mode_from_request() -> tuple[str, bool, bool]:
+        view_param_present = "view" in request.args
+        raw_view_mode = request.args.get("view", "").strip().lower() if view_param_present else ""
+        view_mode = raw_view_mode if raw_view_mode in {"classic", "reader"} else "classic"
+        include_view_in_urls = view_param_present or view_mode != "classic"
+        return view_mode, view_param_present, include_view_in_urls
+
+    def _normalize_nav_scope_from_request() -> str:
+        nav_scope = request.args.get("nav_scope", "series").strip().lower()
+        if nav_scope not in {"series", "all"}:
+            return "series"
+        return nav_scope
+
+    def _build_post_detail_href_for_context(
+        target_post_id: int,
+        *,
+        nav_scope_value: str,
+        view_mode: str,
+        include_view_in_urls: bool,
+        version_id_value: int | None = None,
+        force_view_mode: str | None = None,
+        force_include_view: bool = False,
+    ) -> str:
+        query: dict[str, Any] = {"post_id": target_post_id, "nav_scope": nav_scope_value}
+        if version_id_value is not None:
+            query["version_id"] = version_id_value
+        mode_for_url = force_view_mode or view_mode
+        if force_include_view or include_view_in_urls:
+            query["view"] = mode_for_url
+        return url_for("post_detail", **query)
+
+    def _build_post_navigator_context(
+        *,
+        post_id: int,
+        post: sqlite3.Row,
+        active_version: sqlite3.Row,
+        nav_scope: str,
+        view_mode: str,
+        include_view_in_urls: bool,
+    ) -> dict[str, Any]:
+        creator_id = int(post["creator_id"])
+        raw_series_id = post["series_id"]
+        current_series_id = int(raw_series_id) if raw_series_id is not None else None
+        navigator_title = "All entries"
+        if nav_scope == "all":
+            navigator_rows = db.list_posts_for_creator(
+                creator_id,
+                sort_by="published",
+                sort_direction="desc",
+            )
+        elif current_series_id is not None:
+            navigator_rows = db.list_posts_for_creator(
+                creator_id,
+                series_id=current_series_id,
+                sort_by="published",
+                sort_direction="desc",
+            )
+            navigator_title = str(post["series_name"]).strip() if post["series_name"] else "Series"
+        else:
+            navigator_rows = db.list_posts_for_creator(
+                creator_id,
+                unsorted_only=True,
+                sort_by="published",
+                sort_direction="desc",
+            )
+            navigator_title = "Unsorted"
+
+        active_version_id = int(active_version["id"])
+        active_version_query_id = None if bool(active_version["is_default"]) else active_version_id
+        series_scope_url = _build_post_detail_href_for_context(
+            post_id,
+            nav_scope_value="series",
+            view_mode=view_mode,
+            include_view_in_urls=include_view_in_urls,
+            version_id_value=active_version_query_id,
+        )
+        all_scope_url = _build_post_detail_href_for_context(
+            post_id,
+            nav_scope_value="all",
+            view_mode=view_mode,
+            include_view_in_urls=include_view_in_urls,
+            version_id_value=active_version_query_id,
+        )
+
+        navigator_entries: list[dict[str, Any]] = []
+        for row in navigator_rows:
+            nav_post_id = int(row["id"])
+            href = _build_post_detail_href_for_context(
+                nav_post_id,
+                nav_scope_value=nav_scope,
+                view_mode=view_mode,
+                include_view_in_urls=include_view_in_urls,
+            )
+            if nav_post_id == post_id and active_version_query_id is not None:
+                href = _build_post_detail_href_for_context(
+                    nav_post_id,
+                    nav_scope_value=nav_scope,
+                    view_mode=view_mode,
+                    include_view_in_urls=include_view_in_urls,
+                    version_id_value=active_version_query_id,
+                )
+            published_at = row["published_at"]
+            navigator_entries.append(
+                {
+                    "id": nav_post_id,
+                    "title": str(row["title"]) if row["title"] else f"Post {nav_post_id}",
+                    "published_at": published_at,
+                    "published_at_display": _format_datetime_for_display(published_at),
+                    "series_name": row["series_name"],
+                    "is_current": nav_post_id == post_id,
+                    "href": href,
+                }
+            )
+
+        return {
+            "scope": nav_scope,
+            "title": navigator_title,
+            "entries": navigator_entries,
+            "series_scope_url": series_scope_url,
+            "all_scope_url": all_scope_url,
+            "active_version_query_id": active_version_query_id,
+        }
+
     @app.get("/")
     def index():
         creators = db.list_creators()
@@ -1083,9 +1206,9 @@ def create_app(test_config: dict | None = None) -> Flask:
             active_version = versions[0]
         versions = db.list_post_versions(post_id)
         active_version_id = int(active_version["id"])
-        nav_scope = request.args.get("nav_scope", "series").strip().lower()
-        if nav_scope not in {"series", "all"}:
-            nav_scope = "series"
+        view_mode, view_param_present, include_view_in_urls = _normalize_post_view_mode_from_request()
+        nav_scope = _normalize_nav_scope_from_request()
+
         attachments = db.list_attachments(post_id, version_id=active_version_id)
         local_media_map, local_media_by_name, local_media_by_path_key = _build_local_media_maps(active_version, attachments)
         _apply_postwide_media_aliases(
@@ -1142,68 +1265,129 @@ def create_app(test_config: dict | None = None) -> Flask:
             remote_media_by_name=remote_media_by_name,
         )
         creator_id = int(post["creator_id"])
-        raw_series_id = post["series_id"]
-        current_series_id = int(raw_series_id) if raw_series_id is not None else None
-        navigator_title = "All entries"
-        if nav_scope == "all":
-            navigator_rows = db.list_posts_for_creator(
-                creator_id,
-                sort_by="published",
-                sort_direction="desc",
-            )
-        elif current_series_id is not None:
-            navigator_rows = db.list_posts_for_creator(
-                creator_id,
-                series_id=current_series_id,
-                sort_by="published",
-                sort_direction="desc",
-            )
-            navigator_title = str(post["series_name"]).strip() if post["series_name"] else "Series"
-        else:
-            navigator_rows = db.list_posts_for_creator(
-                creator_id,
-                unsorted_only=True,
-                sort_by="published",
-                sort_direction="desc",
-            )
-            navigator_title = "Unsorted"
+        navigator_context = _build_post_navigator_context(
+            post_id=post_id,
+            post=post,
+            active_version=active_version,
+            nav_scope=nav_scope,
+            view_mode=view_mode,
+            include_view_in_urls=include_view_in_urls,
+        )
+        active_version_query_id = navigator_context["active_version_query_id"]
 
-        toggle_query: dict[str, Any] = {}
-        if not active_version["is_default"]:
-            toggle_query["version_id"] = active_version_id
-        series_scope_url = url_for("post_detail", post_id=post_id, nav_scope="series", **toggle_query)
-        all_scope_url = url_for("post_detail", post_id=post_id, nav_scope="all", **toggle_query)
-
-        navigator_entries: list[dict[str, Any]] = []
-        for row in navigator_rows:
-            nav_post_id = int(row["id"])
-            href = url_for("post_detail", post_id=nav_post_id, nav_scope=nav_scope)
-            if nav_post_id == post_id and not active_version["is_default"]:
-                href = url_for("post_detail", post_id=nav_post_id, nav_scope=nav_scope, version_id=active_version_id)
-            navigator_entries.append(
+        version_menu_entries: list[dict[str, Any]] = []
+        for version in versions:
+            version_id_for_href = int(version["id"])
+            version_menu_entries.append(
                 {
-                    "id": nav_post_id,
-                    "title": str(row["title"]) if row["title"] else f"Post {nav_post_id}",
-                    "published_at": row["published_at"],
-                    "series_name": row["series_name"],
-                    "is_current": nav_post_id == post_id,
-                    "href": href,
+                    "row": version,
+                    "href": _build_post_detail_href_for_context(
+                        post_id,
+                        nav_scope_value=nav_scope,
+                        view_mode=view_mode,
+                        include_view_in_urls=include_view_in_urls,
+                        version_id_value=version_id_for_href,
+                    ),
                 }
             )
+
+        post_view_mode_switcher = {
+            "creator_id": creator_id,
+            "current_mode": view_mode,
+            "view_param_present": view_param_present,
+            "options": [
+                {
+                    "id": "classic",
+                    "label": "Classic",
+                    "href": _build_post_detail_href_for_context(
+                        post_id,
+                        nav_scope_value=nav_scope,
+                        view_mode=view_mode,
+                        include_view_in_urls=include_view_in_urls,
+                        version_id_value=active_version_query_id,
+                        force_view_mode="classic",
+                        force_include_view=True,
+                    ),
+                },
+                {
+                    "id": "reader",
+                    "label": "Reader",
+                    "href": _build_post_detail_href_for_context(
+                        post_id,
+                        nav_scope_value=nav_scope,
+                        view_mode=view_mode,
+                        include_view_in_urls=include_view_in_urls,
+                        version_id_value=active_version_query_id,
+                        force_view_mode="reader",
+                        force_include_view=True,
+                    ),
+                },
+            ],
+        }
 
         return render_template(
             "post_detail.html",
             post=post,
             versions=versions,
+            version_menu_entries=version_menu_entries,
             active_version=active_version,
             attachments=attachment_rows,
             rendered_content=rendered_content,
             header_context=header_context,
-            navigator_entries=navigator_entries,
-            navigator_scope=nav_scope,
-            navigator_title=navigator_title,
-            navigator_series_url=series_scope_url,
-            navigator_all_url=all_scope_url,
+            post_view_mode_switcher=post_view_mode_switcher,
+            view_mode=view_mode,
+            include_view_in_urls=include_view_in_urls,
+            view_param_present=view_param_present,
+            navigator_entries=navigator_context["entries"],
+            navigator_scope=navigator_context["scope"],
+            navigator_title=navigator_context["title"],
+            navigator_series_url=navigator_context["series_scope_url"],
+            navigator_all_url=navigator_context["all_scope_url"],
+            main_class="is-post-reader-layout" if view_mode == "reader" else None,
+            body_class="is-post-reader-page" if view_mode == "reader" else None,
+        )
+
+    @app.get("/posts/<int:post_id>/navigator")
+    def post_navigator_data(post_id: int):
+        post = db.get_post(post_id)
+        if not post:
+            return jsonify({"error": "Post not found"}), 404
+        requested_version_id = request.args.get("version_id", type=int)
+        active_version = db.get_post_version(post_id, requested_version_id)
+        if not active_version:
+            versions = db.list_post_versions(post_id)
+            if not versions:
+                return jsonify({"error": "Post version not found"}), 404
+            active_version = versions[0]
+        view_mode, _, include_view_in_urls = _normalize_post_view_mode_from_request()
+        nav_scope = _normalize_nav_scope_from_request()
+        navigator_context = _build_post_navigator_context(
+            post_id=post_id,
+            post=post,
+            active_version=active_version,
+            nav_scope=nav_scope,
+            view_mode=view_mode,
+            include_view_in_urls=include_view_in_urls,
+        )
+        entries = [
+            {
+                "id": int(entry["id"]),
+                "title": str(entry["title"]),
+                "published_at_display": str(entry["published_at_display"]),
+                "series_name": entry["series_name"],
+                "is_current": bool(entry["is_current"]),
+                "href": str(entry["href"]),
+            }
+            for entry in navigator_context["entries"]
+        ]
+        return jsonify(
+            {
+                "scope": str(navigator_context["scope"]),
+                "title": str(navigator_context["title"]),
+                "series_scope_url": str(navigator_context["series_scope_url"]),
+                "all_scope_url": str(navigator_context["all_scope_url"]),
+                "entries": entries,
+            }
         )
 
     @app.post("/posts/<int:post_id>/attachments/<int:attachment_id>/retry")
@@ -1216,11 +1400,15 @@ def create_app(test_config: dict | None = None) -> Flask:
         if not active_version:
             return ("Post version not found", 404)
         active_version_id = int(active_version["id"])
-        detail_url = (
-            url_for("post_detail", post_id=post_id)
-            if active_version["is_default"]
-            else url_for("post_detail", post_id=post_id, version_id=active_version_id)
-        )
+        raw_view_mode = _optional_str(request.args.get("view")) or _optional_str(request.form.get("view"))
+        normalized_view_mode = raw_view_mode.strip().lower() if raw_view_mode else ""
+        include_view = normalized_view_mode in {"classic", "reader"}
+        detail_query: dict[str, Any] = {"post_id": post_id}
+        if not bool(active_version["is_default"]):
+            detail_query["version_id"] = active_version_id
+        if include_view:
+            detail_query["view"] = normalized_view_mode
+        detail_url = url_for("post_detail", **detail_query)
 
         attachment = next(
             (row for row in db.list_attachments(post_id, version_id=active_version_id) if int(row["id"]) == attachment_id),
