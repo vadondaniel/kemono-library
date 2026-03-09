@@ -2740,6 +2740,15 @@ body.is-busy-overlay-open {
   gap: 0.3rem;
 }
 
+.post-reader-toolbar .button-link:disabled {
+  opacity: 0.46;
+  color: var(--muted);
+  border-color: color-mix(in srgb, var(--border) 88%, transparent);
+  background: color-mix(in srgb, var(--card-solid) 88%, transparent);
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 .post-reader-toolbar {
   grid-area: toolbar;
   display: flex;
