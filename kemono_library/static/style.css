@@ -477,8 +477,98 @@ small {
   background: var(--error-bg);
 }
 
+.post-content-settings-popover {
+  position: relative;
+  z-index: 24;
+}
+
+.post-content-settings-popover[open] {
+  z-index: 26;
+}
+
+.post-content-settings-popover > summary {
+  list-style: none;
+}
+
+.post-content-settings-popover > summary::-webkit-details-marker {
+  display: none;
+}
+
+.post-content-settings-popover-panel {
+  position: absolute;
+  z-index: 27;
+  top: calc(100% + 0.45rem);
+  right: 0;
+  width: min(540px, 92vw);
+  border: 1px solid var(--border);
+  border-radius: 0.72rem;
+  background: color-mix(in srgb, var(--card-solid) 95%, black 5%);
+  box-shadow: 0 16px 28px rgba(0, 0, 0, 0.35);
+  padding: 0.8rem;
+  display: grid;
+  gap: 0.72rem;
+}
+
+.post-content-settings-popover:not([open]) .post-content-settings-popover-panel {
+  display: none;
+}
+
+.post-content-settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.post-content-settings-head h2 {
+  margin: 0;
+}
+
+.post-content-settings-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.post-content-settings-field {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.post-content-settings-field > span {
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.post-content-settings-field output {
+  font-size: 0.8rem;
+  color: var(--text-strong);
+}
+
+@media (max-width: 760px) {
+  .post-content-settings-popover-panel {
+    width: min(92vw, 460px);
+    right: auto;
+    left: 0;
+  }
+
+  .post-content-settings-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .post-content {
-  line-height: 1.62;
+  --post-content-font-size: 1rem;
+  --post-content-line-height: 1.62;
+  --post-content-font-family: var(--font-body);
+  --post-content-text-align: left;
+  font-size: var(--post-content-font-size);
+  line-height: var(--post-content-line-height);
+  font-family: var(--post-content-font-family);
+  text-align: var(--post-content-text-align);
 }
 
 .post-content img {
@@ -511,6 +601,7 @@ small {
 
 .post-content pre {
   white-space: pre-wrap;
+  font-family: "Cascadia Mono", "Consolas", "Courier New", monospace;
   border: 1px solid var(--border);
   background: color-mix(in srgb, var(--card-solid) 94%, transparent);
   border-radius: 0.55rem;
@@ -2770,7 +2861,9 @@ body.is-reader-nav-open {
 }
 
 body.is-post-reader-page .site-header {
-  position: static;
+  position: relative;
+  z-index: 24;
+  isolation: isolate;
 }
 
 .post-reader-nav-sheet.is-open {

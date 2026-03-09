@@ -77,6 +77,47 @@
           </select>
         </div>
       {% endif %}
+      {% if post_view_mode_switcher and post_view_mode_switcher['current_mode'] == 'reader' %}
+        <details class="post-content-settings-popover" data-post-content-settings>
+          <summary class="button-link button-ghost">Display</summary>
+          <div class="post-content-settings-popover-panel">
+            <div class="post-content-settings-head">
+              <h2>Reader Display</h2>
+              <button type="button" class="button-link button-ghost" data-post-content-settings-reset>Reset</button>
+            </div>
+            <div class="post-content-settings-grid">
+              <label class="post-content-settings-field">
+                <span>Font size</span>
+                <input type="range" min="0.85" max="1.6" step="0.05" value="1" data-post-content-font-size>
+                <output data-post-content-font-size-output>1.00x</output>
+              </label>
+              <label class="post-content-settings-field">
+                <span>Line spacing</span>
+                <input type="range" min="1.2" max="2.2" step="0.05" value="1.62" data-post-content-line-height>
+                <output data-post-content-line-height-output>1.62</output>
+              </label>
+              <label class="post-content-settings-field">
+                <span>Font family</span>
+                <select data-post-content-font-family>
+                  <option value="default">Default</option>
+                  <option value="sans">Sans</option>
+                  <option value="serif">Serif</option>
+                  <option value="mono">Mono</option>
+                </select>
+              </label>
+              <label class="post-content-settings-field">
+                <span>Text align</span>
+                <select data-post-content-text-align>
+                  <option value="start">Natural</option>
+                  <option value="left">Left</option>
+                  <option value="justify">Justify</option>
+                  <option value="center">Center</option>
+                </select>
+              </label>
+            </div>
+          </div>
+        </details>
+      {% endif %}
       <button id="theme-toggle" type="button" class="theme-toggle" aria-label="Switch color theme">Theme: Auto</button>
       {% if post_view_mode_switcher and post_view_mode_switcher['current_mode'] == 'reader' %}
         <button type="button" class="button-link button-ghost post-reader-nav-header-button" data-post-reader-nav-open>Navigator</button>

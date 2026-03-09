@@ -56,6 +56,7 @@
   data-post-view-root
   data-post-view-mode="{{ view_mode }}"
   data-post-id="{{ post['id'] }}"
+  data-post-creator-id="{{ post['creator_id'] }}"
   data-post-navigator-url="{{ url_for('post_navigator_data', post_id=post['id']) }}"
 >
   {% if view_mode == 'reader' %}

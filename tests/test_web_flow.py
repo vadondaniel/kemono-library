@@ -1349,6 +1349,49 @@ def test_post_detail_header_mode_switcher_renders_only_on_post_pages(tmp_path):
     assert b"data-post-view-mode-option" in detail.data
 
 
+def test_post_detail_renders_content_view_settings_controls(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Reader Settings Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="reader-settings",
+        external_post_id="5009",
+        title="Reader Settings Post",
+        content="<p>body</p>",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/reader-settings/post/5009",
+    )
+
+    classic = app.test_client().get(f"/posts/{post_id}")
+    assert classic.status_code == 200
+    classic_soup = BeautifulSoup(classic.data, "html.parser")
+    assert classic_soup.select_one("[data-post-content-settings]") is None
+
+    response = app.test_client().get(f"/posts/{post_id}?view=reader")
+    assert response.status_code == 200
+    soup = BeautifulSoup(response.data, "html.parser")
+    shell = soup.select_one(".post-view-shell")
+    assert shell is not None
+    assert shell.get("data-post-creator-id") == str(creator_id)
+    assert soup.select_one("[data-post-content-settings]") is not None
+    assert soup.select_one("[data-post-content-font-size]") is not None
+    assert soup.select_one("[data-post-content-line-height]") is not None
+    assert soup.select_one("[data-post-content-font-family]") is not None
+    assert soup.select_one("[data-post-content-text-align]") is not None
+    assert soup.select_one("[data-post-content-settings-reset]") is not None
+
+
 def test_post_detail_reader_mode_propagates_view_and_renders_left_viewer_layout(tmp_path):
     app = create_app(
         {

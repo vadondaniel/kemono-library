@@ -102,6 +102,7 @@
   const pageRoot = document.querySelector("[data-post-view-root]");
   const isReaderView = pageRoot instanceof HTMLElement && pageRoot.dataset.postViewMode === "reader";
   const contentRoot = document.querySelector("[data-post-content]");
+  const contentSettingsRoot = document.querySelector("[data-post-content-settings]");
   const readerNavOpenButton = document.querySelector("[data-post-reader-nav-open]");
   const readerNavCloseButton = document.querySelector("[data-post-reader-nav-close]");
   const readerNavOverlay = document.querySelector("[data-post-reader-nav-overlay]");
@@ -121,6 +122,158 @@
       // Ignore session storage failures.
     }
   };
+
+  if (contentSettingsRoot instanceof HTMLDetailsElement) {
+    const closeSettings = () => {
+      contentSettingsRoot.open = false;
+    };
+    document.addEventListener("click", (event) => {
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
+      }
+      if (!contentSettingsRoot.contains(target)) {
+        closeSettings();
+      }
+    });
+    window.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        closeSettings();
+      }
+    });
+  }
+
+  function initializeContentSettings() {
+    if (!(contentRoot instanceof HTMLElement) || !(contentSettingsRoot instanceof HTMLElement)) {
+      return;
+    }
+    const fontSizeInput = contentSettingsRoot.querySelector("[data-post-content-font-size]");
+    const lineHeightInput = contentSettingsRoot.querySelector("[data-post-content-line-height]");
+    const fontFamilySelect = contentSettingsRoot.querySelector("[data-post-content-font-family]");
+    const textAlignSelect = contentSettingsRoot.querySelector("[data-post-content-text-align]");
+    const resetButton = contentSettingsRoot.querySelector("[data-post-content-settings-reset]");
+    const fontSizeOutput = contentSettingsRoot.querySelector("[data-post-content-font-size-output]");
+    const lineHeightOutput = contentSettingsRoot.querySelector("[data-post-content-line-height-output]");
+    if (
+      !(fontSizeInput instanceof HTMLInputElement) ||
+      !(lineHeightInput instanceof HTMLInputElement) ||
+      !(fontFamilySelect instanceof HTMLSelectElement) ||
+      !(textAlignSelect instanceof HTMLSelectElement) ||
+      !(resetButton instanceof HTMLButtonElement)
+    ) {
+      return;
+    }
+
+    const creatorId = pageRoot instanceof HTMLElement ? pageRoot.dataset.postCreatorId || "" : "";
+    const storageKey = creatorId
+      ? `kemono-post-content-settings:creator:${creatorId}`
+      : "kemono-post-content-settings:global";
+    const defaults = {
+      fontSize: 1,
+      lineHeight: 1.62,
+      fontFamily: "default",
+      textAlign: "start",
+    };
+    const fontFamilyMap = {
+      default: "var(--font-body)",
+      sans: '"Manrope", "Trebuchet MS", sans-serif',
+      serif: '"Georgia", "Times New Roman", serif',
+      mono: '"Cascadia Mono", "Consolas", "Courier New", monospace',
+    };
+    const allowedAlignments = new Set(["start", "left", "justify", "center"]);
+    const STEP = 0.05;
+
+    const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+    const roundToStep = (value) => Math.round(value / STEP) * STEP;
+    const normalizeScale = (value) => clamp(roundToStep(value), 0.85, 1.6);
+    const normalizeLineHeight = (value) => clamp(roundToStep(value), 1.2, 2.2);
+
+    const normalizeSettings = (candidate) => {
+      const raw = candidate && typeof candidate === "object" ? candidate : {};
+      const fontSize =
+        typeof raw.fontSize === "number" && Number.isFinite(raw.fontSize) ? normalizeScale(raw.fontSize) : defaults.fontSize;
+      const lineHeight =
+        typeof raw.lineHeight === "number" && Number.isFinite(raw.lineHeight)
+          ? normalizeLineHeight(raw.lineHeight)
+          : defaults.lineHeight;
+      const fontFamily =
+        typeof raw.fontFamily === "string" && raw.fontFamily in fontFamilyMap ? raw.fontFamily : defaults.fontFamily;
+      const textAlign =
+        typeof raw.textAlign === "string" && allowedAlignments.has(raw.textAlign) ? raw.textAlign : defaults.textAlign;
+      return { fontSize, lineHeight, fontFamily, textAlign };
+    };
+
+    const readStored = () => {
+      try {
+        const raw = window.localStorage.getItem(storageKey);
+        if (!raw) {
+          return defaults;
+        }
+        return normalizeSettings(JSON.parse(raw));
+      } catch {
+        return defaults;
+      }
+    };
+
+    const writeStored = (value) => {
+      try {
+        window.localStorage.setItem(storageKey, JSON.stringify(value));
+      } catch {
+        // Ignore storage failures.
+      }
+    };
+
+    const applySettings = (value) => {
+      contentRoot.style.setProperty("--post-content-font-size", `${value.fontSize.toFixed(2)}rem`);
+      contentRoot.style.setProperty("--post-content-line-height", value.lineHeight.toFixed(2));
+      contentRoot.style.setProperty("--post-content-font-family", fontFamilyMap[value.fontFamily]);
+      contentRoot.style.setProperty("--post-content-text-align", value.textAlign);
+      fontSizeInput.value = value.fontSize.toFixed(2);
+      lineHeightInput.value = value.lineHeight.toFixed(2);
+      fontFamilySelect.value = value.fontFamily;
+      textAlignSelect.value = value.textAlign;
+      if (fontSizeOutput instanceof HTMLOutputElement || fontSizeOutput instanceof HTMLElement) {
+        fontSizeOutput.textContent = `${value.fontSize.toFixed(2)}x`;
+      }
+      if (lineHeightOutput instanceof HTMLOutputElement || lineHeightOutput instanceof HTMLElement) {
+        lineHeightOutput.textContent = value.lineHeight.toFixed(2);
+      }
+    };
+
+    let current = readStored();
+    applySettings(current);
+
+    const updateAndStore = (next) => {
+      current = normalizeSettings({ ...current, ...next });
+      applySettings(current);
+      writeStored(current);
+    };
+
+    fontSizeInput.addEventListener("input", () => {
+      const parsed = Number.parseFloat(fontSizeInput.value);
+      if (Number.isFinite(parsed)) {
+        updateAndStore({ fontSize: parsed });
+      }
+    });
+    lineHeightInput.addEventListener("input", () => {
+      const parsed = Number.parseFloat(lineHeightInput.value);
+      if (Number.isFinite(parsed)) {
+        updateAndStore({ lineHeight: parsed });
+      }
+    });
+    fontFamilySelect.addEventListener("change", () => {
+      updateAndStore({ fontFamily: fontFamilySelect.value });
+    });
+    textAlignSelect.addEventListener("change", () => {
+      updateAndStore({ textAlign: textAlignSelect.value });
+    });
+    resetButton.addEventListener("click", () => {
+      current = defaults;
+      applySettings(current);
+      writeStored(current);
+    });
+  }
+  initializeContentSettings();
 
   const setReaderNavOpen = (open) => {
     if (!(readerNavSheet instanceof HTMLElement) || !(readerNavOverlay instanceof HTMLElement)) {
