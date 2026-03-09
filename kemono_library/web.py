@@ -8,6 +8,7 @@ import shutil
 import sqlite3
 import threading
 import uuid
+from collections import deque
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
@@ -52,6 +53,126 @@ def create_app(test_config: dict | None = None) -> Flask:
     app.db = db  # type: ignore[attr-defined]
     import_jobs: dict[str, dict[str, Any]] = {}
     import_jobs_lock = threading.Lock()
+    import_job_queue: deque[str] = deque()
+    import_job_queue_condition = threading.Condition(import_jobs_lock)
+
+    def refresh_import_queue_positions_locked() -> None:
+        for position, queued_job_id in enumerate(import_job_queue, start=1):
+            queued_job = import_jobs.get(queued_job_id)
+            if not queued_job:
+                continue
+            queued_job.update(
+                {
+                    "status": "queued",
+                    "queue_position": position,
+                    "message": f"Queued import job. Queue position: {position}.",
+                }
+            )
+
+    def import_worker() -> None:
+        while True:
+            with import_job_queue_condition:
+                while not import_job_queue:
+                    import_job_queue_condition.wait()
+                job_id = import_job_queue.popleft()
+                job = import_jobs.get(job_id)
+                if job:
+                    job.update(
+                        {
+                            "status": "running",
+                            "queue_position": 0,
+                            "message": "Fetching post payload...",
+                        }
+                    )
+                refresh_import_queue_positions_locked()
+
+            if not job:
+                continue
+            job_payload = dict(job["payload"])
+
+            def progress_callback(completed: int, total: int, current_file: str | None) -> None:
+                if total <= 0:
+                    message = "Saving post content and metadata..."
+                elif completed >= total:
+                    message = f"Finalizing import ({completed}/{total})..."
+                elif current_file:
+                    message = f"Downloading {completed}/{total}: {current_file}"
+                else:
+                    message = f"Downloading {completed}/{total} files..."
+                with import_jobs_lock:
+                    live_job = import_jobs.get(job_id)
+                    if not live_job:
+                        return
+                    live_job.update(
+                        {
+                            "status": "running",
+                            "queue_position": 0,
+                            "message": message,
+                            "completed": completed,
+                            "total": total,
+                            "current_file": current_file,
+                        }
+                    )
+
+            try:
+                local_post_id, imported_version_id = _import_post_into_library(
+                    db,
+                    files_base=Path(app.config["FILES_DIR"]),
+                    icons_base=Path(app.config["ICONS_DIR"]),
+                    creator_id=int(job_payload["creator_id"]),
+                    series_id=job_payload["series_id"],
+                    service=str(job_payload["service"]),
+                    user_id=str(job_payload["user_id"]),
+                    post_id=str(job_payload["post_id"]),
+                    import_target_mode=str(job_payload["import_target_mode"]),
+                    target_post_id=job_payload.get("target_post_id"),
+                    overwrite_matching_version=bool(job_payload["overwrite_matching_version"]),
+                    set_as_default=bool(job_payload["set_as_default"]),
+                    version_label=job_payload.get("version_label"),
+                    version_language=job_payload.get("version_language"),
+                    requested_title=job_payload.get("requested_title"),
+                    requested_content=job_payload.get("requested_content"),
+                    requested_published_at=job_payload.get("requested_published_at"),
+                    requested_edited_at=job_payload.get("requested_edited_at"),
+                    requested_next_external_post_id=job_payload.get("requested_next_external_post_id"),
+                    requested_prev_external_post_id=job_payload.get("requested_prev_external_post_id"),
+                    tags_text=job_payload.get("tags_text"),
+                    field_presence=dict(job_payload["field_presence"]),
+                    selected_attachment_indices=set(job_payload["selected_attachment_indices"]),
+                    progress_callback=progress_callback,
+                )
+                with import_jobs_lock:
+                    live_job = import_jobs.get(job_id)
+                    if live_job:
+                        total = int(live_job.get("total") or 0)
+                        completed = int(live_job.get("completed") or 0)
+                        live_job.update(
+                            {
+                                "status": "completed",
+                                "queue_position": 0,
+                                "message": "Import complete.",
+                                "completed": max(completed, total),
+                                "redirect_url": (
+                                    f"/posts/{local_post_id}?version_id={imported_version_id}"
+                                    if not bool(job_payload["set_as_default"])
+                                    else f"/posts/{local_post_id}"
+                                ),
+                            }
+                        )
+            except Exception as exc:  # noqa: BLE001
+                with import_jobs_lock:
+                    live_job = import_jobs.get(job_id)
+                    if live_job:
+                        live_job.update(
+                            {
+                                "status": "failed",
+                                "queue_position": 0,
+                                "message": "Import failed.",
+                                "error": str(exc),
+                            }
+                        )
+
+    threading.Thread(target=import_worker, daemon=True).start()
 
     @app.template_filter("format_datetime")
     def format_datetime_filter(value: Any) -> str:
@@ -627,101 +748,18 @@ def create_app(test_config: dict | None = None) -> Flask:
         with import_jobs_lock:
             import_jobs[job_id] = {
                 "status": "queued",
-                "message": "Queued import job...",
+                "message": "Queued import job.",
                 "completed": 0,
                 "total": 0,
                 "current_file": None,
                 "redirect_url": None,
                 "error": None,
+                "queue_position": len(import_job_queue) + 1,
+                "payload": job_payload,
             }
-
-        def progress_callback(completed: int, total: int, current_file: str | None) -> None:
-            if total <= 0:
-                message = "Saving post content and metadata..."
-            elif completed >= total:
-                message = f"Finalizing import ({completed}/{total})..."
-            elif current_file:
-                message = f"Downloading {completed}/{total}: {current_file}"
-            else:
-                message = f"Downloading {completed}/{total} files..."
-            with import_jobs_lock:
-                job = import_jobs.get(job_id)
-                if not job:
-                    return
-                job.update(
-                    {
-                        "status": "running",
-                        "message": message,
-                        "completed": completed,
-                        "total": total,
-                        "current_file": current_file,
-                    }
-                )
-
-        def worker() -> None:
-            try:
-                with import_jobs_lock:
-                    job = import_jobs.get(job_id)
-                    if job:
-                        job.update({"status": "running", "message": "Fetching post payload..."})
-
-                local_post_id, imported_version_id = _import_post_into_library(
-                    db,
-                    files_base=Path(app.config["FILES_DIR"]),
-                    icons_base=Path(app.config["ICONS_DIR"]),
-                    creator_id=int(job_payload["creator_id"]),
-                    series_id=job_payload["series_id"],
-                    service=str(job_payload["service"]),
-                    user_id=str(job_payload["user_id"]),
-                    post_id=str(job_payload["post_id"]),
-                    import_target_mode=str(job_payload["import_target_mode"]),
-                    target_post_id=job_payload.get("target_post_id"),
-                    overwrite_matching_version=bool(job_payload["overwrite_matching_version"]),
-                    set_as_default=bool(job_payload["set_as_default"]),
-                    version_label=job_payload.get("version_label"),
-                    version_language=job_payload.get("version_language"),
-                    requested_title=job_payload.get("requested_title"),
-                    requested_content=job_payload.get("requested_content"),
-                    requested_published_at=job_payload.get("requested_published_at"),
-                    requested_edited_at=job_payload.get("requested_edited_at"),
-                    requested_next_external_post_id=job_payload.get("requested_next_external_post_id"),
-                    requested_prev_external_post_id=job_payload.get("requested_prev_external_post_id"),
-                    tags_text=job_payload.get("tags_text"),
-                    field_presence=dict(job_payload["field_presence"]),
-                    selected_attachment_indices=set(job_payload["selected_attachment_indices"]),
-                    progress_callback=progress_callback,
-                )
-                with import_jobs_lock:
-                    job = import_jobs.get(job_id)
-                    if job:
-                        total = int(job.get("total") or 0)
-                        completed = int(job.get("completed") or 0)
-                        job.update(
-                            {
-                                "status": "completed",
-                                "message": "Import complete.",
-                                "completed": max(completed, total),
-                                "redirect_url": (
-                                    f"/posts/{local_post_id}?version_id={imported_version_id}"
-                                    if not bool(job_payload["set_as_default"])
-                                    else f"/posts/{local_post_id}"
-                                ),
-                            }
-                        )
-            except Exception as exc:  # noqa: BLE001
-                with import_jobs_lock:
-                    job = import_jobs.get(job_id)
-                    if job:
-                        job.update(
-                            {
-                                "status": "failed",
-                                "message": "Import failed.",
-                                "error": str(exc),
-                            }
-                        )
-
-        thread = threading.Thread(target=worker, daemon=True)
-        thread.start()
+            import_job_queue.append(job_id)
+            refresh_import_queue_positions_locked()
+            import_job_queue_condition.notify()
         return jsonify(
             {
                 "job_id": job_id,
@@ -736,6 +774,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             if not job:
                 return jsonify({"error": "Import job not found."}), 404
             snapshot = dict(job)
+        snapshot.pop("payload", None)
         return jsonify(snapshot)
 
     @app.get("/posts/<int:post_id>")

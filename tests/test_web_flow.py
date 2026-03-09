@@ -1,4 +1,5 @@
 import sqlite3
+import threading
 from pathlib import Path
 import time
 from bs4 import BeautifulSoup
@@ -209,6 +210,119 @@ def test_import_start_reports_live_progress_until_complete(tmp_path, monkeypatch
     assert final_status["redirect_url"] == "/posts/1"
     assert final_status["total"] == 2
     assert final_status["completed"] == 2
+
+
+def test_import_start_queues_later_jobs_until_running_import_finishes(tmp_path, monkeypatch):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+
+    allow_first_download = threading.Event()
+    first_download_started = threading.Event()
+
+    def fake_fetch(ref, fallback_user_id=None):  # noqa: ARG001
+        post_num = str(ref.post_id)
+        return {
+            "post": {
+                "title": f"Title {post_num}",
+                "content": f"Body {post_num}",
+                "user": str(ref.user_id),
+                "attachments": [
+                    {
+                        "name": f"{post_num}.jpg",
+                        "path": f"/data/{post_num}.jpg",
+                    }
+                ],
+            },
+            "attachments": [],
+        }
+
+    def fake_download(remote_url, destination):  # noqa: ARG001
+        if remote_url.endswith("/200.jpg"):
+            first_download_started.set()
+            if not allow_first_download.wait(timeout=2):
+                raise AssertionError("timed out waiting to release first queued import")
+        Path(destination).parent.mkdir(parents=True, exist_ok=True)
+        Path(destination).write_bytes(b"ok")
+
+    def fake_icon_download(service, user_id, icons_root):  # noqa: ARG001
+        destination = Path(icons_root) / f"{service}_{user_id}.jpg"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"icon")
+        return (f"https://img.kemono.cr/icons/{service}/{user_id}", destination)
+
+    monkeypatch.setattr("kemono_library.web.fetch_post_json", fake_fetch)
+    monkeypatch.setattr("kemono_library.web.download_attachment", fake_download)
+    monkeypatch.setattr("kemono_library.web.download_creator_icon", fake_icon_download)
+
+    client = app.test_client()
+    client.post("/creators", data={"name": "Creator A"}, follow_redirects=False)
+
+    first_start = client.post(
+        "/import/start",
+        data={
+            "creator_id": "1",
+            "series_id": "",
+            "service": "fanbox",
+            "user_id": "70479526",
+            "post_id": "200",
+            "import_target_mode": "new",
+            "overwrite_matching_version": "0",
+            "selected_attachment": ["0"],
+        },
+    )
+    assert first_start.status_code == 200
+    first_status_url = first_start.get_json()["status_url"]
+
+    assert first_download_started.wait(timeout=2)
+
+    second_start = client.post(
+        "/import/start",
+        data={
+            "creator_id": "1",
+            "series_id": "",
+            "service": "fanbox",
+            "user_id": "70479526",
+            "post_id": "201",
+            "import_target_mode": "new",
+            "overwrite_matching_version": "0",
+            "selected_attachment": ["0"],
+        },
+    )
+    assert second_start.status_code == 200
+    second_status_url = second_start.get_json()["status_url"]
+
+    queued_status = client.get(second_status_url).get_json()
+    assert queued_status["status"] == "queued"
+    assert queued_status["queue_position"] == 1
+    assert "Queue position: 1" in queued_status["message"]
+
+    allow_first_download.set()
+
+    second_running_seen = False
+    second_completed = False
+    for _ in range(200):
+        first_status = client.get(first_status_url).get_json()
+        second_status = client.get(second_status_url).get_json()
+        if first_status["status"] == "failed":
+            raise AssertionError(first_status["error"])
+        if second_status["status"] == "failed":
+            raise AssertionError(second_status["error"])
+        if second_status["status"] == "running":
+            second_running_seen = True
+        if first_status["status"] == "completed" and second_status["status"] == "completed":
+            second_completed = True
+            break
+        time.sleep(0.01)
+
+    assert second_running_seen is True
+    assert second_completed is True
 
 
 def test_import_preview_rejects_source_owned_by_other_creator(tmp_path, monkeypatch):
