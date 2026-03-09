@@ -461,7 +461,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             media_filter=media_filter,
         )
         sorted_rows = _sort_attachment_inventory_rows(filtered_rows, sort_key=sort_key)
-        tree = _build_attachment_inventory_tree(sorted_rows)
+        tree = _build_attachment_inventory_tree(sorted_rows, sort_key=sort_key)
         summary = _summarize_attachment_inventory(sorted_rows)
 
         return render_template(
@@ -2683,6 +2683,9 @@ def _filter_attachment_inventory_rows(
 
 
 def _sort_attachment_inventory_rows(rows: list[dict[str, Any]], *, sort_key: str) -> list[dict[str, Any]]:
+    if sort_key == "creator":
+        return list(rows)
+
     def recent_sort_key(row: dict[str, Any]) -> tuple[Any, ...]:
         published = _optional_str(row["post_published_at"]) or ""
         return (
@@ -2690,18 +2693,6 @@ def _sort_attachment_inventory_rows(rows: list[dict[str, Any]], *, sort_key: str
             published,
             row["creator_name"].lower(),
             row["series_name"].lower(),
-            row["post_title"].lower(),
-            row["name"].lower(),
-            row["id"],
-        )
-
-    def creator_sort_key(row: dict[str, Any]) -> tuple[Any, ...]:
-        published = _optional_str(row["post_published_at"]) or ""
-        return (
-            row["creator_name"].lower(),
-            row["series_name"].lower(),
-            published == "",
-            published,
             row["post_title"].lower(),
             row["name"].lower(),
             row["id"],
@@ -2731,8 +2722,7 @@ def _sort_attachment_inventory_rows(rows: list[dict[str, Any]], *, sort_key: str
         "recent": recent_sort_key,
         "size": size_sort_key,
         "name": name_sort_key,
-        "creator": creator_sort_key,
-    }.get(sort_key, creator_sort_key)
+    }.get(sort_key, name_sort_key)
     reverse = sort_key == "recent"
     return sorted(rows, key=key_func, reverse=reverse)
 
@@ -2758,10 +2748,11 @@ def _summarize_attachment_inventory(rows: list[dict[str, Any]]) -> dict[str, Any
     }
 
 
-def _build_attachment_inventory_tree(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _build_attachment_inventory_tree(rows: list[dict[str, Any]], *, sort_key: str = "creator") -> list[dict[str, Any]]:
     creator_nodes: dict[int, dict[str, Any]] = {}
     series_sequence = 0
     for row in rows:
+        row_published = _optional_str(row["post_published_at"]) or ""
         creator_id = int(row["creator_id"])
         creator_node = creator_nodes.get(creator_id)
         if creator_node is None:
@@ -2774,6 +2765,7 @@ def _build_attachment_inventory_tree(rows: list[dict[str, Any]]) -> list[dict[st
                 "file_count": 0,
                 "missing_count": 0,
                 "size_bytes": 0,
+                "latest_published_at": "",
             }
             creator_nodes[creator_id] = creator_node
 
@@ -2790,6 +2782,7 @@ def _build_attachment_inventory_tree(rows: list[dict[str, Any]]) -> list[dict[st
                 "file_count": 0,
                 "missing_count": 0,
                 "size_bytes": 0,
+                "latest_published_at": "",
             }
             creator_node["series_lookup"][series_key] = series_node
             creator_node["series_nodes"].append(series_node)
@@ -2805,6 +2798,7 @@ def _build_attachment_inventory_tree(rows: list[dict[str, Any]]) -> list[dict[st
                 "file_count": 0,
                 "missing_count": 0,
                 "size_bytes": 0,
+                "latest_published_at": row_published,
             }
             series_node["post_lookup"][post_id] = post_node
             series_node["posts"].append(post_node)
@@ -2821,8 +2815,139 @@ def _build_attachment_inventory_tree(rows: list[dict[str, Any]]) -> list[dict[st
         creator_node["file_count"] += 1
         creator_node["missing_count"] += 0 if row["local_available"] else 1
         creator_node["size_bytes"] += int(row["file_size"] or 0)
+        if row_published and row_published > str(creator_node["latest_published_at"] or ""):
+            creator_node["latest_published_at"] = row_published
+        if row_published and row_published > str(series_node["latest_published_at"] or ""):
+            series_node["latest_published_at"] = row_published
 
-    return list(creator_nodes.values())
+    creator_list = list(creator_nodes.values())
+    if sort_key == "size":
+        for creator_node in creator_list:
+            for series_node in creator_node["series_nodes"]:
+                series_node["posts"].sort(
+                    key=lambda post: (
+                        -int(post["size_bytes"] or 0),
+                        str(post["title"]).lower(),
+                        int(post["post_id"]),
+                    )
+                )
+                for post_node in series_node["posts"]:
+                    post_node["attachments"].sort(
+                        key=lambda row: (
+                            -int(row["file_size"] or 0),
+                            str(row["name"]).lower(),
+                            int(row["id"]),
+                        )
+                    )
+            creator_node["series_nodes"].sort(
+                key=lambda series: (
+                    -int(series["size_bytes"] or 0),
+                    str(series["name"]).lower(),
+                    -1 if series["series_id"] is None else int(series["series_id"]),
+                )
+            )
+        creator_list.sort(
+            key=lambda creator: (
+                -int(creator["size_bytes"] or 0),
+                str(creator["name"]).lower(),
+                int(creator["id"]),
+            )
+        )
+    elif sort_key == "recent":
+        for creator_node in creator_list:
+            for series_node in creator_node["series_nodes"]:
+                series_node["posts"].sort(
+                    key=lambda post: (
+                        _optional_str(post["latest_published_at"]) not in {None, ""},
+                        str(post["latest_published_at"] or ""),
+                        str(post["title"]).lower(),
+                        int(post["post_id"]),
+                    ),
+                    reverse=True,
+                )
+                for post_node in series_node["posts"]:
+                    post_node["attachments"].sort(
+                        key=lambda row: (
+                            str(row["name"]).lower(),
+                            int(row["id"]),
+                        )
+                    )
+            creator_node["series_nodes"].sort(
+                key=lambda series: (
+                    _optional_str(series["latest_published_at"]) not in {None, ""},
+                    str(series["latest_published_at"] or ""),
+                    str(series["name"]).lower(),
+                    -1 if series["series_id"] is None else int(series["series_id"]),
+                ),
+                reverse=True,
+            )
+        creator_list.sort(
+            key=lambda creator: (
+                _optional_str(creator["latest_published_at"]) not in {None, ""},
+                str(creator["latest_published_at"] or ""),
+                str(creator["name"]).lower(),
+                int(creator["id"]),
+            ),
+            reverse=True,
+        )
+    elif sort_key == "name":
+        for creator_node in creator_list:
+            for series_node in creator_node["series_nodes"]:
+                series_node["posts"].sort(
+                    key=lambda post: (
+                        str(post["title"]).lower(),
+                        int(post["post_id"]),
+                    )
+                )
+                for post_node in series_node["posts"]:
+                    post_node["attachments"].sort(
+                        key=lambda row: (
+                            str(row["name"]).lower(),
+                            int(row["id"]),
+                        )
+                    )
+            creator_node["series_nodes"].sort(
+                key=lambda series: (
+                    str(series["name"]).lower(),
+                    -1 if series["series_id"] is None else int(series["series_id"]),
+                )
+            )
+        creator_list.sort(
+            key=lambda creator: (
+                str(creator["name"]).lower(),
+                int(creator["id"]),
+            )
+        )
+    elif sort_key == "creator":
+        for creator_node in creator_list:
+            for series_node in creator_node["series_nodes"]:
+                series_node["posts"].sort(
+                    key=lambda post: (
+                        -int(post["post_id"]),
+                        str(post["title"]).lower(),
+                    )
+                )
+                for post_node in series_node["posts"]:
+                    post_node["attachments"].sort(
+                        key=lambda row: (
+                            int(row["id"]),
+                            str(row["name"]).lower(),
+                        )
+                    )
+            creator_node["series_nodes"].sort(
+                key=lambda series: (
+                    -1 if series["series_id"] is None else int(series["series_id"]),
+                    str(series["name"]).lower(),
+                )
+            )
+        creator_list.sort(
+            key=lambda creator: (
+                int(creator["id"]),
+                str(creator["name"]).lower(),
+            )
+        )
+
+    return creator_list
 
 
 def _filter_retry_scope_rows(

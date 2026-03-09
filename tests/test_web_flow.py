@@ -1648,6 +1648,327 @@ def test_attachment_manager_hides_retry_actions_when_no_files_are_missing(tmp_pa
     assert ">Retry<" not in html
 
 
+def test_attachment_manager_size_sort_orders_tree_by_aggregate_sizes(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+
+    small_creator_id = db.create_creator("Small Creator")
+    small_post_id = db.upsert_post(
+        creator_id=small_creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="small-user",
+        external_post_id="1012",
+        title="Small Post",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/small-user/post/1012",
+    )
+    db.replace_attachments(
+        small_post_id,
+        [
+            {
+                "name": "small-a.bin",
+                "remote_url": "https://n1.kemono.cr/path/small-a.bin",
+                "local_path": f"post_{small_post_id}/small-a.bin",
+                "kind": "attachment",
+            },
+            {
+                "name": "small-b.bin",
+                "remote_url": "https://n1.kemono.cr/path/small-b.bin",
+                "local_path": f"post_{small_post_id}/small-b.bin",
+                "kind": "attachment",
+            },
+        ],
+    )
+    small_dir = Path(app.config["FILES_DIR"]) / f"post_{small_post_id}"
+    small_dir.mkdir(parents=True, exist_ok=True)
+    (small_dir / "small-a.bin").write_bytes(b"a" * 5)
+    (small_dir / "small-b.bin").write_bytes(b"b" * 4)
+
+    large_creator_id = db.create_creator("Large Creator")
+    large_post_id = db.upsert_post(
+        creator_id=large_creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="large-user",
+        external_post_id="1013",
+        title="Large Post",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/large-user/post/1013",
+    )
+    db.replace_attachments(
+        large_post_id,
+        [
+            {
+                "name": "large.bin",
+                "remote_url": "https://n1.kemono.cr/path/large.bin",
+                "local_path": f"post_{large_post_id}/large.bin",
+                "kind": "attachment",
+            }
+        ],
+    )
+    large_dir = Path(app.config["FILES_DIR"]) / f"post_{large_post_id}"
+    large_dir.mkdir(parents=True, exist_ok=True)
+    (large_dir / "large.bin").write_bytes(b"c" * 20)
+
+    response = app.test_client().get("/attachments?sort=size")
+    assert response.status_code == 200
+    soup = BeautifulSoup(response.data, "html.parser")
+
+    creator_nodes = soup.select("details.attachment-tree-creator")
+    assert len(creator_nodes) == 2
+    assert "Large Creator" in creator_nodes[0].get_text(" ", strip=True)
+    assert "Small Creator" in creator_nodes[1].get_text(" ", strip=True)
+
+    first_post = creator_nodes[0].select_one("details.attachment-tree-post")
+    assert first_post is not None
+    assert "Large Post" in first_post.get_text(" ", strip=True)
+
+    attachment_names = [
+        node.get_text(" ", strip=True)
+        for node in creator_nodes[1].select(".attachment-file-meta strong")
+    ]
+    assert attachment_names[:2] == ["small-a.bin", "small-b.bin"]
+
+
+def test_attachment_manager_alphabetical_sort_orders_tree_layers(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Creator Z")
+    post_b_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="alpha-user",
+        external_post_id="1014",
+        title="Post B",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/alpha-user/post/1014",
+    )
+    post_a_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="alpha-user",
+        external_post_id="1015",
+        title="Post A",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/alpha-user/post/1015",
+    )
+    db.replace_attachments(
+        post_b_id,
+        [
+            {
+                "name": "zeta.bin",
+                "remote_url": "https://n1.kemono.cr/path/zeta.bin",
+                "local_path": f"post_{post_b_id}/zeta.bin",
+                "kind": "attachment",
+            }
+        ],
+    )
+    db.replace_attachments(
+        post_a_id,
+        [
+            {
+                "name": "alpha.bin",
+                "remote_url": "https://n1.kemono.cr/path/alpha.bin",
+                "local_path": f"post_{post_a_id}/alpha.bin",
+                "kind": "attachment",
+            }
+        ],
+    )
+
+    response = app.test_client().get("/attachments?sort=name")
+    assert response.status_code == 200
+    soup = BeautifulSoup(response.data, "html.parser")
+    post_titles = [node.get_text(" ", strip=True) for node in soup.select("details.attachment-tree-post > summary strong a")]
+    assert post_titles[:2] == ["Post A", "Post B"]
+
+
+def test_attachment_manager_tree_order_preserves_natural_post_order(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Creator Tree")
+    later_creator_id = db.create_creator("A Creator Later")
+    later_post_id = db.upsert_post(
+        creator_id=later_creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="tree-user-later",
+        external_post_id="1020",
+        title="Later Creator Post",
+        content="",
+        metadata={},
+        published_at="2026-01-01T00:00:00",
+        source_url="https://kemono.cr/fanbox/user/tree-user-later/post/1020",
+    )
+    db.replace_attachments(
+        later_post_id,
+        [
+            {
+                "name": "later.bin",
+                "remote_url": "https://n1.kemono.cr/path/later.bin",
+                "local_path": f"post_{later_post_id}/later.bin",
+                "kind": "attachment",
+            }
+        ],
+    )
+
+    older_post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="tree-user",
+        external_post_id="1018",
+        title="Post A",
+        content="",
+        metadata={},
+        published_at="2024-01-01T00:00:00",
+        source_url="https://kemono.cr/fanbox/user/tree-user/post/1018",
+    )
+    newer_post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="tree-user",
+        external_post_id="1019",
+        title="Post B",
+        content="",
+        metadata={},
+        published_at="2025-01-01T00:00:00",
+        source_url="https://kemono.cr/fanbox/user/tree-user/post/1019",
+    )
+    db.replace_attachments(
+        older_post_id,
+        [
+            {
+                "name": "older.bin",
+                "remote_url": "https://n1.kemono.cr/path/older.bin",
+                "local_path": f"post_{older_post_id}/older.bin",
+                "kind": "attachment",
+            }
+        ],
+    )
+    db.replace_attachments(
+        newer_post_id,
+        [
+            {
+                "name": "newer.bin",
+                "remote_url": "https://n1.kemono.cr/path/newer.bin",
+                "local_path": f"post_{newer_post_id}/newer.bin",
+                "kind": "attachment",
+            }
+        ],
+    )
+
+    response = app.test_client().get("/attachments?sort=creator")
+    assert response.status_code == 200
+    soup = BeautifulSoup(response.data, "html.parser")
+    creator_nodes = soup.select("details.attachment-tree-creator")
+    assert len(creator_nodes) == 2
+    assert "Creator Tree" in creator_nodes[0].get_text(" ", strip=True)
+    assert "A Creator Later" in creator_nodes[1].get_text(" ", strip=True)
+    post_titles = [node.get_text(" ", strip=True) for node in soup.select("details.attachment-tree-post > summary strong a")]
+    assert post_titles[:3] == ["Post B", "Post A", "Later Creator Post"]
+
+
+def test_attachment_manager_recent_sort_orders_tree_layers(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    older_creator_id = db.create_creator("Older Creator")
+    older_post_id = db.upsert_post(
+        creator_id=older_creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="recent-user",
+        external_post_id="1016",
+        title="Older Post",
+        content="",
+        metadata={},
+        published_at="2024-01-01T00:00:00",
+        source_url="https://kemono.cr/fanbox/user/recent-user/post/1016",
+    )
+    db.replace_attachments(
+        older_post_id,
+        [
+            {
+                "name": "older.bin",
+                "remote_url": "https://n1.kemono.cr/path/older.bin",
+                "local_path": f"post_{older_post_id}/older.bin",
+                "kind": "attachment",
+            }
+        ],
+    )
+    newer_creator_id = db.create_creator("Newer Creator")
+    newer_post_id = db.upsert_post(
+        creator_id=newer_creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="recent-user",
+        external_post_id="1017",
+        title="Newer Post",
+        content="",
+        metadata={},
+        published_at="2025-01-01T00:00:00",
+        source_url="https://kemono.cr/fanbox/user/recent-user/post/1017",
+    )
+    db.replace_attachments(
+        newer_post_id,
+        [
+            {
+                "name": "newer.bin",
+                "remote_url": "https://n1.kemono.cr/path/newer.bin",
+                "local_path": f"post_{newer_post_id}/newer.bin",
+                "kind": "attachment",
+            }
+        ],
+    )
+
+    response = app.test_client().get("/attachments?sort=recent")
+    assert response.status_code == 200
+    soup = BeautifulSoup(response.data, "html.parser")
+    creator_nodes = soup.select("details.attachment-tree-creator")
+    assert len(creator_nodes) == 2
+    assert "Newer Creator" in creator_nodes[0].get_text(" ", strip=True)
+    assert "Older Creator" in creator_nodes[1].get_text(" ", strip=True)
+
+
 def test_attachment_manager_batch_retry_uses_scope_and_recovers_missing_files(tmp_path, monkeypatch):
     app = create_app(
         {

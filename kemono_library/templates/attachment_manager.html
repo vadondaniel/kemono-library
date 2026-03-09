@@ -51,7 +51,7 @@
       <select id="attachment-manager-media" name="media">
         <option value="all" {% if media_filter == 'all' %}selected{% endif %}>All media</option>
         <option value="images" {% if media_filter == 'images' %}selected{% endif %}>Images</option>
-        <option value="other" {% if media_filter == 'other' %}selected{% endif %}>Other files</option>
+        <option value="other" {% if media_filter == 'other' %}selected{% endif %}>Other media</option>
       </select>
     </div>
 
@@ -59,9 +59,9 @@
       <label for="attachment-manager-sort">Sort</label>
       <select id="attachment-manager-sort" name="sort">
         <option value="creator" {% if sort_key == 'creator' %}selected{% endif %}>Tree order</option>
-        <option value="recent" {% if sort_key == 'recent' %}selected{% endif %}>Recent posts first</option>
-        <option value="size" {% if sort_key == 'size' %}selected{% endif %}>Largest files first</option>
-        <option value="name" {% if sort_key == 'name' %}selected{% endif %}>File name</option>
+        <option value="recent" {% if sort_key == 'recent' %}selected{% endif %}>Recent first</option>
+        <option value="size" {% if sort_key == 'size' %}selected{% endif %}>Largest first</option>
+        <option value="name" {% if sort_key == 'name' %}selected{% endif %}>Alphabetical</option>
       </select>
     </div>
 
