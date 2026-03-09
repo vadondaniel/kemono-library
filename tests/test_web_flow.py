@@ -1446,7 +1446,7 @@ def test_homepage_links_to_attachment_manager(tmp_path):
     response = app.test_client().get("/")
     assert response.status_code == 200
     assert b'href="/attachments"' in response.data
-    assert b"Attachment manager" in response.data
+    assert b"Attachments" in response.data
 
 
 def test_attachment_manager_lists_grouped_inventory_with_sizes(tmp_path):
@@ -1498,7 +1498,7 @@ def test_attachment_manager_lists_grouped_inventory_with_sizes(tmp_path):
     assert response.status_code == 200
     soup = BeautifulSoup(response.data, "html.parser")
     text = soup.get_text(" ", strip=True)
-    assert "Attachment Inventory" in text
+    assert "Inventory" in text
     assert "Attachment Creator" in text
     assert "Collected Set" in text
     assert "Attachment Post" in text

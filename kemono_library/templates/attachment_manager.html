@@ -2,8 +2,8 @@
 {% block content %}
 <section class="panel attachment-manager-hero" data-attachment-manager-hero>
   <div>
-    <small>Global Attachment Manager</small>
-    <h1>Attachment Inventory</h1>
+    <small>Attachments</small>
+    <h1>Inventory</h1>
     <p>Browse saved files across the whole archive, inspect missing downloads, and retry them in batches.</p>
   </div>
   {% if attachment_summary['missing_count'] > 0 %}
@@ -20,7 +20,7 @@
   <form method="get" action="{{ url_for('attachment_manager') }}" class="form attachment-manager-filters" data-attachment-filter-form>
     <div class="attachment-manager-filter-intro">
       <div>
-        <small>Filter Inventory</small>
+        <small>Filters</small>
         <strong data-attachment-summary-heading>
           <span data-attachment-summary-file-count>{{ attachment_summary['file_count'] }}</span> files across
           <span data-attachment-summary-creator-count>{{ attachment_summary['creator_count'] }}</span> creators
