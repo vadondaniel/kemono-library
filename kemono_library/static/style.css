@@ -2740,6 +2740,11 @@ body.is-busy-overlay-open {
   gap: 0.3rem;
 }
 
+.post-reader-zoom-controls [data-post-reader-zoom-fit] {
+  min-width: 4.5rem;
+  text-align: center;
+}
+
 .post-reader-toolbar .button-link:disabled {
   opacity: 0.46;
   color: var(--muted);
