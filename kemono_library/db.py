@@ -4,7 +4,7 @@ import json
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from typing import Iterator
 
 
@@ -1183,6 +1183,47 @@ class LibraryDB:
             ).fetchall()
             return list(rows)
 
+    def list_attachment_inventory(self) -> list[sqlite3.Row]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    a.id,
+                    a.version_id,
+                    a.name,
+                    a.remote_url,
+                    a.local_path,
+                    a.kind,
+                    a.created_at,
+                    v.post_id,
+                    v.label AS version_label,
+                    v.language AS version_language,
+                    v.origin_kind,
+                    CASE WHEN p.default_version_id = v.id THEN 1 ELSE 0 END AS is_default_version,
+                    p.creator_id,
+                    p.series_id,
+                    p.title AS post_title,
+                    p.published_at AS post_published_at,
+                    c.name AS creator_name,
+                    s.name AS series_name
+                FROM post_version_attachments a
+                JOIN post_versions v ON v.id = a.version_id
+                JOIN posts p ON p.id = v.post_id
+                JOIN creators c ON c.id = p.creator_id
+                LEFT JOIN series s ON s.id = p.series_id
+                ORDER BY
+                    LOWER(c.name) ASC,
+                    CASE WHEN s.name IS NULL OR TRIM(s.name) = '' THEN 1 ELSE 0 END ASC,
+                    LOWER(COALESCE(s.name, '')) ASC,
+                    CASE WHEN p.published_at IS NULL OR p.published_at = '' THEN 1 ELSE 0 END ASC,
+                    p.published_at DESC,
+                    p.id DESC,
+                    v.version_rank DESC,
+                    a.id ASC
+                """
+            ).fetchall()
+            return list(rows)
+
     def update_attachment_local_path(self, attachment_id: int, local_path: str | None) -> None:
         with self._connect() as conn:
             conn.execute(
@@ -1772,6 +1813,7 @@ class LibraryDB:
                 edited_at=post["edited_at"],
                 next_external_post_id=post["next_external_post_id"],
                 prev_external_post_id=post["prev_external_post_id"],
+                derived_from_version_id=None,
             )
             conn.execute("UPDATE posts SET default_version_id = ? WHERE id = ?", (version_id, post_id))
 
@@ -1856,6 +1898,11 @@ class LibraryDB:
         if normalized_origin_kind == self.VERSION_ORIGIN_SOURCE:
             if not has_full_source:
                 raise ValueError("Source versions require service, user id, and post id.")
+            source_service = normalized_source_service
+            source_user_id = normalized_source_user_id
+            source_post_id = normalized_source_post_id
+            if source_service is None or source_user_id is None or source_post_id is None:
+                raise ValueError("Source versions require service, user id, and post id.")
         else:
             if has_any_source:
                 raise ValueError(f"{normalized_origin_kind.title()} versions cannot store a source tuple.")
@@ -1863,9 +1910,9 @@ class LibraryDB:
             raise ValueError("Clone versions require a parent version.")
         if normalized_origin_kind == self.VERSION_ORIGIN_SOURCE:
             existing_version = self.find_version_by_source_global(
-                service=normalized_source_service,
-                external_user_id=normalized_source_user_id,
-                external_post_id=normalized_source_post_id,
+                service=cast(str, source_service),
+                external_user_id=cast(str, source_user_id),
+                external_post_id=cast(str, source_post_id),
                 conn=conn,
             )
             if existing_version:

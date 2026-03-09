@@ -1432,6 +1432,428 @@ def test_retry_attachment_uses_kemono_data_url_fallback(tmp_path, monkeypatch):
     assert attempted_urls == [original_remote, expected_fallback]
 
 
+def test_homepage_links_to_attachment_manager(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+
+    response = app.test_client().get("/")
+    assert response.status_code == 200
+    assert b'href="/attachments"' in response.data
+    assert b"Attachment manager" in response.data
+
+
+def test_attachment_manager_lists_grouped_inventory_with_sizes(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Attachment Creator")
+    series_id = db.create_series(creator_id, "Collected Set")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=series_id,
+        service="fanbox",
+        external_user_id="att-user",
+        external_post_id="1005",
+        title="Attachment Post",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/att-user/post/1005",
+    )
+    db.replace_attachments(
+        post_id,
+        [
+            {
+                "name": "saved.jpg",
+                "remote_url": "https://n1.kemono.cr/path/saved.jpg",
+                "local_path": f"post_{post_id}/saved.jpg",
+                "kind": "attachment",
+            },
+            {
+                "name": "missing.zip",
+                "remote_url": "https://n1.kemono.cr/path/missing.zip",
+                "local_path": f"post_{post_id}/missing.zip",
+                "kind": "attachment",
+            },
+        ],
+    )
+    saved_file = Path(app.config["FILES_DIR"]) / f"post_{post_id}" / "saved.jpg"
+    saved_file.parent.mkdir(parents=True, exist_ok=True)
+    saved_file.write_bytes(b"abcde")
+
+    response = app.test_client().get("/attachments")
+    assert response.status_code == 200
+    soup = BeautifulSoup(response.data, "html.parser")
+    text = soup.get_text(" ", strip=True)
+    assert "Attachment Inventory" in text
+    assert "Attachment Creator" in text
+    assert "Collected Set" in text
+    assert "Attachment Post" in text
+    assert "saved.jpg" in text
+    assert "missing.zip" in text
+    assert "5 B" in text
+    assert "1 missing" in text
+    assert "Apply" not in text
+    assert soup.select_one("[data-attachment-filter-form]") is not None
+    assert soup.select_one("[data-attachment-filter-search]") is not None
+    assert soup.select_one("[data-attachment-retry-overlay]") is not None
+    assert soup.select_one("[data-attachment-retry-form]") is not None
+    preview_image = soup.select_one("[data-attachment-preview-image]")
+    assert preview_image is not None
+    assert preview_image.get("data-preview-src")
+    assert preview_image.get("src") is None
+    assert soup.select_one("[data-attachment-retry-progress-failures]") is not None
+    assert soup.select_one("[data-attachment-retry-result]") is not None
+    assert soup.select_one("[data-attachment-retry-result-examples]") is not None
+    assert soup.select_one("[data-attachment-retry-result-note]") is None
+    assert soup.select_one("[data-attachment-retry-dock]") is not None
+    assert soup.select_one("[data-attachment-retry-restore]") is not None
+    assert soup.select_one("[data-attachment-retry-close]") is not None
+    assert soup.select_one("[data-attachment-retry-refresh]") is None
+    assert soup.select_one("[data-attachment-retry-dismiss]") is None
+    assert b"/static/attachment_manager.js" in response.data
+
+
+def test_attachment_manager_only_auto_opens_when_one_creator(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Solo Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="solo-user",
+        external_post_id="1010",
+        title="Solo Post",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/solo-user/post/1010",
+    )
+    db.replace_attachments(
+        post_id,
+        [
+            {
+                "name": "solo.jpg",
+                "remote_url": "https://n1.kemono.cr/path/solo.jpg",
+                "local_path": f"post_{post_id}/solo.jpg",
+                "kind": "attachment",
+            }
+        ],
+    )
+
+    client = app.test_client()
+    response = client.get("/attachments")
+    assert response.status_code == 200
+    soup = BeautifulSoup(response.data, "html.parser")
+    creator_nodes = soup.select("details.attachment-tree-creator")
+    assert len(creator_nodes) == 1
+    assert creator_nodes[0].has_attr("open")
+
+    second_creator_id = db.create_creator("Second Creator")
+    second_post_id = db.upsert_post(
+        creator_id=second_creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="second-user",
+        external_post_id="1011",
+        title="Second Post",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/second-user/post/1011",
+    )
+    db.replace_attachments(
+        second_post_id,
+        [
+            {
+                "name": "second.jpg",
+                "remote_url": "https://n1.kemono.cr/path/second.jpg",
+                "local_path": f"post_{second_post_id}/second.jpg",
+                "kind": "attachment",
+            }
+        ],
+    )
+
+    response = client.get("/attachments")
+    assert response.status_code == 200
+    soup = BeautifulSoup(response.data, "html.parser")
+    creator_nodes = soup.select("details.attachment-tree-creator")
+    assert len(creator_nodes) == 2
+    assert all(not node.has_attr("open") for node in creator_nodes)
+
+
+def test_attachment_manager_hides_retry_actions_when_no_files_are_missing(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Healthy Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="healthy-user",
+        external_post_id="1008",
+        title="Healthy Post",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/healthy-user/post/1008",
+    )
+    db.replace_attachments(
+        post_id,
+        [
+            {
+                "name": "saved.jpg",
+                "remote_url": "https://n1.kemono.cr/path/saved.jpg",
+                "local_path": f"post_{post_id}/saved.jpg",
+                "kind": "attachment",
+            }
+        ],
+    )
+    saved_file = Path(app.config["FILES_DIR"]) / f"post_{post_id}" / "saved.jpg"
+    saved_file.parent.mkdir(parents=True, exist_ok=True)
+    saved_file.write_bytes(b"ok")
+
+    response = app.test_client().get("/attachments")
+    assert response.status_code == 200
+    html = response.data.decode("utf-8")
+    assert "Retry All Missing" not in html
+    assert "Retry Missing" not in html
+    assert ">Retry<" not in html
+
+
+def test_attachment_manager_batch_retry_uses_scope_and_recovers_missing_files(tmp_path, monkeypatch):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Batch Retry Creator")
+    first_post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="batch-user",
+        external_post_id="1006",
+        title="First Post",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/batch-user/post/1006",
+    )
+    second_post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="batch-user",
+        external_post_id="1007",
+        title="Second Post",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/batch-user/post/1007",
+    )
+    db.replace_attachments(
+        first_post_id,
+        [
+            {
+                "name": "first.jpg",
+                "remote_url": "https://n1.kemono.cr/path/first.jpg",
+                "local_path": f"post_{first_post_id}/first.jpg",
+                "kind": "attachment",
+            }
+        ],
+    )
+    db.replace_attachments(
+        second_post_id,
+        [
+            {
+                "name": "second.jpg",
+                "remote_url": "https://n1.kemono.cr/path/second.jpg",
+                "local_path": f"post_{second_post_id}/second.jpg",
+                "kind": "attachment",
+            }
+        ],
+    )
+
+    attempted_urls: list[str] = []
+
+    def fake_download(remote_url, destination):  # noqa: ARG001
+        attempted_urls.append(remote_url)
+        Path(destination).parent.mkdir(parents=True, exist_ok=True)
+        Path(destination).write_bytes(b"ok")
+
+    monkeypatch.setattr("kemono_library.web.download_attachment", fake_download)
+
+    response = app.test_client().post(
+        "/attachments/retry-missing",
+        data={
+            "scope": "post",
+            "scope_id": str(first_post_id),
+            "return_to": "/attachments",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/attachments")
+    assert attempted_urls == ["https://n1.kemono.cr/path/first.jpg"]
+
+    first_saved = Path(app.config["FILES_DIR"]) / f"post_{first_post_id}" / "first.jpg"
+    second_saved = Path(app.config["FILES_DIR"]) / f"post_{second_post_id}" / "second.jpg"
+    assert first_saved.exists()
+    assert not second_saved.exists()
+
+
+def test_attachment_retry_job_reports_live_progress_until_complete(tmp_path, monkeypatch):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Retry Progress Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="retry-progress-user",
+        external_post_id="1009",
+        title="Retry Progress Post",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/retry-progress-user/post/1009",
+    )
+    db.replace_attachments(
+        post_id,
+        [
+            {
+                "name": "9f86d081884c7d659a2feaa0c55ad015.jpg",
+                "remote_url": "https://n1.kemono.cr/path/9f86d081884c7d659a2feaa0c55ad015.jpg",
+                "local_path": f"post_{post_id}/9f86d081884c7d659a2feaa0c55ad015.jpg",
+                "kind": "attachment",
+            },
+            {
+                "name": "e4d909c290d0fb1ca068ffaddf22cbd0.jpg",
+                "remote_url": "https://n1.kemono.cr/path/e4d909c290d0fb1ca068ffaddf22cbd0.jpg",
+                "local_path": f"post_{post_id}/e4d909c290d0fb1ca068ffaddf22cbd0.jpg",
+                "kind": "attachment",
+            },
+        ],
+    )
+
+    first_download_started = threading.Event()
+    allow_downloads = threading.Event()
+
+    def fake_download(remote_url, destination):  # noqa: ARG001
+        first_download_started.set()
+        if not allow_downloads.wait(timeout=2):
+            raise AssertionError("timed out waiting to release retry job download")
+        Path(destination).parent.mkdir(parents=True, exist_ok=True)
+        Path(destination).write_bytes(b"ok")
+
+    monkeypatch.setattr("kemono_library.web.download_attachment", fake_download)
+
+    client = app.test_client()
+    start = client.post(
+        "/attachments/retry-missing/start",
+        data={
+            "scope": "post",
+            "scope_id": str(post_id),
+            "return_to": "/attachments",
+        },
+    )
+    assert start.status_code == 200
+    start_payload = start.get_json()
+    assert isinstance(start_payload, dict)
+    status_url = start_payload["status_url"]
+
+    assert first_download_started.wait(timeout=2)
+
+    running_seen = False
+    for _ in range(50):
+        status_response = client.get(status_url)
+        assert status_response.status_code == 200
+        status_payload = status_response.get_json()
+        assert isinstance(status_payload, dict)
+        if status_payload["status"] == "running":
+            running_seen = True
+            assert status_payload["total"] == 2
+            assert status_payload["completed"] in {0, 1}
+            assert status_payload["failure_count"] == 0
+            current_file = str(status_payload["current_file"])
+            assert "Retry Progress Creator" in current_file
+            assert "Retry Progress Post" in current_file
+            assert "Original" in current_file
+            assert current_file.endswith(
+                (
+                    "9f86d081884c7d659a2feaa0c55ad015.jpg",
+                    "e4d909c290d0fb1ca068ffaddf22cbd0.jpg",
+                )
+            )
+            break
+        time.sleep(0.01)
+
+    assert running_seen is True
+    allow_downloads.set()
+
+    final_status: dict[str, object] | None = None
+    for _ in range(150):
+        status_response = client.get(status_url)
+        assert status_response.status_code == 200
+        status_payload = status_response.get_json()
+        assert isinstance(status_payload, dict)
+        if status_payload["status"] == "completed":
+            final_status = status_payload
+            break
+        if status_payload["status"] == "failed":
+            raise AssertionError(status_payload["error"])
+        time.sleep(0.01)
+
+    assert final_status is not None
+    assert final_status["completed"] == 2
+    assert final_status["total"] == 2
+    assert final_status["success_count"] == 2
+    assert final_status["failure_count"] == 0
+    assert final_status["failure_examples"] == []
+    results = final_status["results"]
+    assert isinstance(results, list)
+    assert len(results) == 2
+    assert final_status["redirect_url"] == "/attachments"
+
+
 def test_edit_page_prettifies_html_content(tmp_path):
     app = create_app(
         {

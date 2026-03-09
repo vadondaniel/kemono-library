@@ -35,6 +35,9 @@ for path in (
 if __name__ == "__main__":
     app.run(
         debug=True,
+        # Use the stat reloader so downloaded archives and data files don't trip
+        # watchdog's broad file event patterns on Windows.
+        reloader_type="stat",
         # Keep live-reload for app source changes, but ignore env/runtime and test noise.
         exclude_patterns=_RELOADER_EXCLUDES,
     )

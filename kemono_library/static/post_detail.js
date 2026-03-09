@@ -113,8 +113,6 @@
   const openTabLink = lightbox.querySelector("[data-post-lightbox-open-tab]");
   const closeButtons = Array.from(lightbox.querySelectorAll("[data-post-lightbox-close]"));
   const contentRoot = document.querySelector(".post-content");
-  const fileTriggers = Array.from(document.querySelectorAll("[data-post-file-image-trigger]"));
-
   if (!(imageTarget instanceof HTMLImageElement)) {
     return;
   }
@@ -152,14 +150,17 @@
     document.body.classList.remove("is-lightbox-open");
   }
 
-  fileTriggers.forEach((trigger) => {
-    trigger.addEventListener("click", (event) => {
-      event.preventDefault();
-      if (!(trigger instanceof HTMLElement)) {
-        return;
-      }
-      openLightbox(trigger.dataset.lightboxSrc || "", trigger.dataset.lightboxTitle || "");
-    });
+  document.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+    const trigger = target.closest("[data-post-file-image-trigger]");
+    if (!(trigger instanceof HTMLElement)) {
+      return;
+    }
+    event.preventDefault();
+    openLightbox(trigger.dataset.lightboxSrc || "", trigger.dataset.lightboxTitle || "");
   });
 
   if (contentRoot instanceof HTMLElement) {

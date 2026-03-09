@@ -12,7 +12,7 @@ from collections import deque
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
 
 import bleach
 from bs4 import BeautifulSoup
@@ -20,6 +20,8 @@ from flask import Flask, flash, jsonify, redirect, render_template, request, sen
 from markupsafe import Markup
 
 from .db import LibraryDB
+
+LibraryDBLike = Any
 from .kemono import (
     KemonoPostRef,
     creator_icon_url,
@@ -55,6 +57,10 @@ def create_app(test_config: dict | None = None) -> Flask:
     import_jobs_lock = threading.Lock()
     import_job_queue: deque[str] = deque()
     import_job_queue_condition = threading.Condition(import_jobs_lock)
+    attachment_retry_jobs: dict[str, dict[str, Any]] = {}
+    attachment_retry_jobs_lock = threading.Lock()
+    attachment_retry_job_queue: deque[str] = deque()
+    attachment_retry_job_queue_condition = threading.Condition(attachment_retry_jobs_lock)
 
     def refresh_import_queue_positions_locked() -> None:
         for position, queued_job_id in enumerate(import_job_queue, start=1):
@@ -174,6 +180,185 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     threading.Thread(target=import_worker, daemon=True).start()
 
+    def _collect_retry_scope_rows(scope: str, scope_id_raw: str) -> list[dict[str, Any]]:
+        files_base = Path(app.config["FILES_DIR"])
+        inventory_rows: list[dict[str, Any]] = []
+        for row in db.list_attachment_inventory():
+            local_path = _optional_str(row["local_path"])
+            local_abs = files_base / local_path if local_path else None
+            inventory_row = {
+                "id": int(row["id"]),
+                "post_id": int(row["post_id"]),
+                "creator_id": int(row["creator_id"]),
+                "series_id": int(row["series_id"]) if row["series_id"] is not None else None,
+                "name": str(row["name"]),
+                "remote_url": str(row["remote_url"]),
+                "local_path": local_path,
+                "local_available": _is_valid_file(local_abs),
+                "creator_name": _optional_str(row["creator_name"]),
+                "post_title": _optional_str(row["post_title"]),
+                "version_label": _optional_str(row["version_label"]),
+            }
+            inventory_row["display_name"] = _build_attachment_retry_display_name(inventory_row)
+            inventory_rows.append(
+                inventory_row
+            )
+        scoped_rows = _filter_retry_scope_rows(inventory_rows, scope=scope, scope_id_raw=scope_id_raw)
+        return [row for row in scoped_rows if not row["local_available"]]
+
+    def refresh_attachment_retry_queue_positions_locked() -> None:
+        for position, queued_job_id in enumerate(attachment_retry_job_queue, start=1):
+            queued_job = attachment_retry_jobs.get(queued_job_id)
+            if not queued_job:
+                continue
+            queued_job.update(
+                {
+                    "status": "queued",
+                    "queue_position": position,
+                    "message": f"Queued retry job. Queue position: {position}.",
+                }
+            )
+
+    def attachment_retry_worker() -> None:
+        while True:
+            with attachment_retry_job_queue_condition:
+                while not attachment_retry_job_queue:
+                    attachment_retry_job_queue_condition.wait()
+                job_id = attachment_retry_job_queue.popleft()
+                job = attachment_retry_jobs.get(job_id)
+                if job:
+                    job.update(
+                        {
+                            "status": "running",
+                            "queue_position": 0,
+                            "message": "Preparing attachment retry...",
+                        }
+                    )
+                refresh_attachment_retry_queue_positions_locked()
+
+            if not job:
+                continue
+
+            job_payload = dict(job["payload"])
+            scope = str(job_payload["scope"])
+            scope_id_raw = str(job_payload["scope_id_raw"])
+            return_to = str(job_payload["return_to"])
+            missing_rows = _collect_retry_scope_rows(scope, scope_id_raw)
+
+            if not missing_rows:
+                with attachment_retry_jobs_lock:
+                    live_job = attachment_retry_jobs.get(job_id)
+                    if live_job:
+                        live_job.update(
+                            {
+                                "status": "completed",
+                                "queue_position": 0,
+                                "message": "No missing attachments matched this retry scope.",
+                                "completed": 0,
+                                "total": 0,
+                                "current_file": None,
+                                "success_count": 0,
+                                "failure_count": 0,
+                                "failure_examples": [],
+                                "results": [],
+                                "redirect_url": return_to,
+                            }
+                        )
+                continue
+
+            success_count = 0
+            failure_count = 0
+            failure_samples: list[str] = []
+            retry_results: list[dict[str, Any]] = []
+            total = len(missing_rows)
+            files_base = Path(app.config["FILES_DIR"])
+
+            for idx, row in enumerate(missing_rows, start=1):
+                display_name = str(row.get("display_name") or row["name"])
+                with attachment_retry_jobs_lock:
+                    live_job = attachment_retry_jobs.get(job_id)
+                    if live_job:
+                        live_job.update(
+                            {
+                                "status": "running",
+                                "queue_position": 0,
+                                "message": f"Retrying attachments ({idx}/{total})...",
+                                "completed": idx - 1,
+                                "total": total,
+                                "current_file": display_name,
+                                "success_count": success_count,
+                                "failure_count": failure_count,
+                            }
+                        )
+
+                result = _retry_attachment_row(
+                    db,
+                    files_base=files_base,
+                    attachment_id=int(row["id"]),
+                    post_id=int(row["post_id"]),
+                    attachment_name=row["name"],
+                    remote_url=str(row["remote_url"]),
+                    existing_local_path=_optional_str(row["local_path"]),
+                )
+                retry_results.append(
+                    {
+                        "id": int(row["id"]),
+                        "success": bool(result["success"]),
+                        "error": result["error"],
+                        "local_path": result["local_path"],
+                        "file_size": result["file_size"],
+                    }
+                )
+                if bool(result["success"]):
+                    success_count += 1
+                else:
+                    failure_count += 1
+                    error = _optional_str(result["error"])
+                    if error and len(failure_samples) < 3:
+                        failure_samples.append(f"{row['name']}: {error}")
+
+                with attachment_retry_jobs_lock:
+                    live_job = attachment_retry_jobs.get(job_id)
+                    if live_job:
+                        live_job.update(
+                            {
+                                "status": "running",
+                                "queue_position": 0,
+                                "message": f"Processed {idx}/{total} attachment(s)...",
+                                "completed": idx,
+                                "total": total,
+                                "current_file": display_name,
+                                "success_count": success_count,
+                                "failure_count": failure_count,
+                            }
+                        )
+
+            summary_message = f"Retried {success_count} missing attachment(s)."
+            if failure_count:
+                detail = "; ".join(failure_samples)
+                suffix = f" Examples: {detail}" if detail else ""
+                summary_message += f" {failure_count} failed.{suffix}"
+            with attachment_retry_jobs_lock:
+                live_job = attachment_retry_jobs.get(job_id)
+                if live_job:
+                    live_job.update(
+                        {
+                            "status": "completed",
+                            "queue_position": 0,
+                            "message": summary_message,
+                            "completed": total,
+                            "total": total,
+                            "current_file": None,
+                            "success_count": success_count,
+                            "failure_count": failure_count,
+                            "failure_examples": failure_samples,
+                            "results": retry_results,
+                            "redirect_url": return_to,
+                        }
+                    )
+
+    threading.Thread(target=attachment_retry_worker, daemon=True).start()
+
     @app.template_filter("format_datetime")
     def format_datetime_filter(value: Any) -> str:
         return _format_datetime_for_display(value)
@@ -182,11 +367,113 @@ def create_app(test_config: dict | None = None) -> Flask:
     def render_markdown_filter(value: Any) -> Markup:
         return _render_markdown_snippet(value)
 
+    @app.template_filter("format_bytes")
+    def format_bytes_filter(value: Any) -> str:
+        return _format_bytes_for_display(value)
+
     @app.get("/")
     def index():
         creators = db.list_creators()
         recent_posts = db.list_recent_posts()
         return render_template("index.html", creators=creators, recent_posts=recent_posts)
+
+    @app.get("/attachments")
+    def attachment_manager():
+        files_base = Path(app.config["FILES_DIR"])
+        search_text = request.args.get("q", "").strip()
+        state_filter = request.args.get("state", "all").strip().lower()
+        if state_filter not in {"all", "missing", "local"}:
+            state_filter = "all"
+        media_filter = request.args.get("media", "all").strip().lower()
+        if media_filter not in {"all", "images", "other"}:
+            media_filter = "all"
+        sort_key = request.args.get("sort", "creator").strip().lower()
+        if sort_key not in {"creator", "size", "name", "recent"}:
+            sort_key = "creator"
+
+        inventory_rows: list[dict[str, Any]] = []
+        for row in db.list_attachment_inventory():
+            local_path = _optional_str(row["local_path"])
+            local_abs = files_base / local_path if local_path else None
+            local_available = _is_valid_file(local_abs)
+            file_size = local_abs.stat().st_size if local_available and local_abs is not None else None
+            remote_url = str(row["remote_url"])
+            is_image = _is_likely_image_attachment(
+                remote_url=remote_url,
+                name=row["name"],
+                local_path=local_path,
+                kind=row["kind"],
+            )
+            preview_url = (
+                url_for("serve_file", relative_path=local_path)
+                if local_available and local_path
+                else _preferred_remote_url_for_access(remote_url, row["name"])
+            )
+            post_title = str(row["post_title"]).strip() if row["post_title"] else f"Post {int(row['post_id'])}"
+            creator_name = str(row["creator_name"]).strip() if row["creator_name"] else f"Creator {int(row['creator_id'])}"
+            series_name = _optional_str(row["series_name"]) or "Unsorted"
+            version_label = str(row["version_label"]).strip() if row["version_label"] else "Version"
+            version_language = _optional_str(row["version_language"])
+            search_blob = " ".join(
+                part
+                for part in (
+                    creator_name,
+                    series_name,
+                    post_title,
+                    str(row["name"]),
+                    remote_url,
+                    version_label,
+                    version_language or "",
+                )
+                if part
+            ).lower()
+            inventory_rows.append(
+                {
+                    "id": int(row["id"]),
+                    "version_id": int(row["version_id"]),
+                    "post_id": int(row["post_id"]),
+                    "creator_id": int(row["creator_id"]),
+                    "series_id": int(row["series_id"]) if row["series_id"] is not None else None,
+                    "creator_name": creator_name,
+                    "series_name": series_name,
+                    "post_title": post_title,
+                    "post_published_at": row["post_published_at"],
+                    "name": str(row["name"]),
+                    "remote_url": remote_url,
+                    "local_path": local_path,
+                    "local_available": local_available,
+                    "file_size": file_size,
+                    "kind": str(row["kind"]),
+                    "is_image": is_image,
+                    "preview_url": preview_url,
+                    "version_label": version_label,
+                    "version_language": version_language,
+                    "origin_kind": str(row["origin_kind"]),
+                    "is_default_version": bool(row["is_default_version"]),
+                    "search_blob": search_blob,
+                }
+            )
+
+        filtered_rows = _filter_attachment_inventory_rows(
+            inventory_rows,
+            search_text=search_text,
+            state_filter=state_filter,
+            media_filter=media_filter,
+        )
+        sorted_rows = _sort_attachment_inventory_rows(filtered_rows, sort_key=sort_key)
+        tree = _build_attachment_inventory_tree(sorted_rows)
+        summary = _summarize_attachment_inventory(sorted_rows)
+
+        return render_template(
+            "attachment_manager.html",
+            attachment_tree=tree,
+            attachment_summary=summary,
+            search_text=search_text,
+            state_filter=state_filter,
+            media_filter=media_filter,
+            sort_key=sort_key,
+            request_query=request.query_string.decode("utf-8"),
+        )
 
     @app.post("/creators")
     def create_creator():
@@ -939,33 +1226,115 @@ def create_app(test_config: dict | None = None) -> Flask:
         if attachment is None:
             return ("Attachment not found", 404)
 
-        files_base = Path(app.config["FILES_DIR"])
-        existing_local = attachment["local_path"]
-        if isinstance(existing_local, str) and existing_local.strip():
-            destination = files_base / existing_local
-        else:
-            destination = files_base / f"post_{post_id}" / sanitize_filename(str(attachment["name"]))
-
-        try:
-            used_remote_url = _download_with_fallback_remote_url(
-                str(attachment["remote_url"]),
-                destination,
-                attachment["name"],
-            )
-            if not used_remote_url:
-                raise RuntimeError("all download URL variants failed")
-        except Exception as exc:  # noqa: BLE001
-            flash(f"Retry failed for {attachment['name']}: {exc}", "error")
+        result = _retry_attachment_row(
+            db,
+            files_base=Path(app.config["FILES_DIR"]),
+            attachment_id=attachment_id,
+            post_id=post_id,
+            attachment_name=attachment["name"],
+            remote_url=str(attachment["remote_url"]),
+            existing_local_path=_optional_str(attachment["local_path"]),
+        )
+        if not bool(result["success"]):
+            error = _optional_str(result["error"]) or "unknown error"
+            flash(f"Retry failed for {attachment['name']}: {error}", "error")
             return redirect(detail_url)
-
-        if not _is_valid_file(destination):
-            flash(f"Retry failed for {attachment['name']}: downloaded file is empty.", "error")
-            return redirect(detail_url)
-
-        local_rel = destination.relative_to(files_base).as_posix()
-        db.update_attachment_local_path(attachment_id, local_rel)
         flash(f"Downloaded {attachment['name']}.", "success")
         return redirect(detail_url)
+
+    @app.post("/attachments/retry-missing")
+    def retry_missing_attachments():
+        scope = request.form.get("scope", "all").strip().lower()
+        scope_id_raw = request.form.get("scope_id", "").strip()
+        return_to = request.form.get("return_to", "").strip() or url_for("attachment_manager")
+        if not return_to.startswith("/"):
+            return_to = url_for("attachment_manager")
+
+        files_base = Path(app.config["FILES_DIR"])
+        missing_rows = _collect_retry_scope_rows(scope, scope_id_raw)
+        if not missing_rows:
+            flash("No missing attachments matched this retry scope.", "success")
+            return redirect(return_to)
+
+        success_count = 0
+        failure_count = 0
+        failure_samples: list[str] = []
+        for row in missing_rows:
+            result = _retry_attachment_row(
+                db,
+                files_base=files_base,
+                attachment_id=int(row["id"]),
+                post_id=int(row["post_id"]),
+                attachment_name=row["name"],
+                remote_url=str(row["remote_url"]),
+                existing_local_path=_optional_str(row["local_path"]),
+            )
+            if bool(result["success"]):
+                success_count += 1
+                continue
+            failure_count += 1
+            error = _optional_str(result["error"])
+            if error and len(failure_samples) < 3:
+                failure_samples.append(f"{row['name']}: {error}")
+
+        if success_count:
+            flash(f"Retried {success_count} missing attachment(s).", "success")
+        if failure_count:
+            detail = "; ".join(failure_samples)
+            suffix = f" Examples: {detail}" if detail else ""
+            flash(f"{failure_count} attachment retry attempt(s) failed.{suffix}", "error")
+        return redirect(return_to)
+
+    @app.post("/attachments/retry-missing/start")
+    def start_retry_missing_attachments():
+        scope = request.form.get("scope", "all").strip().lower()
+        scope_id_raw = request.form.get("scope_id", "").strip()
+        return_to = request.form.get("return_to", "").strip() or url_for("attachment_manager")
+        if not return_to.startswith("/"):
+            return_to = url_for("attachment_manager")
+
+        job_id = uuid.uuid4().hex
+        initial_total = len(_collect_retry_scope_rows(scope, scope_id_raw))
+        with attachment_retry_jobs_lock:
+            attachment_retry_jobs[job_id] = {
+                "status": "queued",
+                "message": "Queued retry job.",
+                "completed": 0,
+                "total": initial_total,
+                "current_file": None,
+                "error": None,
+                "queue_position": len(attachment_retry_job_queue) + 1,
+                "success_count": 0,
+                "failure_count": 0,
+                "failure_examples": [],
+                "results": [],
+                "redirect_url": return_to,
+                "payload": {
+                    "scope": scope,
+                    "scope_id_raw": scope_id_raw,
+                    "return_to": return_to,
+                },
+            }
+            attachment_retry_job_queue.append(job_id)
+            refresh_attachment_retry_queue_positions_locked()
+            attachment_retry_job_queue_condition.notify()
+
+        return jsonify(
+            {
+                "job_id": job_id,
+                "status_url": url_for("attachment_retry_job_status", job_id=job_id),
+            }
+        )
+
+    @app.get("/attachments/retry-jobs/<job_id>/status")
+    def attachment_retry_job_status(job_id: str):
+        with attachment_retry_jobs_lock:
+            job = attachment_retry_jobs.get(job_id)
+            if not job:
+                return jsonify({"error": "Retry job not found."}), 404
+            snapshot = dict(job)
+        snapshot.pop("payload", None)
+        return jsonify(snapshot)
 
     @app.post("/posts/<int:post_id>/delete")
     def delete_post(post_id: int):
@@ -1507,6 +1876,54 @@ def _download_with_fallback_remote_url(
     return None
 
 
+def _retry_attachment_row(
+    db: LibraryDBLike,
+    *,
+    files_base: Path,
+    attachment_id: int,
+    post_id: int,
+    attachment_name: Any,
+    remote_url: str,
+    existing_local_path: str | None,
+) -> dict[str, Any]:
+    if existing_local_path:
+        destination = files_base / existing_local_path
+    else:
+        destination = files_base / f"post_{post_id}" / sanitize_filename(str(attachment_name))
+
+    try:
+        used_remote_url = _download_with_fallback_remote_url(
+            remote_url,
+            destination,
+            attachment_name,
+        )
+        if not used_remote_url:
+            return {"success": False, "error": "all download URL variants failed", "local_path": None, "file_size": None}
+    except Exception as exc:  # noqa: BLE001
+        return {"success": False, "error": str(exc), "local_path": None, "file_size": None}
+
+    if not _is_valid_file(destination):
+        return {"success": False, "error": "downloaded file is empty", "local_path": None, "file_size": None}
+
+    local_rel = destination.relative_to(files_base).as_posix()
+    db.update_attachment_local_path(attachment_id, local_rel)
+    try:
+        file_size = destination.stat().st_size
+    except OSError:
+        file_size = None
+    return {"success": True, "error": None, "local_path": local_rel, "file_size": file_size}
+
+
+def _build_local_file_url(relative_path: str | None) -> str | None:
+    normalized = _optional_str(relative_path)
+    if normalized is None:
+        return None
+    segments = [quote(part, safe="") for part in normalized.replace("\\", "/").split("/") if part]
+    if not segments:
+        return None
+    return "/files/" + "/".join(segments)
+
+
 def _preferred_remote_url_for_access(remote_url: str, attachment_name: Any) -> str:
     return _kemono_data_fallback_url(remote_url, attachment_name) or remote_url
 
@@ -1714,7 +2131,7 @@ def _build_local_media_maps(
 
 
 def _apply_postwide_media_aliases(
-    db: LibraryDB,
+    db: LibraryDBLike,
     *,
     post_id: int,
     local_media_by_name: dict[str, str],
@@ -2131,7 +2548,7 @@ def _remote_filename_alias_keys(raw_url: str | None) -> set[str]:
 
 
 def _build_target_attachment_index(
-    db: LibraryDB,
+    db: LibraryDBLike,
     *,
     files_base: Path,
     post_ids: list[int],
@@ -2207,6 +2624,244 @@ def _optional_str(value: Any) -> str | None:
         cleaned = value.strip()
         return cleaned or None
     return None
+
+
+def _format_bytes_for_display(value: Any) -> str:
+    try:
+        size = int(value)
+    except (TypeError, ValueError):
+        return "-"
+    if size < 0:
+        return "-"
+    units = ["B", "KB", "MB", "GB", "TB"]
+    scaled = float(size)
+    unit = units[0]
+    for candidate in units:
+        unit = candidate
+        if scaled < 1024.0 or candidate == units[-1]:
+            break
+        scaled /= 1024.0
+    if unit == "B":
+        return f"{int(scaled)} {unit}"
+    return f"{scaled:.1f} {unit}"
+
+
+def _build_attachment_retry_display_name(row: dict[str, Any]) -> str:
+    creator_name = _optional_str(row.get("creator_name")) or f"Creator {int(row['creator_id'])}"
+    post_title = _optional_str(row.get("post_title")) or f"Post {int(row['post_id'])}"
+    version_label = _optional_str(row.get("version_label"))
+    attachment_name = _optional_str(row.get("name")) or "attachment"
+    parts = [creator_name, post_title]
+    if version_label:
+        parts.append(version_label)
+    parts.append(attachment_name)
+    return " / ".join(parts)
+
+
+def _filter_attachment_inventory_rows(
+    rows: list[dict[str, Any]],
+    *,
+    search_text: str,
+    state_filter: str,
+    media_filter: str,
+) -> list[dict[str, Any]]:
+    filtered: list[dict[str, Any]] = []
+    search_lower = search_text.strip().lower()
+    for row in rows:
+        if search_lower and search_lower not in str(row["search_blob"]):
+            continue
+        if state_filter == "missing" and row["local_available"]:
+            continue
+        if state_filter == "local" and not row["local_available"]:
+            continue
+        if media_filter == "images" and not row["is_image"]:
+            continue
+        if media_filter == "other" and row["is_image"]:
+            continue
+        filtered.append(row)
+    return filtered
+
+
+def _sort_attachment_inventory_rows(rows: list[dict[str, Any]], *, sort_key: str) -> list[dict[str, Any]]:
+    def recent_sort_key(row: dict[str, Any]) -> tuple[Any, ...]:
+        published = _optional_str(row["post_published_at"]) or ""
+        return (
+            published == "",
+            published,
+            row["creator_name"].lower(),
+            row["series_name"].lower(),
+            row["post_title"].lower(),
+            row["name"].lower(),
+            row["id"],
+        )
+
+    def creator_sort_key(row: dict[str, Any]) -> tuple[Any, ...]:
+        published = _optional_str(row["post_published_at"]) or ""
+        return (
+            row["creator_name"].lower(),
+            row["series_name"].lower(),
+            published == "",
+            published,
+            row["post_title"].lower(),
+            row["name"].lower(),
+            row["id"],
+        )
+
+    def size_sort_key(row: dict[str, Any]) -> tuple[Any, ...]:
+        size = int(row["file_size"] or -1)
+        return (
+            -(size if size >= 0 else -1),
+            row["creator_name"].lower(),
+            row["series_name"].lower(),
+            row["post_title"].lower(),
+            row["name"].lower(),
+            row["id"],
+        )
+
+    def name_sort_key(row: dict[str, Any]) -> tuple[Any, ...]:
+        return (
+            row["name"].lower(),
+            row["creator_name"].lower(),
+            row["series_name"].lower(),
+            row["post_title"].lower(),
+            row["id"],
+        )
+
+    key_func = {
+        "recent": recent_sort_key,
+        "size": size_sort_key,
+        "name": name_sort_key,
+        "creator": creator_sort_key,
+    }.get(sort_key, creator_sort_key)
+    reverse = sort_key == "recent"
+    return sorted(rows, key=key_func, reverse=reverse)
+
+
+def _summarize_attachment_inventory(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    total_size = sum(int(row["file_size"] or 0) for row in rows)
+    missing_count = sum(1 for row in rows if not row["local_available"])
+    image_count = sum(1 for row in rows if row["is_image"])
+    creator_ids = {int(row["creator_id"]) for row in rows}
+    series_keys = {
+        (int(row["creator_id"]), int(row["series_id"]) if row["series_id"] is not None else None)
+        for row in rows
+    }
+    post_ids = {int(row["post_id"]) for row in rows}
+    return {
+        "file_count": len(rows),
+        "total_size": total_size,
+        "missing_count": missing_count,
+        "image_count": image_count,
+        "creator_count": len(creator_ids),
+        "series_count": len(series_keys),
+        "post_count": len(post_ids),
+    }
+
+
+def _build_attachment_inventory_tree(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    creator_nodes: dict[int, dict[str, Any]] = {}
+    series_sequence = 0
+    for row in rows:
+        creator_id = int(row["creator_id"])
+        creator_node = creator_nodes.get(creator_id)
+        if creator_node is None:
+            creator_node = {
+                "id": creator_id,
+                "name": row["creator_name"],
+                "files": [],
+                "series_nodes": [],
+                "series_lookup": {},
+                "file_count": 0,
+                "missing_count": 0,
+                "size_bytes": 0,
+            }
+            creator_nodes[creator_id] = creator_node
+
+        series_key = (int(row["series_id"]) if row["series_id"] is not None else None, row["series_name"])
+        series_node = creator_node["series_lookup"].get(series_key)
+        if series_node is None:
+            series_sequence += 1
+            series_node = {
+                "uid": f"series-{series_sequence}",
+                "series_id": series_key[0],
+                "name": row["series_name"],
+                "posts": [],
+                "post_lookup": {},
+                "file_count": 0,
+                "missing_count": 0,
+                "size_bytes": 0,
+            }
+            creator_node["series_lookup"][series_key] = series_node
+            creator_node["series_nodes"].append(series_node)
+
+        post_id = int(row["post_id"])
+        post_node = series_node["post_lookup"].get(post_id)
+        if post_node is None:
+            post_node = {
+                "post_id": post_id,
+                "title": row["post_title"],
+                "published_at": row["post_published_at"],
+                "attachments": [],
+                "file_count": 0,
+                "missing_count": 0,
+                "size_bytes": 0,
+            }
+            series_node["post_lookup"][post_id] = post_node
+            series_node["posts"].append(post_node)
+
+        post_node["attachments"].append(row)
+        post_node["file_count"] += 1
+        post_node["missing_count"] += 0 if row["local_available"] else 1
+        post_node["size_bytes"] += int(row["file_size"] or 0)
+
+        series_node["file_count"] += 1
+        series_node["missing_count"] += 0 if row["local_available"] else 1
+        series_node["size_bytes"] += int(row["file_size"] or 0)
+
+        creator_node["file_count"] += 1
+        creator_node["missing_count"] += 0 if row["local_available"] else 1
+        creator_node["size_bytes"] += int(row["file_size"] or 0)
+
+    return list(creator_nodes.values())
+
+
+def _filter_retry_scope_rows(
+    rows: list[dict[str, Any]],
+    *,
+    scope: str,
+    scope_id_raw: str,
+) -> list[dict[str, Any]]:
+    if scope == "attachment":
+        try:
+            attachment_id = int(scope_id_raw)
+        except ValueError:
+            return []
+        return [row for row in rows if int(row["id"]) == attachment_id]
+    if scope == "post":
+        try:
+            post_id = int(scope_id_raw)
+        except ValueError:
+            return []
+        return [row for row in rows if int(row["post_id"]) == post_id]
+    if scope == "creator":
+        try:
+            creator_id = int(scope_id_raw)
+        except ValueError:
+            return []
+        return [row for row in rows if int(row["creator_id"]) == creator_id]
+    if scope == "series":
+        if scope_id_raw.startswith("unsorted:"):
+            try:
+                creator_id = int(scope_id_raw.split(":", 1)[1])
+            except ValueError:
+                return []
+            return [row for row in rows if row["series_id"] is None and int(row["creator_id"]) == creator_id]
+        try:
+            series_id = int(scope_id_raw)
+        except ValueError:
+            return []
+        return [row for row in rows if row["series_id"] == series_id]
+    return list(rows)
 
 
 _IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"}
@@ -2444,7 +3099,7 @@ def _find_thumbnail_local_path(
 
 
 def _import_post_into_library(
-    db: LibraryDB,
+    db: LibraryDBLike,
     *,
     files_base: Path,
     icons_base: Path,
@@ -2760,7 +3415,7 @@ def _extract_tags(payload: dict[str, Any]) -> list[str]:
 
 
 def _validate_import_series_selection(
-    db: LibraryDB,
+    db: LibraryDBLike,
     *,
     creator_id: int,
     series_id: int | None,
@@ -2774,7 +3429,7 @@ def _validate_import_series_selection(
 
 
 def _find_import_source_match(
-    db: LibraryDB,
+    db: LibraryDBLike,
     *,
     service: str,
     user_id: str,
@@ -2880,7 +3535,7 @@ def _resolve_import_optional_metadata(
 
 
 def _reprocess_post_versions_for_media_renames(
-    db: LibraryDB,
+    db: LibraryDBLike,
     *,
     post_id: int,
     rename_aliases: dict[str, str],
