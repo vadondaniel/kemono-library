@@ -678,6 +678,28 @@ class LibraryDB:
             ).fetchall()
             return list(rows)
 
+    @staticmethod
+    def load_post_version_revision_snapshot(row: sqlite3.Row | None) -> dict[str, Any] | None:
+        if row is None:
+            return None
+        snapshot = dict(row)
+        for key, empty_default in (
+            ("attachments_json", []),
+            ("tags_json", []),
+            ("previews_json", []),
+        ):
+            raw = snapshot.get(key)
+            if not isinstance(raw, str) or not raw.strip():
+                snapshot[key.removesuffix("_json")] = list(empty_default)
+                continue
+            try:
+                loaded = json.loads(raw)
+            except json.JSONDecodeError:
+                snapshot[key.removesuffix("_json")] = list(empty_default)
+                continue
+            snapshot[key.removesuffix("_json")] = loaded if isinstance(loaded, list) else list(empty_default)
+        return snapshot
+
     def create_post_version(
         self,
         *,
@@ -1656,6 +1678,9 @@ class LibraryDB:
                 edited_at TEXT,
                 next_external_post_id TEXT,
                 prev_external_post_id TEXT,
+                attachments_json TEXT NOT NULL DEFAULT '[]',
+                tags_json TEXT NOT NULL DEFAULT '[]',
+                previews_json TEXT NOT NULL DEFAULT '[]',
                 metadata_json TEXT NOT NULL DEFAULT '{}',
                 source_url TEXT,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1676,6 +1701,16 @@ class LibraryDB:
             conn.execute(
                 f"ALTER TABLE post_versions ADD COLUMN origin_kind TEXT NOT NULL DEFAULT '{self.VERSION_ORIGIN_SOURCE}'"
             )
+        revision_columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(post_version_revisions)").fetchall()
+        }
+        if revision_columns and "attachments_json" not in revision_columns:
+            conn.execute("ALTER TABLE post_version_revisions ADD COLUMN attachments_json TEXT NOT NULL DEFAULT '[]'")
+        if revision_columns and "tags_json" not in revision_columns:
+            conn.execute("ALTER TABLE post_version_revisions ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]'")
+        if revision_columns and "previews_json" not in revision_columns:
+            conn.execute("ALTER TABLE post_version_revisions ADD COLUMN previews_json TEXT NOT NULL DEFAULT '[]'")
         conn.execute(
             """
             UPDATE post_versions
@@ -1962,6 +1997,66 @@ class LibraryDB:
                 ),
             )
 
+    def _list_version_attachments_snapshot_conn(
+        self,
+        conn: sqlite3.Connection,
+        version_id: int,
+    ) -> list[dict[str, Any]]:
+        rows = conn.execute(
+            """
+            SELECT name, remote_url, local_path, kind
+            FROM post_version_attachments
+            WHERE version_id = ?
+            ORDER BY id
+            """,
+            (version_id,),
+        ).fetchall()
+        return [
+            {
+                "name": str(row["name"]),
+                "remote_url": str(row["remote_url"]),
+                "local_path": self._normalize_optional_text(row["local_path"]),
+                "kind": str(row["kind"]),
+            }
+            for row in rows
+        ]
+
+    def _list_version_tags_snapshot_conn(self, conn: sqlite3.Connection, version_id: int) -> list[str]:
+        rows = conn.execute(
+            """
+            SELECT tag
+            FROM post_version_tags
+            WHERE version_id = ?
+            ORDER BY tag COLLATE NOCASE, id
+            """,
+            (version_id,),
+        ).fetchall()
+        return [str(row["tag"]) for row in rows]
+
+    def _list_version_previews_snapshot_conn(
+        self,
+        conn: sqlite3.Connection,
+        version_id: int,
+    ) -> list[dict[str, Any]]:
+        rows = conn.execute(
+            """
+            SELECT preview_type, server, name, path
+            FROM post_version_previews
+            WHERE version_id = ?
+            ORDER BY id
+            """,
+            (version_id,),
+        ).fetchall()
+        return [
+            {
+                "type": self._normalize_optional_text(row["preview_type"]),
+                "server": str(row["server"]),
+                "name": self._normalize_optional_text(row["name"]),
+                "path": str(row["path"]),
+            }
+            for row in rows
+        ]
+
     def _record_post_version_revision_conn(
         self,
         conn: sqlite3.Connection,
@@ -1993,10 +2088,13 @@ class LibraryDB:
                 edited_at,
                 next_external_post_id,
                 prev_external_post_id,
+                attachments_json,
+                tags_json,
+                previews_json,
                 metadata_json,
                 source_url
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 version_id,
@@ -2013,6 +2111,9 @@ class LibraryDB:
                 self._normalize_optional_text(snapshot["edited_at"]),
                 self._normalize_optional_text(snapshot["next_external_post_id"]),
                 self._normalize_optional_text(snapshot["prev_external_post_id"]),
+                json.dumps(self._list_version_attachments_snapshot_conn(conn, version_id), ensure_ascii=True),
+                json.dumps(self._list_version_tags_snapshot_conn(conn, version_id), ensure_ascii=True),
+                json.dumps(self._list_version_previews_snapshot_conn(conn, version_id), ensure_ascii=True),
                 str(snapshot["metadata_json"]),
                 self._normalize_optional_text(snapshot["source_url"]),
             ),

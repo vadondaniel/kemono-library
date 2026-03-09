@@ -3238,6 +3238,101 @@ def test_update_post_version_content_metadata_records_revision_snapshot(tmp_path
     assert updated["revision_count"] == 1
 
 
+def test_revision_snapshot_includes_version_assets(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Revision Asset Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="617",
+        external_post_id="100",
+        title="Original title",
+        content="original body",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/617/post/100",
+    )
+
+    version = db.get_post_version(post_id)
+    assert version is not None
+    version_id = int(version["id"])
+
+    db.replace_attachments(
+        post_id,
+        [
+            {
+                "name": "cover.jpg",
+                "remote_url": "https://cdn.example.test/cover.jpg",
+                "local_path": f"post_{post_id}/cover.jpg",
+                "kind": "image",
+            }
+        ],
+        version_id=version_id,
+    )
+    db.replace_tags(post_id, ["alpha", "beta"], version_id=version_id)
+    db.replace_previews(
+        post_id,
+        [
+            {
+                "type": "cover",
+                "server": "img",
+                "name": "preview.jpg",
+                "path": "/preview.jpg",
+            }
+        ],
+        version_id=version_id,
+    )
+
+    version = db.get_post_version(post_id, version_id)
+    assert version is not None
+    db.update_post_version(
+        version_id=version_id,
+        label=str(version["label"]),
+        language=version["language"],
+        title="Edited title",
+        content="edited body",
+        thumbnail_name=version["thumbnail_name"],
+        thumbnail_remote_url=version["thumbnail_remote_url"],
+        thumbnail_local_path=version["thumbnail_local_path"],
+        published_at=version["published_at"],
+        edited_at=version["edited_at"],
+        next_external_post_id=version["next_external_post_id"],
+        prev_external_post_id=version["prev_external_post_id"],
+        metadata={},
+        source_url=version["source_url"],
+    )
+
+    revision_row = db.list_post_version_revisions(version_id)[0]
+    revision = LibraryDB.load_post_version_revision_snapshot(revision_row)
+    assert revision is not None
+    assert revision["attachments"] == [
+        {
+            "name": "cover.jpg",
+            "remote_url": "https://cdn.example.test/cover.jpg",
+            "local_path": f"post_{post_id}/cover.jpg",
+            "kind": "image",
+        }
+    ]
+    assert revision["tags"] == ["alpha", "beta"]
+    assert revision["previews"] == [
+        {
+            "type": "cover",
+            "server": "img",
+            "name": "preview.jpg",
+            "path": "/preview.jpg",
+        }
+    ]
+
+
 def test_init_schema_adds_lineage_column_to_legacy_post_versions_table(tmp_path):
     db_path = tmp_path / "legacy.db"
     conn = sqlite3.connect(db_path)
@@ -3324,9 +3419,16 @@ def test_init_schema_adds_lineage_column_to_legacy_post_versions_table(tmp_path)
             "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'post_version_revisions'"
         ).fetchall()
     }
+    revision_column_names = {
+        row[1]
+        for row in verify_conn.execute("PRAGMA table_info(post_version_revisions)").fetchall()
+    }
     verify_conn.close()
     assert "derived_from_version_id" in column_names
     assert "post_version_revisions" in revision_tables
+    assert "attachments_json" in revision_column_names
+    assert "tags_json" in revision_column_names
+    assert "previews_json" in revision_column_names
     assert "origin_kind" in column_names
     assert "version_rank" in column_names
 
