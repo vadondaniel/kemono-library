@@ -178,6 +178,8 @@ def test_import_start_reports_live_progress_until_complete(tmp_path, monkeypatch
             "service": "fanbox",
             "user_id": "70479526",
             "post_id": "200",
+            "import_target_mode": "new",
+            "overwrite_matching_version": "0",
             "selected_attachment": ["0", "1"],
         },
     )

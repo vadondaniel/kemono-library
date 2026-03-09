@@ -2450,6 +2450,7 @@ def _import_post_into_library(
     source_url = post_ref.canonical_url
     exact_match_post = db.find_post_by_source(service, user_id, post_id)
     local_post_id: int
+    imported_into_new_local_post = False
     if exact_match_post:
         local_post_id = int(exact_match_post["id"])
         if import_target_mode == "new":
@@ -2462,6 +2463,7 @@ def _import_post_into_library(
             raise ValueError("Target post was not found for this creator.")
         local_post_id = target_post_id
     else:
+        imported_into_new_local_post = True
         local_post_id = db.upsert_post(
             creator_id=creator_id,
             series_id=series_id,
@@ -2490,10 +2492,11 @@ def _import_post_into_library(
         external_user_id=user_id,
         external_post_id=post_id,
     )
-    if existing_version and not overwrite_matching_version:
+    if existing_version and not overwrite_matching_version and not imported_into_new_local_post:
         raise ValueError("Matching source version already exists. Enable overwrite to replace it.")
 
-    resolved_version_label = _resolve_import_version_label(version_label, payload.get("title"), existing_version is None)
+    is_new_version = existing_version is None or imported_into_new_local_post
+    resolved_version_label = _resolve_import_version_label(version_label, payload.get("title"), is_new_version)
     resolved_version_language = _optional_str(version_language)
 
     if existing_version:
