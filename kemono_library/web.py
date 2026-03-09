@@ -6,6 +6,7 @@ import json
 import re
 import shutil
 import sqlite3
+import stat
 import threading
 import uuid
 from collections import deque
@@ -182,10 +183,12 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     def _collect_retry_scope_rows(scope: str, scope_id_raw: str) -> list[dict[str, Any]]:
         files_base = Path(app.config["FILES_DIR"])
+        source_rows = db.list_attachment_inventory()
+        local_file_status = _collect_local_file_status_by_path(files_base, source_rows)
         inventory_rows: list[dict[str, Any]] = []
-        for row in db.list_attachment_inventory():
+        for row in source_rows:
             local_path = _optional_str(row["local_path"])
-            local_abs = files_base / local_path if local_path else None
+            local_available, _ = local_file_status.get(local_path or "", (False, None))
             inventory_row = {
                 "id": int(row["id"]),
                 "post_id": int(row["post_id"]),
@@ -194,7 +197,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                 "name": str(row["name"]),
                 "remote_url": str(row["remote_url"]),
                 "local_path": local_path,
-                "local_available": _is_valid_file(local_abs),
+                "local_available": local_available,
                 "creator_name": _optional_str(row["creator_name"]),
                 "post_title": _optional_str(row["post_title"]),
                 "version_label": _optional_str(row["version_label"]),
@@ -391,12 +394,12 @@ def create_app(test_config: dict | None = None) -> Flask:
         if sort_key not in {"creator", "size", "name", "recent"}:
             sort_key = "creator"
 
+        source_rows = db.list_attachment_inventory()
+        local_file_status = _collect_local_file_status_by_path(files_base, source_rows)
         inventory_rows: list[dict[str, Any]] = []
-        for row in db.list_attachment_inventory():
+        for row in source_rows:
             local_path = _optional_str(row["local_path"])
-            local_abs = files_base / local_path if local_path else None
-            local_available = _is_valid_file(local_abs)
-            file_size = local_abs.stat().st_size if local_available and local_abs is not None else None
+            local_available, file_size = local_file_status.get(local_path or "", (False, None))
             remote_url = str(row["remote_url"])
             is_image = _is_likely_image_attachment(
                 remote_url=remote_url,
@@ -1854,7 +1857,33 @@ def _build_existing_file_indexes(
 
 
 def _is_valid_file(path: Path | None) -> bool:
-    return bool(path and path.exists() and path.is_file() and path.stat().st_size > 0)
+    return _file_size_if_valid(path) is not None
+
+
+def _file_size_if_valid(path: Path | None) -> int | None:
+    if path is None:
+        return None
+    try:
+        path_stat = path.stat()
+    except OSError:
+        return None
+    if not stat.S_ISREG(path_stat.st_mode):
+        return None
+    size = int(path_stat.st_size)
+    return size if size > 0 else None
+
+
+def _collect_local_file_status_by_path(files_base: Path, rows: list[Any]) -> dict[str, tuple[bool, int | None]]:
+    local_paths: set[str] = set()
+    for row in rows:
+        local_path = _optional_str(row["local_path"])
+        if local_path:
+            local_paths.add(local_path)
+    status: dict[str, tuple[bool, int | None]] = {}
+    for local_path in local_paths:
+        file_size = _file_size_if_valid(files_base / local_path)
+        status[local_path] = (file_size is not None, file_size)
+    return status
 
 
 def _download_with_fallback_remote_url(
@@ -2684,7 +2713,7 @@ def _filter_attachment_inventory_rows(
 
 def _sort_attachment_inventory_rows(rows: list[dict[str, Any]], *, sort_key: str) -> list[dict[str, Any]]:
     if sort_key == "creator":
-        return list(rows)
+        return rows
 
     def recent_sort_key(row: dict[str, Any]) -> tuple[Any, ...]:
         published = _optional_str(row["post_published_at"]) or ""
@@ -2918,35 +2947,6 @@ def _build_attachment_inventory_tree(rows: list[dict[str, Any]], *, sort_key: st
                 int(creator["id"]),
             )
         )
-    elif sort_key == "creator":
-        for creator_node in creator_list:
-            for series_node in creator_node["series_nodes"]:
-                series_node["posts"].sort(
-                    key=lambda post: (
-                        -int(post["post_id"]),
-                        str(post["title"]).lower(),
-                    )
-                )
-                for post_node in series_node["posts"]:
-                    post_node["attachments"].sort(
-                        key=lambda row: (
-                            int(row["id"]),
-                            str(row["name"]).lower(),
-                        )
-                    )
-            creator_node["series_nodes"].sort(
-                key=lambda series: (
-                    -1 if series["series_id"] is None else int(series["series_id"]),
-                    str(series["name"]).lower(),
-                )
-            )
-        creator_list.sort(
-            key=lambda creator: (
-                int(creator["id"]),
-                str(creator["name"]).lower(),
-            )
-        )
-
     return creator_list
 
 

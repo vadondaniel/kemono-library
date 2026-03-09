@@ -1212,11 +1212,9 @@ class LibraryDB:
                 JOIN creators c ON c.id = p.creator_id
                 LEFT JOIN series s ON s.id = p.series_id
                 ORDER BY
-                    LOWER(c.name) ASC,
-                    CASE WHEN s.name IS NULL OR TRIM(s.name) = '' THEN 1 ELSE 0 END ASC,
-                    LOWER(COALESCE(s.name, '')) ASC,
-                    CASE WHEN p.published_at IS NULL OR p.published_at = '' THEN 1 ELSE 0 END ASC,
-                    p.published_at DESC,
+                    p.creator_id ASC,
+                    CASE WHEN p.series_id IS NULL THEN 1 ELSE 0 END ASC,
+                    p.series_id ASC,
                     p.id DESC,
                     v.version_rank DESC,
                     a.id ASC
@@ -2241,6 +2239,24 @@ class LibraryDB:
             """
             CREATE INDEX IF NOT EXISTS ix_post_version_revisions_version
             ON post_version_revisions (version_id, revision_number DESC)
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS ix_posts_inventory_tree
+            ON posts (creator_id, series_id, id DESC)
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS ix_post_versions_inventory_tree
+            ON post_versions (post_id, version_rank DESC, id)
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS ix_post_version_attachments_inventory_tree
+            ON post_version_attachments (version_id, id)
             """
         )
 
