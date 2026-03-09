@@ -498,8 +498,15 @@ def test_import_commit_rolls_back_new_post_when_download_fails(tmp_path, monkeyp
             selected_attachment_indices={"0"},
         )
 
+    creator = db.get_creator(creator_id)
+    assert creator is not None
+    assert creator["service"] is None
+    assert creator["external_user_id"] is None
+    assert creator["icon_remote_url"] is None
+    assert creator["icon_local_path"] is None
     assert db.list_posts_for_creator(creator_id) == []
     assert not (Path(app.config["FILES_DIR"]) / "post_1").exists()
+    assert not (Path(app.config["ICONS_DIR"]) / "fanbox_70479526.jpg").exists()
 
 
 def test_import_commit_applies_metadata_overrides(tmp_path, monkeypatch):

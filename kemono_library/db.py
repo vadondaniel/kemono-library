@@ -194,17 +194,31 @@ class LibraryDB:
             cursor = conn.execute("DELETE FROM creators WHERE id = ?", (creator_id,))
             return int(cursor.rowcount or 0)
 
-    def attach_creator_external(self, creator_id: int, service: str, external_user_id: str) -> None:
-        with self._connect() as conn:
-            conn.execute(
-                """
-                UPDATE creators
-                SET service = COALESCE(service, ?),
-                    external_user_id = COALESCE(external_user_id, ?)
-                WHERE id = ?
-                """,
-                (service, external_user_id, creator_id),
-            )
+    def attach_creator_external(
+        self,
+        creator_id: int,
+        service: str,
+        external_user_id: str,
+        *,
+        conn: sqlite3.Connection | None = None,
+    ) -> None:
+        if conn is None:
+            with self._connect() as own_conn:
+                return self.attach_creator_external(
+                    creator_id,
+                    service,
+                    external_user_id,
+                    conn=own_conn,
+                )
+        conn.execute(
+            """
+            UPDATE creators
+            SET service = COALESCE(service, ?),
+                external_user_id = COALESCE(external_user_id, ?)
+            WHERE id = ?
+            """,
+            (service, external_user_id, creator_id),
+        )
 
     def update_creator_icon(
         self,
@@ -212,16 +226,24 @@ class LibraryDB:
         *,
         icon_remote_url: str | None,
         icon_local_path: str | None,
+        conn: sqlite3.Connection | None = None,
     ) -> None:
-        with self._connect() as conn:
-            conn.execute(
-                """
-                UPDATE creators
-                SET icon_remote_url = ?, icon_local_path = ?
-                WHERE id = ?
-                """,
-                (icon_remote_url, icon_local_path, creator_id),
-            )
+        if conn is None:
+            with self._connect() as own_conn:
+                return self.update_creator_icon(
+                    creator_id,
+                    icon_remote_url=icon_remote_url,
+                    icon_local_path=icon_local_path,
+                    conn=own_conn,
+                )
+        conn.execute(
+            """
+            UPDATE creators
+            SET icon_remote_url = ?, icon_local_path = ?
+            WHERE id = ?
+            """,
+            (icon_remote_url, icon_local_path, creator_id),
+        )
 
     def create_series(
         self,

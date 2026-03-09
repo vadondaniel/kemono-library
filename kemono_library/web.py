@@ -1485,18 +1485,13 @@ def _kemono_data_fallback_url(remote_url: str, attachment_name: Any) -> str | No
     )
 
 
-def _ensure_creator_icon(
-    db: LibraryDB,
+def _prepare_creator_icon_update(
+    creator: Any,
     *,
     icons_base: Path,
-    creator_id: int,
     service: str,
     user_id: str,
-) -> None:
-    creator = db.get_creator(creator_id)
-    if not creator:
-        return
-
+) -> tuple[str | None, str | None, Path | None] | None:
     current_remote = creator["icon_remote_url"]
     current_local = creator["icon_local_path"]
     expected_remote = creator_icon_url(service, user_id)
@@ -1504,20 +1499,12 @@ def _ensure_creator_icon(
         local_abs = icons_base / current_local
         if _is_valid_file(local_abs):
             if current_remote != expected_remote:
-                db.update_creator_icon(
-                    creator_id,
-                    icon_remote_url=expected_remote,
-                    icon_local_path=current_local,
-                )
-            return
+                return expected_remote, current_local, None
+            return None
 
     remote_url, local_abs = download_creator_icon(service, user_id, icons_base)
     local_rel = local_abs.relative_to(icons_base).as_posix() if local_abs else None
-    db.update_creator_icon(
-        creator_id,
-        icon_remote_url=remote_url,
-        icon_local_path=local_rel,
-    )
+    return remote_url, local_rel, local_abs
 
 
 def _build_post_header_context(*, post: Any, creator: Any | None) -> dict[str, Any]:
@@ -2456,12 +2443,9 @@ def _import_post_into_library(
     post_ref = KemonoPostRef(service=service, user_id=user_id, post_id=post_id)
     raw_payload = fetch_post_json(post_ref)
     payload = normalize_post_payload(raw_payload)
-
-    db.attach_creator_external(creator_id, service=service, external_user_id=user_id)
-    _ensure_creator_icon(
-        db,
+    creator_icon_update = _prepare_creator_icon_update(
+        creator,
         icons_base=icons_base,
-        creator_id=creator_id,
         service=service,
         user_id=user_id,
     )
@@ -2498,9 +2482,18 @@ def _import_post_into_library(
     )
     source_url = post_ref.canonical_url
     created_files: set[Path] = set()
+    created_icon_path: Path | None = creator_icon_update[2] if creator_icon_update is not None else None
     download_root: Path | None = None
     try:
         with db.transaction() as conn:
+            db.attach_creator_external(creator_id, service=service, external_user_id=user_id, conn=conn)
+            if creator_icon_update is not None:
+                db.update_creator_icon(
+                    creator_id,
+                    icon_remote_url=creator_icon_update[0],
+                    icon_local_path=creator_icon_update[1],
+                    conn=conn,
+                )
             if imported_into_new_local_post:
                 local_post_id = db.upsert_post(
                     creator_id=creator_id,
@@ -2659,6 +2652,12 @@ def _import_post_into_library(
             else:
                 db.sync_post_from_default_version(local_post_id, conn=conn)
     except Exception:
+        if created_icon_path is not None:
+            try:
+                if created_icon_path.is_file():
+                    created_icon_path.unlink()
+            except OSError:
+                pass
         for path in created_files:
             try:
                 if path.is_file():
