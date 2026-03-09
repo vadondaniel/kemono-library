@@ -574,6 +574,23 @@
       };
     };
 
+    const computeCoverZoom = () => {
+      const canvasWidth = canvas.clientWidth;
+      const canvasHeight = canvas.clientHeight;
+      const naturalWidth = image.naturalWidth;
+      const naturalHeight = image.naturalHeight;
+      if (canvasWidth <= 0 || canvasHeight <= 0 || naturalWidth <= 0 || naturalHeight <= 0) {
+        return MIN_ZOOM;
+      }
+      const imageAspect = naturalWidth / naturalHeight;
+      const canvasAspect = canvasWidth / canvasHeight;
+      if (!Number.isFinite(imageAspect) || !Number.isFinite(canvasAspect) || imageAspect <= 0 || canvasAspect <= 0) {
+        return MIN_ZOOM;
+      }
+      const coverZoom = imageAspect >= canvasAspect ? imageAspect / canvasAspect : canvasAspect / imageAspect;
+      return clampZoom(Math.max(MIN_ZOOM, coverZoom));
+    };
+
     const clampPan = () => {
       const { maxX, maxY } = getPanBounds();
       if (panX > maxX) {
@@ -601,6 +618,22 @@
       panY = 0;
       setTransforms();
       updateButtons();
+    };
+
+    const toggleFitMode = () => {
+      const isDefaultFit =
+        Math.abs(zoomLevel - MIN_ZOOM) <= ZOOM_EPSILON &&
+        Math.abs(panX) <= ZOOM_EPSILON &&
+        Math.abs(panY) <= ZOOM_EPSILON;
+      if (isDefaultFit) {
+        zoomLevel = computeCoverZoom();
+        panX = 0;
+        panY = 0;
+        setTransforms();
+        updateButtons();
+        return;
+      }
+      fitView();
     };
 
     const clampZoom = (value) => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, value));
@@ -839,7 +872,7 @@
     });
     zoomInButton.addEventListener("click", () => zoomBy(BUTTON_ZOOM_STEP));
     zoomOutButton.addEventListener("click", () => zoomBy(-BUTTON_ZOOM_STEP));
-    zoomFitButton.addEventListener("click", fitView);
+    zoomFitButton.addEventListener("click", toggleFitMode);
 
     canvas.addEventListener(
       "wheel",
