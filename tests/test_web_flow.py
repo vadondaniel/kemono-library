@@ -2649,6 +2649,141 @@ def test_post_detail_uses_requested_version_id(tmp_path):
     assert b"English title" in detail.data
 
 
+def test_list_post_versions_keeps_creation_order_when_editing_non_default(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Stable Version Order Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="322",
+        external_post_id="654",
+        title="JP title",
+        content="jp body",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/322/post/654",
+    )
+
+    base_version = db.get_post_version(post_id)
+    assert base_version is not None
+    first_clone_id = db.clone_post_version(
+        post_id=post_id,
+        source_version_id=int(base_version["id"]),
+        label="EN",
+        language="en",
+        set_default=False,
+    )
+    second_clone_id = db.clone_post_version(
+        post_id=post_id,
+        source_version_id=int(base_version["id"]),
+        label="KR",
+        language="ko",
+        set_default=False,
+    )
+
+    initial_versions = db.list_post_versions(post_id)
+    assert [int(row["id"]) for row in initial_versions] == [int(base_version["id"]), second_clone_id, first_clone_id]
+
+    first_clone = db.get_post_version(post_id, first_clone_id)
+    assert first_clone is not None
+    db.update_post_version(
+        version_id=first_clone_id,
+        label="EN",
+        language="en",
+        title="Edited EN",
+        content="edited body",
+        thumbnail_name=first_clone["thumbnail_name"],
+        thumbnail_remote_url=first_clone["thumbnail_remote_url"],
+        thumbnail_local_path=first_clone["thumbnail_local_path"],
+        published_at=first_clone["published_at"],
+        edited_at=first_clone["edited_at"],
+        next_external_post_id=first_clone["next_external_post_id"],
+        prev_external_post_id=first_clone["prev_external_post_id"],
+        metadata={},
+        source_url=first_clone["source_url"],
+    )
+
+    versions_after_edit = db.list_post_versions(post_id)
+    assert [int(row["id"]) for row in versions_after_edit] == [int(base_version["id"]), second_clone_id, first_clone_id]
+
+
+def test_delete_default_post_version_falls_back_to_latest_created_version(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Delete Fallback Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="323",
+        external_post_id="654",
+        title="JP title",
+        content="jp body",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/323/post/654",
+    )
+
+    base_version = db.get_post_version(post_id)
+    assert base_version is not None
+    first_clone_id = db.clone_post_version(
+        post_id=post_id,
+        source_version_id=int(base_version["id"]),
+        label="EN",
+        language="en",
+        set_default=False,
+    )
+    second_clone_id = db.clone_post_version(
+        post_id=post_id,
+        source_version_id=int(base_version["id"]),
+        label="KR",
+        language="ko",
+        set_default=False,
+    )
+
+    db.update_post_version(
+        version_id=int(base_version["id"]),
+        label=str(base_version["label"]),
+        language=base_version["language"],
+        title="Edited base",
+        content="edited base body",
+        thumbnail_name=base_version["thumbnail_name"],
+        thumbnail_remote_url=base_version["thumbnail_remote_url"],
+        thumbnail_local_path=base_version["thumbnail_local_path"],
+        published_at=base_version["published_at"],
+        edited_at=base_version["edited_at"],
+        next_external_post_id=base_version["next_external_post_id"],
+        prev_external_post_id=base_version["prev_external_post_id"],
+        metadata={},
+        source_url=base_version["source_url"],
+    )
+    db.set_default_post_version(post_id, first_clone_id)
+
+    assert db.delete_post_version(post_id, first_clone_id) is True
+
+    post = db.get_post(post_id)
+    assert post is not None
+    assert int(post["default_version_id"]) == second_clone_id
+    remaining_versions = db.list_post_versions(post_id)
+    assert int(remaining_versions[0]["id"]) == second_clone_id
+
+
 def test_clone_post_version_records_lineage_and_shows_parent_link(tmp_path):
     app = create_app(
         {
@@ -2919,6 +3054,7 @@ def test_init_schema_adds_lineage_column_to_legacy_post_versions_table(tmp_path)
     }
     verify_conn.close()
     assert "derived_from_version_id" in column_names
+    assert "version_rank" in column_names
 
 
 def test_edit_version_reimport_link_only_for_non_manual_versions(tmp_path):

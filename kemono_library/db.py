@@ -591,7 +591,7 @@ class LibraryDB:
                 WHERE v.post_id = ?
                 ORDER BY
                     CASE WHEN p.default_version_id = v.id THEN 0 ELSE 1 END ASC,
-                    v.updated_at DESC,
+                    v.version_rank DESC,
                     v.id DESC
                 """,
                 (post_id,),
@@ -896,7 +896,7 @@ class LibraryDB:
                 SELECT id
                 FROM post_versions
                 WHERE post_id = ?
-                ORDER BY updated_at DESC, id DESC
+                ORDER BY version_rank DESC, id DESC
                 LIMIT 1
                 """,
                 (post_id,),
@@ -979,7 +979,7 @@ class LibraryDB:
                   AND v.source_post_id = ?
                 ORDER BY
                     CASE WHEN p.default_version_id = v.id THEN 0 ELSE 1 END ASC,
-                    v.updated_at DESC,
+                    v.version_rank DESC,
                     v.id DESC
                 LIMIT 1
                 """,
@@ -1426,7 +1426,7 @@ class LibraryDB:
                       AND v.source_post_id = ?
                     ORDER BY
                         CASE WHEN p.default_version_id = v.id THEN 0 ELSE 1 END ASC,
-                        v.updated_at DESC,
+                        v.version_rank DESC,
                         v.id DESC
                     LIMIT 1
                     """,
@@ -1451,7 +1451,7 @@ class LibraryDB:
                   AND v.source_post_id = ?
                 ORDER BY
                     CASE WHEN p.default_version_id = v.id THEN 0 ELSE 1 END ASC,
-                    v.updated_at DESC,
+                    v.version_rank DESC,
                     v.id DESC
                 LIMIT 1
                 """,
@@ -1499,6 +1499,7 @@ class LibraryDB:
                 next_external_post_id TEXT,
                 prev_external_post_id TEXT,
                 derived_from_version_id INTEGER,
+                version_rank INTEGER NOT NULL DEFAULT 0,
                 metadata_json TEXT NOT NULL DEFAULT '{}',
                 source_url TEXT,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1546,6 +1547,8 @@ class LibraryDB:
         }
         if "derived_from_version_id" not in existing_columns:
             conn.execute("ALTER TABLE post_versions ADD COLUMN derived_from_version_id INTEGER")
+        if "version_rank" not in existing_columns:
+            conn.execute("ALTER TABLE post_versions ADD COLUMN version_rank INTEGER NOT NULL DEFAULT 0")
         self._ensure_post_version_indexes(conn)
 
     def _backfill_post_versions(self, conn: sqlite3.Connection) -> None:
@@ -1557,6 +1560,11 @@ class LibraryDB:
                 (post_id,),
             ).fetchall()
             if existing_versions:
+                for index, version_row in enumerate(existing_versions, start=1):
+                    conn.execute(
+                        "UPDATE post_versions SET version_rank = ? WHERE id = ?",
+                        (index, int(version_row["id"])),
+                    )
                 if not self._get_default_version_id_conn(conn, post_id):
                     default_version_id = int(existing_versions[0]["id"])
                     conn.execute(
@@ -1649,6 +1657,7 @@ class LibraryDB:
         next_external_post_id: str | None,
         prev_external_post_id: str | None,
         derived_from_version_id: int | None,
+        version_rank: int | None = None,
     ) -> int:
         normalized_source_service = self._normalize_optional_text(source_service)
         normalized_source_user_id = self._normalize_optional_text(source_user_id)
@@ -1673,6 +1682,7 @@ class LibraryDB:
                     "This source version already exists locally under "
                     f"post #{int(existing_version['post_id'])} as version #{int(existing_version['id'])}."
                 )
+        resolved_version_rank = version_rank or self._next_post_version_rank_conn(conn, post_id)
         cursor = conn.execute(
             """
             INSERT INTO post_versions (
@@ -1693,10 +1703,11 @@ class LibraryDB:
                 next_external_post_id,
                 prev_external_post_id,
                 derived_from_version_id,
+                version_rank,
                 metadata_json,
                 source_url
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 post_id,
@@ -1716,6 +1727,7 @@ class LibraryDB:
                 self._normalize_optional_text(next_external_post_id),
                 self._normalize_optional_text(prev_external_post_id),
                 normalized_derived_from_version_id,
+                resolved_version_rank,
                 json.dumps(metadata, ensure_ascii=True),
                 self._normalize_optional_text(source_url),
             ),
@@ -1801,6 +1813,15 @@ class LibraryDB:
         if not row:
             return None
         return int(row["default_version_id"]) if row["default_version_id"] is not None else None
+
+    def _next_post_version_rank_conn(self, conn: sqlite3.Connection, post_id: int) -> int:
+        row = conn.execute(
+            "SELECT COALESCE(MAX(version_rank), 0) AS max_rank FROM post_versions WHERE post_id = ?",
+            (post_id,),
+        ).fetchone()
+        if not row:
+            return 1
+        return int(row["max_rank"] or 0) + 1
 
     def _ensure_post_version_indexes(self, conn: sqlite3.Connection) -> None:
         existing_indexes = {
