@@ -141,14 +141,16 @@
             {% endif %}
           </div>
         </div>
-        <div class="post-viewer-head-actions">
-          <a
-            class="button-link button-ghost"
-            href="{{ url_for('edit_post', post_id=post['id'], version_id=active_version['id'], view=view_mode) if include_view_in_urls else url_for('edit_post', post_id=post['id'], version_id=active_version['id']) }}"
-          >
-            {% if versions|length > 1 %}Edit Version{% else %}Edit Post{% endif %}
-          </a>
-        </div>
+        {% if view_mode != 'reader' %}
+          <div class="post-viewer-head-actions">
+            <a
+              class="button-link button-ghost"
+              href="{{ url_for('edit_post', post_id=post['id'], version_id=active_version['id'], view=view_mode) if include_view_in_urls else url_for('edit_post', post_id=post['id'], version_id=active_version['id']) }}"
+            >
+              {% if versions|length > 1 %}Edit Version{% else %}Edit Post{% endif %}
+            </a>
+          </div>
+        {% endif %}
       </div>
     </section>
 

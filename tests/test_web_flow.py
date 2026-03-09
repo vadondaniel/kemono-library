@@ -1449,6 +1449,7 @@ def test_post_detail_reader_mode_propagates_view_and_renders_left_viewer_layout(
     assert soup.select_one("[data-post-file-launcher]") is not None
     assert soup.select_one("[data-post-reader-source-image]") is not None
     assert soup.select_one("[data-post-view-mode-switcher]") is not None
+    assert soup.select_one(".post-viewer-head-actions a[href*='/edit']") is None
     main = soup.select_one("main.container")
     assert main is not None
     assert "is-post-reader-layout" in (main.get("class") or [])
@@ -1502,6 +1503,7 @@ def test_post_detail_invalid_view_falls_back_to_classic(tmp_path):
     assert "is-reader" not in shell_classes
     assert shell.get("data-post-view-mode") == "classic"
     assert soup.select_one("[data-post-reader-panel]") is None
+    assert soup.select_one(".post-viewer-head-actions a[href*='/edit']") is not None
 
 
 def test_post_detail_uses_metadata_kemono_url_for_fanbox_file_link_without_attachment_row(tmp_path):
