@@ -208,6 +208,62 @@ def test_import_start_reports_live_progress_until_complete(tmp_path, monkeypatch
     assert final_status["completed"] == 2
 
 
+def test_import_preview_rejects_source_owned_by_other_creator(tmp_path, monkeypatch):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+
+    creator_a = db.create_creator("Creator A")
+    creator_b = db.create_creator("Creator B")
+    db.upsert_post(
+        creator_id=creator_a,
+        series_id=None,
+        service="fanbox",
+        external_user_id="70479526",
+        external_post_id="100",
+        title="Existing",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/70479526/post/100",
+    )
+
+    payload = {
+        "post": {
+            "title": "Imported",
+            "content": "",
+            "user": "70479526",
+            "attachments": [],
+        },
+        "attachments": [],
+    }
+
+    def fake_fetch(ref, fallback_user_id=None):  # noqa: ARG001
+        return payload
+
+    monkeypatch.setattr("kemono_library.web.fetch_post_json", fake_fetch)
+
+    response = app.test_client().post(
+        "/import/preview",
+        data={
+            "post_url": "https://kemono.cr/fanbox/user/70479526/post/100",
+            "creator_id": str(creator_b),
+            "series_id": "",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"This source already exists under creator" in response.data
+    assert b"Creator A" in response.data
+
+
 def test_served_files_are_inline_not_forced_download(tmp_path):
     app = create_app(
         {
@@ -315,6 +371,54 @@ def test_reimport_reuses_existing_file_without_duplicate_suffix(tmp_path, monkey
     assert attachments[0]["local_path"] == "post_1/cover.jpg"
 
 
+def test_import_commit_rejects_source_owned_by_other_creator(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+
+    creator_a = db.create_creator("Creator A")
+    creator_b = db.create_creator("Creator B")
+    post_id = db.upsert_post(
+        creator_id=creator_a,
+        series_id=None,
+        service="fanbox",
+        external_user_id="70479526",
+        external_post_id="100",
+        title="Existing title",
+        content="Old",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/70479526/post/100",
+    )
+
+    response = app.test_client().post(
+        "/import/commit",
+        data={
+            "creator_id": str(creator_b),
+            "series_id": "",
+            "service": "fanbox",
+            "user_id": "70479526",
+            "post_id": "100",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"This source already exists under creator" in response.data
+    assert b"Creator A" in response.data
+    assert len(db.list_posts_for_creator(creator_b)) == 0
+    original = db.get_post(post_id)
+    assert original is not None
+    assert int(original["creator_id"]) == creator_a
+    assert original["title"] == "Existing title"
+
+
 def test_import_commit_applies_metadata_overrides(tmp_path, monkeypatch):
     app = create_app(
         {
@@ -385,6 +489,39 @@ def test_import_commit_applies_metadata_overrides(tmp_path, monkeypatch):
     assert post["prev_external_post_id"] is None
     tags = app.db.list_tags(1)  # type: ignore[attr-defined]
     assert [row["tag"] for row in tags] == ["one", "two"]
+
+
+def test_import_start_rejects_series_owned_by_other_creator(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+
+    creator_a = db.create_creator("Creator A")
+    creator_b = db.create_creator("Creator B")
+    foreign_series_id = db.create_series(creator_b, "Foreign Series")
+
+    response = app.test_client().post(
+        "/import/start",
+        data={
+            "creator_id": str(creator_a),
+            "series_id": str(foreign_series_id),
+            "service": "fanbox",
+            "user_id": "70479526",
+            "post_id": "100",
+        },
+    )
+
+    assert response.status_code == 400
+    payload = response.get_json()
+    assert isinstance(payload, dict)
+    assert payload["error"] == "Selected series was not found for this creator."
 
 
 def test_reimport_force_overwrite_ignores_new_mode_conflict(tmp_path, monkeypatch):

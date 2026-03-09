@@ -358,6 +358,17 @@ class LibraryDB:
             ).fetchall()
             return list(rows)
 
+    def get_series(self, series_id: int) -> sqlite3.Row | None:
+        with self._connect() as conn:
+            return conn.execute(
+                """
+                SELECT *
+                FROM series
+                WHERE id = ?
+                """,
+                (series_id,),
+            ).fetchone()
+
     def upsert_post(
         self,
         creator_id: int,
@@ -871,6 +882,23 @@ class LibraryDB:
                 ORDER BY a.id
                 """,
                 (post_id,),
+            ).fetchall()
+            return list(rows)
+
+    def list_all_attachments_for_posts(self, post_ids: list[int]) -> list[sqlite3.Row]:
+        if not post_ids:
+            return []
+        placeholders = ", ".join("?" for _ in post_ids)
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT a.*, v.post_id AS post_id
+                FROM post_version_attachments a
+                JOIN post_versions v ON v.id = a.version_id
+                WHERE v.post_id IN ({placeholders})
+                ORDER BY v.post_id, a.id
+                """,
+                post_ids,
             ).fetchall()
             return list(rows)
 

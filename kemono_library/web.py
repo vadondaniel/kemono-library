@@ -374,6 +374,19 @@ def create_app(test_config: dict | None = None) -> Flask:
             flash("Could not infer user ID for this URL.", "error")
             return redirect(url_for("import_form", url=raw_url, creator_id=creator_id))
 
+        try:
+            series_id = _validate_import_series_selection(db, creator_id=creator_id, series_id=series_id)
+            exact_match = _find_import_source_match(
+                db,
+                service=post_ref.service,
+                user_id=str(resolved_user_id),
+                post_id=post_ref.post_id,
+                creator_id=creator_id,
+            )
+        except ValueError as exc:
+            flash(str(exc), "error")
+            return redirect(url_for("import_form", url=raw_url, creator_id=creator_id, series_id=series_id))
+
         prefill_import_target_mode = request.form.get("import_target_mode", "").strip().lower()
         prefill_target_post_id = request.form.get("target_post_id", type=int)
         force_target_post_version = _form_checkbox_enabled(
@@ -406,7 +419,6 @@ def create_app(test_config: dict | None = None) -> Flask:
 
         preview_ref = KemonoPostRef(service=post_ref.service, user_id=str(resolved_user_id), post_id=post_ref.post_id)
         attachments = extract_attachments(raw_payload)
-        exact_match = db.find_post_by_source(preview_ref.service, preview_ref.user_id or "", preview_ref.post_id)
         creator_posts = db.list_posts_for_creator(
             creator_id,
             sort_by="published",
@@ -467,6 +479,11 @@ def create_app(test_config: dict | None = None) -> Flask:
 
         if not creator_id or not service or not user_id or not post_id:
             flash("Missing import fields.", "error")
+            return redirect(url_for("import_form"))
+        try:
+            series_id = _validate_import_series_selection(db, creator_id=creator_id, series_id=series_id)
+        except ValueError as exc:
+            flash(str(exc), "error")
             return redirect(url_for("import_form"))
         overwrite_matching_version = _form_checkbox_enabled(
             request.form,
@@ -547,6 +564,10 @@ def create_app(test_config: dict | None = None) -> Flask:
 
         if not creator_id or not service or not user_id or not post_id:
             return jsonify({"error": "Missing import fields."}), 400
+        try:
+            series_id = _validate_import_series_selection(db, creator_id=creator_id, series_id=series_id)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
         overwrite_matching_version = _form_checkbox_enabled(
             request.form,
             "overwrite_matching_version",
@@ -2071,10 +2092,15 @@ def _build_target_attachment_index(
     files_base: Path,
     post_ids: list[int],
 ) -> dict[str, dict[str, int]]:
-    index: dict[str, dict[str, int]] = {}
+    index: dict[str, dict[str, int]] = {str(post_id): {} for post_id in post_ids}
+    rows_by_post_id: dict[int, list[Any]] = {}
+    for row in db.list_all_attachments_for_posts(post_ids):
+        row_post_id = int(row["post_id"])
+        rows_by_post_id.setdefault(row_post_id, []).append(row)
+
     for post_id in post_ids:
         key_state: dict[str, int] = {}
-        for row in db.list_all_attachments_for_post(post_id):
+        for row in rows_by_post_id.get(post_id, []):
             name = row["name"]
             remote_url = row["remote_url"]
             local_path = row["local_path"]
@@ -2404,6 +2430,29 @@ def _import_post_into_library(
     if not creator:
         raise ValueError("Creator not found.")
 
+    series_id = _validate_import_series_selection(db, creator_id=creator_id, series_id=series_id)
+    exact_match_post = _find_import_source_match(
+        db,
+        service=service,
+        user_id=user_id,
+        post_id=post_id,
+        creator_id=creator_id,
+    )
+
+    local_post_id: int | None = None
+    imported_into_new_local_post = exact_match_post is None and import_target_mode != "existing"
+    if exact_match_post:
+        local_post_id = int(exact_match_post["id"])
+        if import_target_mode == "new":
+            raise ValueError("This source already exists locally. Import as a version or overwrite it.")
+    elif import_target_mode == "existing":
+        if not target_post_id:
+            raise ValueError("Pick a target post for version import.")
+        target_post = db.get_post(target_post_id)
+        if not target_post or int(target_post["creator_id"]) != creator_id:
+            raise ValueError("Target post was not found for this creator.")
+        local_post_id = target_post_id
+
     post_ref = KemonoPostRef(service=service, user_id=user_id, post_id=post_id)
     raw_payload = fetch_post_json(post_ref)
     payload = normalize_post_payload(raw_payload)
@@ -2448,22 +2497,7 @@ def _import_post_into_library(
         field_present=field_presence.get("prev_external_post_id", False),
     )
     source_url = post_ref.canonical_url
-    exact_match_post = db.find_post_by_source(service, user_id, post_id)
-    local_post_id: int
-    imported_into_new_local_post = False
-    if exact_match_post:
-        local_post_id = int(exact_match_post["id"])
-        if import_target_mode == "new":
-            raise ValueError("This source already exists locally. Import as a version or overwrite it.")
-    elif import_target_mode == "existing":
-        if not target_post_id:
-            raise ValueError("Pick a target post for version import.")
-        target_post = db.get_post(target_post_id)
-        if not target_post or int(target_post["creator_id"]) != creator_id:
-            raise ValueError("Target post was not found for this creator.")
-        local_post_id = target_post_id
-    else:
-        imported_into_new_local_post = True
+    if imported_into_new_local_post:
         local_post_id = db.upsert_post(
             creator_id=creator_id,
             series_id=series_id,
@@ -2482,6 +2516,8 @@ def _import_post_into_library(
             next_external_post_id=next_external_post_id,
             prev_external_post_id=prev_external_post_id,
         )
+    if local_post_id is None:
+        raise RuntimeError("Import target resolution failed.")
 
     if series_id is not None:
         db.update_post_series(local_post_id, series_id)
@@ -2625,6 +2661,43 @@ def _extract_tags(payload: dict[str, Any]) -> list[str]:
             if normalized:
                 out.append(normalized)
     return out
+
+
+def _validate_import_series_selection(
+    db: LibraryDB,
+    *,
+    creator_id: int,
+    series_id: int | None,
+) -> int | None:
+    if series_id is None:
+        return None
+    series = db.get_series(series_id)
+    if not series or int(series["creator_id"]) != creator_id:
+        raise ValueError("Selected series was not found for this creator.")
+    return series_id
+
+
+def _find_import_source_match(
+    db: LibraryDB,
+    *,
+    service: str,
+    user_id: str,
+    post_id: str,
+    creator_id: int,
+):
+    exact_match = db.find_post_by_source(service, user_id, post_id)
+    if not exact_match:
+        return None
+    if int(exact_match["creator_id"]) == creator_id:
+        return exact_match
+
+    conflicting_creator = db.get_creator(int(exact_match["creator_id"]))
+    conflicting_name = (
+        str(conflicting_creator["name"]).strip()
+        if conflicting_creator and conflicting_creator["name"]
+        else f"creator #{exact_match['creator_id']}"
+    )
+    raise ValueError(f'This source already exists under creator "{conflicting_name}" as post #{exact_match["id"]}.')
 
 
 def _parse_tags_text(raw_tags: str | None) -> list[str]:
