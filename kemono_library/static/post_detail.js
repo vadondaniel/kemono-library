@@ -490,6 +490,8 @@
 
     const catalog = [];
     const indexByKey = new Map();
+    const imageStateStorageKey =
+      pageRoot instanceof HTMLElement ? `kemono-reader-image-index:${pageRoot.dataset.postId || "unknown"}` : "";
     let currentIndex = -1;
     const MIN_ZOOM = 1;
     const MAX_ZOOM = 8;
@@ -504,6 +506,33 @@
     let dragStartY = 0;
     let dragPanX = 0;
     let dragPanY = 0;
+
+    const readSavedImageIndex = () => {
+      if (!imageStateStorageKey) {
+        return null;
+      }
+      try {
+        const raw = window.sessionStorage.getItem(imageStateStorageKey);
+        if (raw === null) {
+          return null;
+        }
+        const parsed = Number(raw);
+        return Number.isInteger(parsed) ? parsed : null;
+      } catch {
+        return null;
+      }
+    };
+
+    const saveImageIndex = (index) => {
+      if (!imageStateStorageKey) {
+        return;
+      }
+      try {
+        window.sessionStorage.setItem(imageStateStorageKey, String(index));
+      } catch {
+        // Ignore storage failures.
+      }
+    };
 
     const normalizeSource = (value) => {
       if (typeof value !== "string" || !value.trim()) {
@@ -677,12 +706,23 @@
       updateButtons();
     };
 
-    const selectImage = (index) => {
+    const selectImage = (index, options = {}) => {
+      const preserveScroll = Boolean(options && typeof options === "object" && "preserveScroll" in options && options.preserveScroll);
       if (!Number.isInteger(index) || index < 0 || index >= catalog.length) {
         return;
       }
+      const prevScrollX = preserveScroll ? window.scrollX : 0;
+      const prevScrollY = preserveScroll ? window.scrollY : 0;
       currentIndex = index;
       renderActive();
+      saveImageIndex(index);
+      if (preserveScroll) {
+        window.requestAnimationFrame(() => {
+          if (window.scrollX !== prevScrollX || window.scrollY !== prevScrollY) {
+            window.scrollTo(prevScrollX, prevScrollY);
+          }
+        });
+      }
     };
 
     const registerImage = (src, title, origin) => {
@@ -784,17 +824,17 @@
         return;
       }
       event.preventDefault();
-      selectImage(index);
+      selectImage(index, { preserveScroll: true });
     });
 
     prevButton.addEventListener("click", () => {
       if (currentIndex > 0) {
-        selectImage(currentIndex - 1);
+        selectImage(currentIndex - 1, { preserveScroll: true });
       }
     });
     nextButton.addEventListener("click", () => {
       if (currentIndex >= 0 && currentIndex < catalog.length - 1) {
-        selectImage(currentIndex + 1);
+        selectImage(currentIndex + 1, { preserveScroll: true });
       }
     });
     zoomInButton.addEventListener("click", () => zoomBy(BUTTON_ZOOM_STEP));
@@ -868,12 +908,12 @@
       if (event.key === "ArrowLeft") {
         if (currentIndex > 0) {
           event.preventDefault();
-          selectImage(currentIndex - 1);
+          selectImage(currentIndex - 1, { preserveScroll: true });
         }
       } else if (event.key === "ArrowRight") {
         if (currentIndex >= 0 && currentIndex < catalog.length - 1) {
           event.preventDefault();
-          selectImage(currentIndex + 1);
+          selectImage(currentIndex + 1, { preserveScroll: true });
         }
       } else if (event.key === "+" || event.key === "=") {
         event.preventDefault();
@@ -888,7 +928,12 @@
     });
 
     if (catalog.length > 0) {
-      selectImage(0);
+      const savedIndex = readSavedImageIndex();
+      if (savedIndex !== null && savedIndex >= 0 && savedIndex < catalog.length) {
+        selectImage(savedIndex);
+      } else {
+        selectImage(0);
+      }
     } else {
       renderActive();
     }
@@ -902,7 +947,7 @@
         if (!Number.isFinite(index)) {
           return false;
         }
-        selectImage(index);
+        selectImage(index, { preserveScroll: true });
         return true;
       },
     };
