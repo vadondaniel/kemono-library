@@ -2594,7 +2594,7 @@ def _import_post_into_library(
                     post_id=local_post_id,
                     label=resolved_version_label,
                     language=resolved_version_language,
-                    is_manual=False,
+                    origin_kind=db.VERSION_ORIGIN_SOURCE,
                     source_service=service,
                     source_user_id=user_id,
                     source_post_id=post_id,

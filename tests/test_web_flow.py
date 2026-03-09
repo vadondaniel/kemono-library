@@ -2487,7 +2487,7 @@ def test_import_commit_rejects_source_version_already_attached_to_other_post(tmp
         post_id=primary_post_id,
         label="EN TL",
         language="en",
-        is_manual=False,
+        origin_kind=LibraryDB.VERSION_ORIGIN_SOURCE,
         source_service="fanbox",
         source_user_id="70479526",
         source_post_id="200",
@@ -2565,7 +2565,7 @@ def test_create_post_version_rejects_global_duplicate_source_tuple(tmp_path):
         post_id=first_post_id,
         label="EN",
         language="en",
-        is_manual=False,
+        origin_kind=LibraryDB.VERSION_ORIGIN_SOURCE,
         source_service="fanbox",
         source_user_id="700",
         source_post_id="200",
@@ -2581,7 +2581,7 @@ def test_create_post_version_rejects_global_duplicate_source_tuple(tmp_path):
             post_id=second_post_id,
             label="Duplicate",
             language="en",
-            is_manual=False,
+            origin_kind=LibraryDB.VERSION_ORIGIN_SOURCE,
             source_service="fanbox",
             source_user_id="700",
             source_post_id="200",
@@ -2972,6 +2972,119 @@ def test_delete_last_post_version_clears_post_projection(tmp_path):
     assert post["source_url"] == ""
 
 
+def test_version_origin_kind_distinguishes_source_and_clone(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Origin Kind Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="612",
+        external_post_id="100",
+        title="Original title",
+        content="original",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/612/post/100",
+    )
+
+    source_version = db.get_post_version(post_id)
+    assert source_version is not None
+    assert source_version["origin_kind"] == LibraryDB.VERSION_ORIGIN_SOURCE
+
+    clone_id = db.clone_post_version(
+        post_id=post_id,
+        source_version_id=int(source_version["id"]),
+        label="Clone",
+        language="en",
+        set_default=False,
+    )
+    clone_row = db.get_post_version(post_id, clone_id)
+    assert clone_row is not None
+    assert clone_row["origin_kind"] == LibraryDB.VERSION_ORIGIN_CLONE
+
+
+def test_create_post_version_validates_origin_kind_shape(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Origin Validation Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="613",
+        external_post_id="100",
+        title="Original title",
+        content="original",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/613/post/100",
+    )
+
+    with pytest.raises(ValueError, match="Source versions require service, user id, and post id."):
+        db.create_post_version(
+            post_id=post_id,
+            label="Broken source",
+            language=None,
+            origin_kind=LibraryDB.VERSION_ORIGIN_SOURCE,
+            source_service=None,
+            source_user_id=None,
+            source_post_id=None,
+            title="Broken",
+            content="",
+            metadata={},
+            source_url=None,
+            set_default=False,
+        )
+
+    with pytest.raises(ValueError, match="Clone versions require a parent version."):
+        db.create_post_version(
+            post_id=post_id,
+            label="Broken clone",
+            language="en",
+            origin_kind=LibraryDB.VERSION_ORIGIN_CLONE,
+            source_service=None,
+            source_user_id=None,
+            source_post_id=None,
+            title="Broken",
+            content="",
+            metadata={},
+            source_url=None,
+            set_default=False,
+        )
+
+    with pytest.raises(ValueError, match="Manual versions cannot store a source tuple."):
+        db.create_post_version(
+            post_id=post_id,
+            label="Broken manual",
+            language=None,
+            origin_kind=LibraryDB.VERSION_ORIGIN_MANUAL,
+            source_service="fanbox",
+            source_user_id="613",
+            source_post_id="200",
+            title="Broken",
+            content="",
+            metadata={},
+            source_url="https://kemono.cr/fanbox/user/613/post/200",
+            set_default=False,
+        )
+
+
 def test_init_schema_adds_lineage_column_to_legacy_post_versions_table(tmp_path):
     db_path = tmp_path / "legacy.db"
     conn = sqlite3.connect(db_path)
@@ -3054,6 +3167,7 @@ def test_init_schema_adds_lineage_column_to_legacy_post_versions_table(tmp_path)
     }
     verify_conn.close()
     assert "derived_from_version_id" in column_names
+    assert "origin_kind" in column_names
     assert "version_rank" in column_names
 
 
@@ -3133,7 +3247,7 @@ def test_resolve_link_matches_version_source_tuple(tmp_path):
         post_id=post_id,
         label="EN",
         language="en",
-        is_manual=False,
+        origin_kind=LibraryDB.VERSION_ORIGIN_SOURCE,
         source_service="fanbox",
         source_user_id="700",
         source_post_id="200",

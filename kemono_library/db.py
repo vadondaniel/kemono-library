@@ -9,6 +9,15 @@ from typing import Iterator
 
 
 class LibraryDB:
+    VERSION_ORIGIN_SOURCE = "source"
+    VERSION_ORIGIN_CLONE = "clone"
+    VERSION_ORIGIN_MANUAL = "manual"
+    VERSION_ORIGIN_KINDS = {
+        VERSION_ORIGIN_SOURCE,
+        VERSION_ORIGIN_CLONE,
+        VERSION_ORIGIN_MANUAL,
+    }
+
     def __init__(self, db_path: str | Path) -> None:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -555,7 +564,7 @@ class LibraryDB:
                 post_id=post_id,
                 label="Original",
                 language=None,
-                is_manual=False,
+                origin_kind=self.VERSION_ORIGIN_SOURCE,
                 source_service=service,
                 source_user_id=external_user_id,
                 source_post_id=external_post_id,
@@ -624,7 +633,7 @@ class LibraryDB:
         post_id: int,
         label: str,
         language: str | None,
-        is_manual: bool,
+        origin_kind: str,
         source_service: str | None,
         source_user_id: str | None,
         source_post_id: str | None,
@@ -649,7 +658,7 @@ class LibraryDB:
                 post_id=post_id,
                 label=label,
                 language=language,
-                is_manual=is_manual,
+                origin_kind=origin_kind,
                 source_service=source_service,
                 source_user_id=source_user_id,
                 source_post_id=source_post_id,
@@ -675,7 +684,7 @@ class LibraryDB:
                 post_id=post_id,
                 label=label,
                 language=language,
-                is_manual=is_manual,
+                origin_kind=origin_kind,
                 source_service=source_service,
                 source_user_id=source_user_id,
                 source_post_id=source_post_id,
@@ -717,7 +726,7 @@ class LibraryDB:
                 post_id=post_id,
                 label=label,
                 language=language,
-                is_manual=True,
+                origin_kind=self.VERSION_ORIGIN_CLONE,
                 source_service=None,
                 source_user_id=None,
                 source_post_id=None,
@@ -1486,6 +1495,7 @@ class LibraryDB:
                 label TEXT NOT NULL DEFAULT 'Original',
                 language TEXT,
                 is_manual INTEGER NOT NULL DEFAULT 0,
+                origin_kind TEXT NOT NULL DEFAULT 'source',
                 source_service TEXT,
                 source_user_id TEXT,
                 source_post_id TEXT,
@@ -1549,6 +1559,25 @@ class LibraryDB:
             conn.execute("ALTER TABLE post_versions ADD COLUMN derived_from_version_id INTEGER")
         if "version_rank" not in existing_columns:
             conn.execute("ALTER TABLE post_versions ADD COLUMN version_rank INTEGER NOT NULL DEFAULT 0")
+        if "origin_kind" not in existing_columns:
+            conn.execute(
+                f"ALTER TABLE post_versions ADD COLUMN origin_kind TEXT NOT NULL DEFAULT '{self.VERSION_ORIGIN_SOURCE}'"
+            )
+        conn.execute(
+            """
+            UPDATE post_versions
+            SET origin_kind = CASE
+                WHEN source_service IS NOT NULL AND source_user_id IS NOT NULL AND source_post_id IS NOT NULL
+                    THEN 'source'
+                WHEN derived_from_version_id IS NOT NULL
+                    THEN 'clone'
+                ELSE 'manual'
+            END
+            WHERE origin_kind IS NULL
+               OR TRIM(origin_kind) = ''
+               OR origin_kind NOT IN ('source', 'clone', 'manual')
+            """
+        )
         self._ensure_post_version_indexes(conn)
 
     def _backfill_post_versions(self, conn: sqlite3.Connection) -> None:
@@ -1579,7 +1608,7 @@ class LibraryDB:
                 post_id=post_id,
                 label="Original",
                 language=None,
-                is_manual=False,
+                origin_kind=self.VERSION_ORIGIN_SOURCE,
                 source_service=str(post["service"]),
                 source_user_id=str(post["external_user_id"]),
                 source_post_id=str(post["external_post_id"]),
@@ -1641,7 +1670,7 @@ class LibraryDB:
         post_id: int,
         label: str,
         language: str | None,
-        is_manual: bool,
+        origin_kind: str,
         source_service: str | None,
         source_user_id: str | None,
         source_post_id: str | None,
@@ -1659,9 +1688,14 @@ class LibraryDB:
         derived_from_version_id: int | None,
         version_rank: int | None = None,
     ) -> int:
+        normalized_origin_kind = self._normalize_post_version_origin_kind(origin_kind)
         normalized_source_service = self._normalize_optional_text(source_service)
         normalized_source_user_id = self._normalize_optional_text(source_user_id)
         normalized_source_post_id = self._normalize_optional_text(source_post_id)
+        has_any_source = any((normalized_source_service, normalized_source_user_id, normalized_source_post_id))
+        has_full_source = all((normalized_source_service, normalized_source_user_id, normalized_source_post_id))
+        if has_any_source and not has_full_source:
+            raise ValueError("Source tuple must include service, user id, and post id.")
         normalized_derived_from_version_id = int(derived_from_version_id) if derived_from_version_id else None
         if normalized_derived_from_version_id is not None:
             parent_row = conn.execute(
@@ -1670,7 +1704,15 @@ class LibraryDB:
             ).fetchone()
             if not parent_row:
                 raise ValueError("Parent version not found on this post.")
-        if normalized_source_service and normalized_source_user_id and normalized_source_post_id:
+        if normalized_origin_kind == self.VERSION_ORIGIN_SOURCE:
+            if not has_full_source:
+                raise ValueError("Source versions require service, user id, and post id.")
+        else:
+            if has_any_source:
+                raise ValueError(f"{normalized_origin_kind.title()} versions cannot store a source tuple.")
+        if normalized_origin_kind == self.VERSION_ORIGIN_CLONE and normalized_derived_from_version_id is None:
+            raise ValueError("Clone versions require a parent version.")
+        if normalized_origin_kind == self.VERSION_ORIGIN_SOURCE:
             existing_version = self.find_version_by_source_global(
                 service=normalized_source_service,
                 external_user_id=normalized_source_user_id,
@@ -1690,6 +1732,7 @@ class LibraryDB:
                 label,
                 language,
                 is_manual,
+                origin_kind,
                 source_service,
                 source_user_id,
                 source_post_id,
@@ -1707,13 +1750,14 @@ class LibraryDB:
                 metadata_json,
                 source_url
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 post_id,
                 self._normalize_required_label(label),
                 self._normalize_optional_text(language),
-                1 if is_manual else 0,
+                0 if normalized_origin_kind == self.VERSION_ORIGIN_SOURCE else 1,
+                normalized_origin_kind,
                 normalized_source_service,
                 normalized_source_user_id,
                 normalized_source_post_id,
@@ -1956,6 +2000,13 @@ class LibraryDB:
         except json.JSONDecodeError:
             return {}
         return loaded if isinstance(loaded, dict) else {}
+
+    def _normalize_post_version_origin_kind(self, origin_kind: str) -> str:
+        normalized = str(origin_kind or "").strip().lower()
+        if normalized not in self.VERSION_ORIGIN_KINDS:
+            allowed = ", ".join(sorted(self.VERSION_ORIGIN_KINDS))
+            raise ValueError(f"Invalid version origin kind '{origin_kind}'. Expected one of: {allowed}.")
+        return normalized
 
     def _ensure_post_columns(self, conn: sqlite3.Connection) -> None:
         existing_columns = {
