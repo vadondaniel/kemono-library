@@ -514,7 +514,7 @@ class LibraryDB:
 
         existing_version = conn.execute(
             """
-            SELECT id
+            SELECT *
             FROM post_versions
             WHERE post_id = ?
               AND source_service = ?
@@ -525,6 +525,34 @@ class LibraryDB:
             (post_id, service, external_user_id, external_post_id),
         ).fetchone()
         if existing_version:
+            next_metadata_json = json.dumps(metadata, ensure_ascii=True)
+            next_source_url = self._normalize_optional_text(source_url)
+            if (
+                str(existing_version["title"]) != title
+                or str(existing_version["content"] or "") != content
+                or self._normalize_optional_text(existing_version["thumbnail_name"])
+                != self._normalize_optional_text(thumbnail_name)
+                or self._normalize_optional_text(existing_version["thumbnail_remote_url"])
+                != self._normalize_optional_text(thumbnail_remote_url)
+                or self._normalize_optional_text(existing_version["thumbnail_local_path"])
+                != self._normalize_optional_text(thumbnail_local_path)
+                or self._normalize_optional_text(existing_version["published_at"])
+                != self._normalize_optional_text(published_at)
+                or self._normalize_optional_text(existing_version["edited_at"])
+                != self._normalize_optional_text(edited_at)
+                or self._normalize_optional_text(existing_version["next_external_post_id"])
+                != self._normalize_optional_text(next_external_post_id)
+                or self._normalize_optional_text(existing_version["prev_external_post_id"])
+                != self._normalize_optional_text(prev_external_post_id)
+                or str(existing_version["metadata_json"]) != next_metadata_json
+                or self._normalize_optional_text(existing_version["source_url"]) != next_source_url
+            ):
+                self._record_post_version_revision_conn(
+                    conn,
+                    int(existing_version["id"]),
+                    capture_kind="source_refresh",
+                    row=existing_version,
+                )
             conn.execute(
                 """
                 UPDATE post_versions
@@ -552,8 +580,8 @@ class LibraryDB:
                     edited_at,
                     next_external_post_id,
                     prev_external_post_id,
-                    json.dumps(metadata, ensure_ascii=True),
-                    source_url,
+                    next_metadata_json,
+                    next_source_url,
                     int(existing_version["id"]),
                 ),
             )
@@ -593,6 +621,11 @@ class LibraryDB:
                        parent.label AS derived_from_label,
                        parent.language AS derived_from_language,
                        parent.title AS derived_from_title,
+                       (
+                           SELECT COUNT(*)
+                           FROM post_version_revisions r
+                           WHERE r.version_id = v.id
+                       ) AS revision_count,
                        CASE WHEN p.default_version_id = v.id THEN 1 ELSE 0 END AS is_default
                 FROM post_versions v
                 JOIN posts p ON p.id = v.post_id
@@ -618,6 +651,11 @@ class LibraryDB:
                        parent.label AS derived_from_label,
                        parent.language AS derived_from_language,
                        parent.title AS derived_from_title,
+                       (
+                           SELECT COUNT(*)
+                           FROM post_version_revisions r
+                           WHERE r.version_id = v.id
+                       ) AS revision_count,
                        CASE WHEN p.default_version_id = v.id THEN 1 ELSE 0 END AS is_default
                 FROM post_versions v
                 JOIN posts p ON p.id = v.post_id
@@ -626,6 +664,19 @@ class LibraryDB:
                 """,
                 (resolved_version_id, post_id),
             ).fetchone()
+
+    def list_post_version_revisions(self, version_id: int) -> list[sqlite3.Row]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM post_version_revisions
+                WHERE version_id = ?
+                ORDER BY revision_number DESC, id DESC
+                """,
+                (version_id,),
+            ).fetchall()
+            return list(rows)
 
     def create_post_version(
         self,
@@ -833,9 +884,40 @@ class LibraryDB:
                     conn=own_conn,
                 )
 
-        row = conn.execute("SELECT post_id FROM post_versions WHERE id = ?", (version_id,)).fetchone()
+        row = conn.execute("SELECT * FROM post_versions WHERE id = ?", (version_id,)).fetchone()
         if not row:
             return
+        next_language = self._normalize_optional_text(language)
+        next_thumbnail_name = self._normalize_optional_text(thumbnail_name)
+        next_thumbnail_remote_url = self._normalize_optional_text(thumbnail_remote_url)
+        next_thumbnail_local_path = self._normalize_optional_text(thumbnail_local_path)
+        next_published_at = self._normalize_optional_text(published_at)
+        next_edited_at = self._normalize_optional_text(edited_at)
+        next_next_external_post_id = self._normalize_optional_text(next_external_post_id)
+        next_prev_external_post_id = self._normalize_optional_text(prev_external_post_id)
+        next_metadata_json = json.dumps(metadata, ensure_ascii=True)
+        next_source_url = self._normalize_optional_text(source_url)
+        if (
+            str(row["label"]) != self._normalize_required_label(label)
+            or self._normalize_optional_text(row["language"]) != next_language
+            or str(row["title"]) != title
+            or str(row["content"] or "") != content
+            or self._normalize_optional_text(row["thumbnail_name"]) != next_thumbnail_name
+            or self._normalize_optional_text(row["thumbnail_remote_url"]) != next_thumbnail_remote_url
+            or self._normalize_optional_text(row["thumbnail_local_path"]) != next_thumbnail_local_path
+            or self._normalize_optional_text(row["published_at"]) != next_published_at
+            or self._normalize_optional_text(row["edited_at"]) != next_edited_at
+            or self._normalize_optional_text(row["next_external_post_id"]) != next_next_external_post_id
+            or self._normalize_optional_text(row["prev_external_post_id"]) != next_prev_external_post_id
+            or str(row["metadata_json"]) != next_metadata_json
+            or self._normalize_optional_text(row["source_url"]) != next_source_url
+        ):
+            self._record_post_version_revision_conn(
+                conn,
+                version_id,
+                capture_kind="edit",
+                row=row,
+            )
         conn.execute(
             """
             UPDATE post_versions
@@ -857,18 +939,18 @@ class LibraryDB:
             """,
             (
                 self._normalize_required_label(label),
-                self._normalize_optional_text(language),
+                next_language,
                 title,
                 content,
-                self._normalize_optional_text(thumbnail_name),
-                self._normalize_optional_text(thumbnail_remote_url),
-                self._normalize_optional_text(thumbnail_local_path),
-                self._normalize_optional_text(published_at),
-                self._normalize_optional_text(edited_at),
-                self._normalize_optional_text(next_external_post_id),
-                self._normalize_optional_text(prev_external_post_id),
-                json.dumps(metadata, ensure_ascii=True),
-                self._normalize_optional_text(source_url),
+                next_thumbnail_name,
+                next_thumbnail_remote_url,
+                next_thumbnail_local_path,
+                next_published_at,
+                next_edited_at,
+                next_next_external_post_id,
+                next_prev_external_post_id,
+                next_metadata_json,
+                next_source_url,
                 version_id,
             ),
         )
@@ -1197,9 +1279,17 @@ class LibraryDB:
                     metadata=metadata,
                     conn=own_conn,
                 )
-        row = conn.execute("SELECT post_id FROM post_versions WHERE id = ?", (version_id,)).fetchone()
+        row = conn.execute("SELECT * FROM post_versions WHERE id = ?", (version_id,)).fetchone()
         if not row:
             return
+        next_metadata_json = json.dumps(metadata, ensure_ascii=True)
+        if str(row["content"] or "") != content or str(row["metadata_json"]) != next_metadata_json:
+            self._record_post_version_revision_conn(
+                conn,
+                version_id,
+                capture_kind="content_sync",
+                row=row,
+            )
         conn.execute(
             """
             UPDATE post_versions
@@ -1210,7 +1300,7 @@ class LibraryDB:
             """,
             (
                 content,
-                json.dumps(metadata, ensure_ascii=True),
+                next_metadata_json,
                 version_id,
             ),
         )
@@ -1549,6 +1639,29 @@ class LibraryDB:
                 UNIQUE (version_id, path, server),
                 FOREIGN KEY (version_id) REFERENCES post_versions(id) ON DELETE CASCADE
             );
+
+            CREATE TABLE IF NOT EXISTS post_version_revisions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                version_id INTEGER NOT NULL,
+                revision_number INTEGER NOT NULL,
+                capture_kind TEXT NOT NULL DEFAULT 'edit',
+                label TEXT NOT NULL,
+                language TEXT,
+                title TEXT NOT NULL,
+                content TEXT,
+                thumbnail_name TEXT,
+                thumbnail_remote_url TEXT,
+                thumbnail_local_path TEXT,
+                published_at TEXT,
+                edited_at TEXT,
+                next_external_post_id TEXT,
+                prev_external_post_id TEXT,
+                metadata_json TEXT NOT NULL DEFAULT '{}',
+                source_url TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (version_id, revision_number),
+                FOREIGN KEY (version_id) REFERENCES post_versions(id) ON DELETE CASCADE
+            );
             """
         )
         existing_columns = {
@@ -1849,6 +1962,62 @@ class LibraryDB:
                 ),
             )
 
+    def _record_post_version_revision_conn(
+        self,
+        conn: sqlite3.Connection,
+        version_id: int,
+        *,
+        capture_kind: str,
+        row: sqlite3.Row | None = None,
+    ) -> None:
+        snapshot = row or conn.execute(
+            "SELECT * FROM post_versions WHERE id = ?",
+            (version_id,),
+        ).fetchone()
+        if not snapshot:
+            return
+        conn.execute(
+            """
+            INSERT INTO post_version_revisions (
+                version_id,
+                revision_number,
+                capture_kind,
+                label,
+                language,
+                title,
+                content,
+                thumbnail_name,
+                thumbnail_remote_url,
+                thumbnail_local_path,
+                published_at,
+                edited_at,
+                next_external_post_id,
+                prev_external_post_id,
+                metadata_json,
+                source_url
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                version_id,
+                self._next_post_version_revision_number_conn(conn, version_id),
+                capture_kind.strip().lower() or "edit",
+                self._normalize_required_label(str(snapshot["label"])),
+                self._normalize_optional_text(snapshot["language"]),
+                str(snapshot["title"]),
+                snapshot["content"],
+                self._normalize_optional_text(snapshot["thumbnail_name"]),
+                self._normalize_optional_text(snapshot["thumbnail_remote_url"]),
+                self._normalize_optional_text(snapshot["thumbnail_local_path"]),
+                self._normalize_optional_text(snapshot["published_at"]),
+                self._normalize_optional_text(snapshot["edited_at"]),
+                self._normalize_optional_text(snapshot["next_external_post_id"]),
+                self._normalize_optional_text(snapshot["prev_external_post_id"]),
+                str(snapshot["metadata_json"]),
+                self._normalize_optional_text(snapshot["source_url"]),
+            ),
+        )
+
     def _get_default_version_id_conn(self, conn: sqlite3.Connection, post_id: int) -> int | None:
         row = conn.execute(
             "SELECT default_version_id FROM posts WHERE id = ?",
@@ -1866,6 +2035,15 @@ class LibraryDB:
         if not row:
             return 1
         return int(row["max_rank"] or 0) + 1
+
+    def _next_post_version_revision_number_conn(self, conn: sqlite3.Connection, version_id: int) -> int:
+        row = conn.execute(
+            "SELECT COALESCE(MAX(revision_number), 0) AS max_revision FROM post_version_revisions WHERE version_id = ?",
+            (version_id,),
+        ).fetchone()
+        if not row:
+            return 1
+        return int(row["max_revision"] or 0) + 1
 
     def _ensure_post_version_indexes(self, conn: sqlite3.Connection) -> None:
         existing_indexes = {
@@ -1908,6 +2086,12 @@ class LibraryDB:
             """
             CREATE INDEX IF NOT EXISTS ix_post_versions_derived_from
             ON post_versions (derived_from_version_id)
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS ix_post_version_revisions_version
+            ON post_version_revisions (version_id, revision_number DESC)
             """
         )
 

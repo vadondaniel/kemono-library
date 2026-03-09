@@ -3085,6 +3085,159 @@ def test_create_post_version_validates_origin_kind_shape(tmp_path):
         )
 
 
+def test_update_post_version_records_revision_snapshot(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Revision Edit Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="614",
+        external_post_id="100",
+        title="Original title",
+        content="original body",
+        metadata={"note": "first"},
+        source_url="https://kemono.cr/fanbox/user/614/post/100",
+    )
+
+    version = db.get_post_version(post_id)
+    assert version is not None
+    version_id = int(version["id"])
+    assert version["revision_count"] == 0
+
+    db.update_post_version(
+        version_id=version_id,
+        label=str(version["label"]),
+        language=version["language"],
+        title="Edited title",
+        content="edited body",
+        thumbnail_name=version["thumbnail_name"],
+        thumbnail_remote_url=version["thumbnail_remote_url"],
+        thumbnail_local_path=version["thumbnail_local_path"],
+        published_at=version["published_at"],
+        edited_at=version["edited_at"],
+        next_external_post_id=version["next_external_post_id"],
+        prev_external_post_id=version["prev_external_post_id"],
+        metadata={"note": "second"},
+        source_url=version["source_url"],
+    )
+
+    revisions = db.list_post_version_revisions(version_id)
+    assert len(revisions) == 1
+    assert revisions[0]["revision_number"] == 1
+    assert revisions[0]["capture_kind"] == "edit"
+    assert revisions[0]["title"] == "Original title"
+    assert revisions[0]["content"] == "original body"
+    assert revisions[0]["metadata_json"] == '{"note": "first"}'
+
+    updated = db.get_post_version(post_id, version_id)
+    assert updated is not None
+    assert updated["title"] == "Edited title"
+    assert updated["revision_count"] == 1
+
+
+def test_upsert_post_records_source_refresh_revision_for_existing_version(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Revision Import Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="615",
+        external_post_id="100",
+        title="Original title",
+        content="original body",
+        metadata={"note": "first"},
+        source_url="https://kemono.cr/fanbox/user/615/post/100",
+    )
+
+    db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="615",
+        external_post_id="100",
+        title="Imported title",
+        content="imported body",
+        metadata={"note": "refreshed"},
+        source_url="https://kemono.cr/fanbox/user/615/post/100",
+    )
+
+    version = db.get_post_version(post_id)
+    assert version is not None
+    revisions = db.list_post_version_revisions(int(version["id"]))
+    assert len(revisions) == 1
+    assert revisions[0]["capture_kind"] == "source_refresh"
+    assert revisions[0]["title"] == "Original title"
+    assert revisions[0]["content"] == "original body"
+    assert version["title"] == "Imported title"
+    assert version["revision_count"] == 1
+
+
+def test_update_post_version_content_metadata_records_revision_snapshot(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Revision Sync Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="616",
+        external_post_id="100",
+        title="Original title",
+        content="inline old.png",
+        metadata={"files": [{"path": "/old.png"}]},
+        source_url="https://kemono.cr/fanbox/user/616/post/100",
+    )
+
+    version = db.get_post_version(post_id)
+    assert version is not None
+    version_id = int(version["id"])
+
+    db.update_post_version_content_metadata(
+        version_id=version_id,
+        content="inline new.png",
+        metadata={"files": [{"path": "/new.png"}]},
+    )
+
+    revisions = db.list_post_version_revisions(version_id)
+    assert len(revisions) == 1
+    assert revisions[0]["capture_kind"] == "content_sync"
+    assert revisions[0]["content"] == "inline old.png"
+    assert revisions[0]["metadata_json"] == '{"files": [{"path": "/old.png"}]}'
+
+    updated = db.get_post_version(post_id, version_id)
+    assert updated is not None
+    assert updated["content"] == "inline new.png"
+    assert updated["revision_count"] == 1
+
+
 def test_init_schema_adds_lineage_column_to_legacy_post_versions_table(tmp_path):
     db_path = tmp_path / "legacy.db"
     conn = sqlite3.connect(db_path)
@@ -3165,8 +3318,15 @@ def test_init_schema_adds_lineage_column_to_legacy_post_versions_table(tmp_path)
         row[1]
         for row in verify_conn.execute("PRAGMA table_info(post_versions)").fetchall()
     }
+    revision_tables = {
+        row[0]
+        for row in verify_conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'post_version_revisions'"
+        ).fetchall()
+    }
     verify_conn.close()
     assert "derived_from_version_id" in column_names
+    assert "post_version_revisions" in revision_tables
     assert "origin_kind" in column_names
     assert "version_rank" in column_names
 
