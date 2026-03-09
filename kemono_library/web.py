@@ -1110,6 +1110,15 @@ def create_app(test_config: dict | None = None) -> Flask:
             if not title:
                 flash("Version title is required.", "error")
                 return redirect(url_for("edit_post", post_id=post_id, version_id=active_version_id))
+            try:
+                series_id = _validate_import_series_selection(
+                    db,
+                    creator_id=int(post["creator_id"]),
+                    series_id=series_id,
+                )
+            except ValueError as exc:
+                flash(str(exc), "error")
+                return redirect(url_for("edit_post", post_id=post_id, version_id=active_version_id))
 
             # Apply attachment edits only on Save.
             managed_attachments_by_choice: dict[str, dict[str, Any]] = {}
@@ -1167,41 +1176,6 @@ def create_app(test_config: dict | None = None) -> Flask:
                 managed_attachments=managed_attachments,
             )
 
-            db.replace_attachments(
-                post_id,
-                [
-                    {
-                        "name": item["name"],
-                        "remote_url": item["remote_url"],
-                        "local_path": item["local_path"],
-                        "kind": item["kind"],
-                    }
-                    for item in managed_attachments
-                ],
-                version_id=active_version_id,
-            )
-
-            for remote_url, new_name in name_sync_by_remote.items():
-                db.sync_attachment_name_by_remote_for_post(
-                    post_id,
-                    remote_url=remote_url,
-                    new_name=new_name,
-                )
-
-            for old_local_path, (new_local_path, new_name) in local_ref_sync_updates.items():
-                db.sync_attachment_local_refs_for_post(
-                    post_id,
-                    old_local_path=old_local_path,
-                    new_local_path=new_local_path,
-                    new_name=new_name,
-                )
-
-            _reprocess_post_versions_for_media_renames(
-                db,
-                post_id=post_id,
-                rename_aliases=rename_aliases,
-            )
-
             resolved_thumbnail_name = active_version["thumbnail_name"]
             resolved_thumbnail_remote_url = active_version["thumbnail_remote_url"]
             resolved_thumbnail_local_path = active_version["thumbnail_local_path"]
@@ -1236,23 +1210,67 @@ def create_app(test_config: dict | None = None) -> Flask:
                 resolved_thumbnail_local_path = _optional_str(selected_attachment["local_path"])
 
             metadata_for_save = _set_thumbnail_focus_in_metadata(active_metadata, focus_x, focus_y)
-            db.update_post_series(post_id=post_id, series_id=series_id)
-            db.update_post_version(
-                version_id=active_version_id,
-                label=version_label,
-                language=version_language,
-                title=title,
-                content=content,
-                thumbnail_name=resolved_thumbnail_name,
-                thumbnail_remote_url=resolved_thumbnail_remote_url,
-                thumbnail_local_path=resolved_thumbnail_local_path,
-                published_at=active_version["published_at"],
-                edited_at=active_version["edited_at"],
-                next_external_post_id=active_version["next_external_post_id"],
-                prev_external_post_id=active_version["prev_external_post_id"],
-                metadata=metadata_for_save,
-                source_url=active_version["source_url"],
-            )
+            try:
+                with db.transaction() as conn:
+                    db.replace_attachments(
+                        post_id,
+                        [
+                            {
+                                "name": item["name"],
+                                "remote_url": item["remote_url"],
+                                "local_path": item["local_path"],
+                                "kind": item["kind"],
+                            }
+                            for item in managed_attachments
+                        ],
+                        version_id=active_version_id,
+                        conn=conn,
+                    )
+
+                    for remote_url, new_name in name_sync_by_remote.items():
+                        db.sync_attachment_name_by_remote_for_post(
+                            post_id,
+                            remote_url=remote_url,
+                            new_name=new_name,
+                            conn=conn,
+                        )
+
+                    for old_local_path, (new_local_path, new_name) in local_ref_sync_updates.items():
+                        db.sync_attachment_local_refs_for_post(
+                            post_id,
+                            old_local_path=old_local_path,
+                            new_local_path=new_local_path,
+                            new_name=new_name,
+                            conn=conn,
+                        )
+
+                    _reprocess_post_versions_for_media_renames(
+                        db,
+                        post_id=post_id,
+                        rename_aliases=rename_aliases,
+                        conn=conn,
+                    )
+                    db.update_post_series(post_id=post_id, series_id=series_id, conn=conn)
+                    db.update_post_version(
+                        version_id=active_version_id,
+                        label=version_label,
+                        language=version_language,
+                        title=title,
+                        content=content,
+                        thumbnail_name=resolved_thumbnail_name,
+                        thumbnail_remote_url=resolved_thumbnail_remote_url,
+                        thumbnail_local_path=resolved_thumbnail_local_path,
+                        published_at=active_version["published_at"],
+                        edited_at=active_version["edited_at"],
+                        next_external_post_id=active_version["next_external_post_id"],
+                        prev_external_post_id=active_version["prev_external_post_id"],
+                        metadata=metadata_for_save,
+                        source_url=active_version["source_url"],
+                        conn=conn,
+                    )
+            except Exception as exc:  # noqa: BLE001
+                flash(f"Failed to update post: {exc}", "error")
+                return redirect(url_for("edit_post", post_id=post_id, version_id=active_version_id))
             flash("Post updated.", "success")
             return redirect(url_for("post_detail", post_id=post_id, version_id=active_version_id))
 
@@ -2796,6 +2814,7 @@ def _reprocess_post_versions_for_media_renames(
     *,
     post_id: int,
     rename_aliases: dict[str, str],
+    conn: sqlite3.Connection | None = None,
 ) -> None:
     if not rename_aliases:
         return
@@ -2816,6 +2835,7 @@ def _reprocess_post_versions_for_media_renames(
             version_id=version_id,
             content=rewritten_content,
             metadata=rewritten_metadata,
+            conn=conn,
         )
 
 

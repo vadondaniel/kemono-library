@@ -1044,38 +1044,47 @@ class LibraryDB:
         old_local_path: str,
         new_local_path: str | None,
         new_name: str | None = None,
+        conn: sqlite3.Connection | None = None,
     ) -> int:
-        with self._connect() as conn:
-            if new_name is None:
-                cursor = conn.execute(
-                    """
-                    UPDATE post_version_attachments
-                    SET local_path = ?
-                    WHERE id IN (
-                        SELECT a.id
-                        FROM post_version_attachments a
-                        JOIN post_versions v ON v.id = a.version_id
-                        WHERE v.post_id = ? AND a.local_path = ?
-                    )
-                    """,
-                    (new_local_path, post_id, old_local_path),
+        if conn is None:
+            with self._connect() as own_conn:
+                return self.sync_attachment_local_refs_for_post(
+                    post_id,
+                    old_local_path=old_local_path,
+                    new_local_path=new_local_path,
+                    new_name=new_name,
+                    conn=own_conn,
                 )
-            else:
-                cursor = conn.execute(
-                    """
-                    UPDATE post_version_attachments
-                    SET local_path = ?, name = ?
-                    WHERE id IN (
-                        SELECT a.id
-                        FROM post_version_attachments a
-                        JOIN post_versions v ON v.id = a.version_id
-                        WHERE v.post_id = ? AND a.local_path = ?
-                    )
-                    """,
-                    (new_local_path, new_name, post_id, old_local_path),
+        if new_name is None:
+            cursor = conn.execute(
+                """
+                UPDATE post_version_attachments
+                SET local_path = ?
+                WHERE id IN (
+                    SELECT a.id
+                    FROM post_version_attachments a
+                    JOIN post_versions v ON v.id = a.version_id
+                    WHERE v.post_id = ? AND a.local_path = ?
                 )
-            self._sync_post_from_default_version_conn(conn, post_id)
-            return int(cursor.rowcount or 0)
+                """,
+                (new_local_path, post_id, old_local_path),
+            )
+        else:
+            cursor = conn.execute(
+                """
+                UPDATE post_version_attachments
+                SET local_path = ?, name = ?
+                WHERE id IN (
+                    SELECT a.id
+                    FROM post_version_attachments a
+                    JOIN post_versions v ON v.id = a.version_id
+                    WHERE v.post_id = ? AND a.local_path = ?
+                )
+                """,
+                (new_local_path, new_name, post_id, old_local_path),
+            )
+        self._sync_post_from_default_version_conn(conn, post_id)
+        return int(cursor.rowcount or 0)
 
     def sync_attachment_name_by_remote_for_post(
         self,
@@ -1083,23 +1092,31 @@ class LibraryDB:
         *,
         remote_url: str,
         new_name: str,
+        conn: sqlite3.Connection | None = None,
     ) -> int:
-        with self._connect() as conn:
-            cursor = conn.execute(
-                """
-                UPDATE post_version_attachments
-                SET name = ?
-                WHERE id IN (
-                    SELECT a.id
-                    FROM post_version_attachments a
-                    JOIN post_versions v ON v.id = a.version_id
-                    WHERE v.post_id = ? AND a.remote_url = ?
+        if conn is None:
+            with self._connect() as own_conn:
+                return self.sync_attachment_name_by_remote_for_post(
+                    post_id,
+                    remote_url=remote_url,
+                    new_name=new_name,
+                    conn=own_conn,
                 )
-                """,
-                (new_name, post_id, remote_url),
+        cursor = conn.execute(
+            """
+            UPDATE post_version_attachments
+            SET name = ?
+            WHERE id IN (
+                SELECT a.id
+                FROM post_version_attachments a
+                JOIN post_versions v ON v.id = a.version_id
+                WHERE v.post_id = ? AND a.remote_url = ?
             )
-            self._sync_post_from_default_version_conn(conn, post_id)
-            return int(cursor.rowcount or 0)
+            """,
+            (new_name, post_id, remote_url),
+        )
+        self._sync_post_from_default_version_conn(conn, post_id)
+        return int(cursor.rowcount or 0)
 
     def update_post_version_content_metadata(
         self,
@@ -1107,26 +1124,34 @@ class LibraryDB:
         version_id: int,
         content: str,
         metadata: dict[str, Any],
+        conn: sqlite3.Connection | None = None,
     ) -> None:
-        with self._connect() as conn:
-            row = conn.execute("SELECT post_id FROM post_versions WHERE id = ?", (version_id,)).fetchone()
-            if not row:
-                return
-            conn.execute(
-                """
-                UPDATE post_versions
-                SET content = ?,
-                    metadata_json = ?,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-                """,
-                (
-                    content,
-                    json.dumps(metadata, ensure_ascii=True),
-                    version_id,
-                ),
-            )
-            self._sync_post_from_default_version_conn(conn, int(row["post_id"]))
+        if conn is None:
+            with self._connect() as own_conn:
+                return self.update_post_version_content_metadata(
+                    version_id=version_id,
+                    content=content,
+                    metadata=metadata,
+                    conn=own_conn,
+                )
+        row = conn.execute("SELECT post_id FROM post_versions WHERE id = ?", (version_id,)).fetchone()
+        if not row:
+            return
+        conn.execute(
+            """
+            UPDATE post_versions
+            SET content = ?,
+                metadata_json = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (
+                content,
+                json.dumps(metadata, ensure_ascii=True),
+                version_id,
+            ),
+        )
+        self._sync_post_from_default_version_conn(conn, int(row["post_id"]))
             
 
     def replace_tags(

@@ -1405,6 +1405,58 @@ def test_edit_post_saves_thumbnail_focus_and_applies_to_creator_grid(tmp_path):
     assert "object-position: 22.5% 77.5%" in html
 
 
+def test_edit_post_rejects_series_owned_by_other_creator(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+
+    creator_a = db.create_creator("Edit Creator")
+    creator_b = db.create_creator("Other Creator")
+    foreign_series_id = db.create_series(creator_b, "Foreign Series")
+    post_id = db.upsert_post(
+        creator_id=creator_a,
+        series_id=None,
+        service="fanbox",
+        external_user_id="111",
+        external_post_id="223",
+        title="Edit Me",
+        content="<p>Body</p>",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/111/post/223",
+    )
+    version_row = db.get_post_version(post_id)
+    assert version_row is not None
+
+    response = app.test_client().post(
+        f"/posts/{post_id}/edit",
+        data={
+            "version_id": str(int(version_row["id"])),
+            "version_label": "Original",
+            "version_language": "",
+            "title": "Edit Me",
+            "series_id": str(foreign_series_id),
+            "thumbnail_attachment_id": "__keep__",
+            "thumbnail_focus_x": "50",
+            "thumbnail_focus_y": "50",
+            "content": "<p>Body</p>",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Selected series was not found for this creator." in response.data
+    post = db.get_post(post_id)
+    assert post is not None
+    assert post["series_id"] is None
+
+
 def test_edit_post_attachment_management_is_save_based_and_updates_inline_media(tmp_path):
     app = create_app(
         {
@@ -1527,6 +1579,80 @@ def test_edit_post_attachment_management_is_save_based_and_updates_inline_media(
     html_after = after_detail.data.decode("utf-8")
     assert f"/files/{local_rel}" not in html_after
     assert f"/files/{str(updated_local['local_path'])}" in html_after
+
+
+def test_edit_post_rolls_back_db_changes_when_save_fails(tmp_path, monkeypatch):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+
+    creator_id = db.create_creator("Rollback Editor")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="u-rb",
+        external_post_id="p-rb",
+        title="Original Title",
+        content="<p>Body</p>",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/u-rb/post/p-rb",
+    )
+    version = db.get_post_version(post_id)
+    assert version is not None
+    version_id = int(version["id"])
+    db.replace_attachments(
+        post_id,
+        [
+            {
+                "name": "missing.txt",
+                "remote_url": "https://n1.kemono.cr/a/b/missing.txt",
+                "local_path": None,
+                "kind": "attachment",
+            }
+        ],
+        version_id=version_id,
+    )
+    attachment_id = int(db.list_attachments(post_id, version_id=version_id)[0]["id"])
+
+    def failing_update_post_version(*args, **kwargs):  # noqa: ARG001
+        raise RuntimeError("update version failed")
+
+    monkeypatch.setattr(db, "update_post_version", failing_update_post_version)
+
+    response = app.test_client().post(
+        f"/posts/{post_id}/edit",
+        data={
+            "version_id": str(version_id),
+            "version_label": "Original",
+            "version_language": "",
+            "title": "Changed Title",
+            "series_id": "",
+            "thumbnail_attachment_id": "__keep__",
+            "thumbnail_focus_x": "50",
+            "thumbnail_focus_y": "50",
+            "content": "<p>Changed</p>",
+            f"attachment_keep_id_{attachment_id}": "1",
+            f"attachment_name_id_{attachment_id}": "renamed.txt",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Failed to update post: update version failed" in response.data
+    unchanged_version = db.get_post_version(post_id, version_id)
+    assert unchanged_version is not None
+    assert unchanged_version["title"] == "Original Title"
+    attachments = db.list_attachments(post_id, version_id=version_id)
+    assert len(attachments) == 1
+    assert attachments[0]["name"] == "missing.txt"
 
 
 def test_edit_post_dedupes_local_file_for_same_name_and_same_bytes(tmp_path):
