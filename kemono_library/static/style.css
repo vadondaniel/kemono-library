@@ -178,6 +178,9 @@ h4 {
 }
 
 .theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid var(--border);
   background: var(--card-solid);
   color: var(--text);
@@ -506,11 +509,76 @@ small {
   box-shadow: 0 16px 28px rgba(0, 0, 0, 0.35);
   padding: 0.8rem;
   display: grid;
-  gap: 0.72rem;
+  gap: 0.62rem;
 }
 
 .post-content-settings-popover:not([open]) .post-content-settings-popover-panel {
   display: none;
+}
+
+.post-content-settings-popover.is-theme-only .post-content-settings-popover-panel {
+  width: min(300px, 92vw);
+}
+
+.post-settings-top-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.post-settings-top-row.is-theme-only {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.post-settings-switch {
+  width: 100%;
+  justify-content: space-between;
+  border-radius: 0.62rem;
+  padding: 0.32rem 0.42rem;
+}
+
+.post-settings-switch .post-view-mode-chip-row {
+  margin-left: auto;
+}
+
+.post-settings-reader {
+  border-top: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
+  padding-top: 0.62rem;
+}
+
+.post-theme-mode-option {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.post-theme-mode-option input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.post-theme-mode-option span {
+  cursor: pointer;
+}
+
+.post-theme-mode-option input:checked + span {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent-soft) 56%, transparent);
+}
+
+.post-theme-mode-option span:hover {
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent-soft) 32%, transparent);
+}
+
+.post-theme-mode-option input:focus-visible + span {
+  outline: 2px solid color-mix(in srgb, var(--accent) 54%, transparent);
+  outline-offset: 1px;
 }
 
 .post-content-settings-head {
@@ -522,6 +590,27 @@ small {
 
 .post-content-settings-head h2 {
   margin: 0;
+  font-family: var(--font-body);
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.post-content-settings-reset {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.78rem;
+  font-weight: 650;
+  color: var(--muted);
+}
+
+.post-content-settings-reset:hover {
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent-soft) 32%, transparent);
 }
 
 .post-content-settings-grid {
@@ -556,6 +645,10 @@ small {
   }
 
   .post-content-settings-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .post-settings-top-row {
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -3606,11 +3699,11 @@ body.is-post-reader-page .site-header {
     padding: 0.32rem 0.42rem;
   }
 
-  .post-view-mode-chip-row {
+  [data-post-view-mode-switcher] .post-view-mode-chip-row {
     display: none;
   }
 
-  .post-view-mode-select {
+  [data-post-view-mode-switcher] .post-view-mode-select {
     display: inline-flex;
     margin-left: auto;
   }

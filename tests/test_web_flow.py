@@ -1376,7 +1376,13 @@ def test_post_detail_renders_content_view_settings_controls(tmp_path):
     classic = app.test_client().get(f"/posts/{post_id}")
     assert classic.status_code == 200
     classic_soup = BeautifulSoup(classic.data, "html.parser")
-    assert classic_soup.select_one("[data-post-content-settings]") is None
+    assert classic_soup.select_one("[data-post-content-settings]") is not None
+    assert classic_soup.select_one("[data-post-view-mode-switcher]") is not None
+    assert classic_soup.select_one("[data-theme-toggle-radio][value='auto']") is not None
+    assert classic_soup.select_one("[data-theme-toggle-radio][value='light']") is not None
+    assert classic_soup.select_one("[data-theme-toggle-radio][value='dark']") is not None
+    assert classic_soup.select_one("[data-post-content-settings-reset]") is None
+    assert classic_soup.select_one("[data-post-content-font-size]") is None
 
     response = app.test_client().get(f"/posts/{post_id}?view=reader")
     assert response.status_code == 200
