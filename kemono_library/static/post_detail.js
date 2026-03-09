@@ -625,6 +625,7 @@
     const zoomOutButton = document.querySelector("[data-post-reader-zoom-out]");
     const zoomFitButton = document.querySelector("[data-post-reader-zoom-fit]");
     const scrollBar = document.querySelector("[data-post-reader-scrollbar]");
+    const scrollBarHorizontal = document.querySelector("[data-post-reader-scrollbar-horizontal]");
     const openTabLink = document.querySelector("[data-post-reader-open-tab]");
 
     if (
@@ -769,28 +770,49 @@
       Math.abs(panX) <= ZOOM_EPSILON &&
       Math.abs(panY) <= ZOOM_EPSILON;
 
-    const updateScrollBar = (maxY) => {
-      if (!(scrollBar instanceof HTMLInputElement)) {
-        return;
-      }
+    const updateScrollBars = () => {
       const hasImages = catalog.length > 0 && currentIndex >= 0;
-      const usableMaxY = Number.isFinite(maxY) ? Math.max(0, maxY) : Math.max(0, getPanBounds().maxY);
-      const canvasHeight = Math.max(1, canvas.clientHeight);
-      const totalHeight = canvasHeight + 2 * usableMaxY;
-      const viewportRatio = Math.max(0, Math.min(1, canvasHeight / totalHeight));
-      const railHeight = Math.max(1, scrollBar.clientHeight || canvasHeight);
-      const thumbPx = Math.round(Math.max(18, Math.min(railHeight * 0.92, railHeight * viewportRatio)));
-      scrollBar.style.setProperty("--post-reader-scroll-thumb-size", `${thumbPx}px`);
-      const active = hasImages && scrollModeActive && usableMaxY > ZOOM_EPSILON;
-      scrollBar.hidden = !active;
-      scrollBar.disabled = !active;
-      if (!active) {
-        scrollBar.value = "0";
-        return;
+      const { maxX, maxY } = getPanBounds();
+
+      if (scrollBar instanceof HTMLInputElement) {
+        const usableMaxY = Math.max(0, maxY);
+        const canvasHeight = Math.max(1, canvas.clientHeight);
+        const totalHeight = canvasHeight + 2 * usableMaxY;
+        const viewportRatio = Math.max(0, Math.min(1, canvasHeight / totalHeight));
+        const railHeight = Math.max(1, scrollBar.clientHeight || canvasHeight);
+        const thumbPx = Math.round(Math.max(18, Math.min(railHeight * 0.92, railHeight * viewportRatio)));
+        scrollBar.style.setProperty("--post-reader-scroll-thumb-size", `${thumbPx}px`);
+        const activeY = hasImages && scrollModeActive && usableMaxY > ZOOM_EPSILON;
+        scrollBar.hidden = !activeY;
+        scrollBar.disabled = !activeY;
+        if (!activeY) {
+          scrollBar.value = "0";
+        } else {
+          const progressY = (panY + usableMaxY) / (2 * usableMaxY);
+          const clampedY = Math.max(0, Math.min(1, progressY));
+          scrollBar.value = String(Math.round(clampedY * 100));
+        }
       }
-      const progress = (panY + usableMaxY) / (2 * usableMaxY);
-      const clamped = Math.max(0, Math.min(1, progress));
-      scrollBar.value = String(Math.round(clamped * 100));
+
+      if (scrollBarHorizontal instanceof HTMLInputElement) {
+        const usableMaxX = Math.max(0, maxX);
+        const canvasWidth = Math.max(1, canvas.clientWidth);
+        const totalWidth = canvasWidth + 2 * usableMaxX;
+        const viewportRatioX = Math.max(0, Math.min(1, canvasWidth / totalWidth));
+        const railWidth = Math.max(1, scrollBarHorizontal.clientWidth || canvasWidth);
+        const thumbPxX = Math.round(Math.max(18, Math.min(railWidth * 0.92, railWidth * viewportRatioX)));
+        scrollBarHorizontal.style.setProperty("--post-reader-scroll-thumb-size-x", `${thumbPxX}px`);
+        const activeX = hasImages && scrollModeActive && usableMaxX > ZOOM_EPSILON;
+        scrollBarHorizontal.hidden = !activeX;
+        scrollBarHorizontal.disabled = !activeX;
+        if (!activeX) {
+          scrollBarHorizontal.value = "0";
+        } else {
+          const progressX = (usableMaxX - panX) / (2 * usableMaxX);
+          const clampedX = Math.max(0, Math.min(1, progressX));
+          scrollBarHorizontal.value = String(Math.round(clampedX * 100));
+        }
+      }
     };
 
     const markScrollActivity = () => {
@@ -808,17 +830,14 @@
     };
 
     const setTransforms = () => {
-      if (scrollModeActive) {
-        panX = 0;
-      }
       const { maxX, maxY } = clampPan();
       image.style.transform = `translate(${panX}px, ${panY}px) scale(${zoomLevel})`;
       if (scrollModeActive) {
-        image.style.cursor = maxY > ZOOM_EPSILON ? "ns-resize" : "default";
+        image.style.cursor = maxY > ZOOM_EPSILON || maxX > ZOOM_EPSILON ? "grab" : "default";
       } else {
         image.style.cursor = maxX > ZOOM_EPSILON || maxY > ZOOM_EPSILON ? "grab" : "default";
       }
-      updateScrollBar(maxY);
+      updateScrollBars();
     };
 
     const fitView = () => {
@@ -836,7 +855,8 @@
       panX = 0;
       panY = 0;
       setTransforms();
-      const { maxY } = getPanBounds();
+      const { maxX, maxY } = getPanBounds();
+      panX = maxX;
       panY = maxY;
       setTransforms();
       markScrollActivity();
@@ -1100,8 +1120,22 @@
           return;
         }
         const ratio = Math.max(0, Math.min(1, Number.parseFloat(scrollBar.value) / 100));
-        panX = 0;
         panY = -maxY + ratio * (2 * maxY);
+        setTransforms();
+        markScrollActivity();
+      });
+    }
+    if (scrollBarHorizontal instanceof HTMLInputElement) {
+      scrollBarHorizontal.addEventListener("input", () => {
+        if (!scrollModeActive) {
+          return;
+        }
+        const { maxX } = getPanBounds();
+        if (maxX <= ZOOM_EPSILON) {
+          return;
+        }
+        const ratio = Math.max(0, Math.min(1, Number.parseFloat(scrollBarHorizontal.value) / 100));
+        panX = maxX - ratio * (2 * maxX);
         setTransforms();
         markScrollActivity();
       });
@@ -1115,13 +1149,19 @@
         }
         const deltaPixels = normalizedWheelDeltaPixels(event);
         if (scrollModeActive) {
-          const { maxY } = getPanBounds();
-          if (maxY <= ZOOM_EPSILON) {
+          const { maxX, maxY } = getPanBounds();
+          if (maxY <= ZOOM_EPSILON && maxX <= ZOOM_EPSILON) {
             return;
           }
           event.preventDefault();
-          panX = 0;
-          panY -= deltaPixels * SCROLL_MODE_PAN_PER_PIXEL;
+          const horizontalIntent = (event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) && maxX > ZOOM_EPSILON;
+          const horizontalOnly = maxY <= ZOOM_EPSILON && maxX > ZOOM_EPSILON;
+          if (horizontalIntent || horizontalOnly) {
+            const deltaX = Math.abs(event.deltaX) > ZOOM_EPSILON ? event.deltaX : event.deltaY;
+            panX -= deltaX * SCROLL_MODE_PAN_PER_PIXEL;
+          } else if (maxY > ZOOM_EPSILON) {
+            panY -= deltaPixels * SCROLL_MODE_PAN_PER_PIXEL;
+          }
           setTransforms();
           markScrollActivity();
           updateButtons();
