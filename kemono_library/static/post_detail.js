@@ -650,7 +650,6 @@
       pageRoot instanceof HTMLElement ? `kemono-reader-image-index:${pageRoot.dataset.postId || "unknown"}` : "";
     let currentIndex = -1;
     const MIN_ZOOM = 1;
-    const MAX_ZOOM = 8;
     const ZOOM_EPSILON = 0.0001;
     const BUTTON_ZOOM_STEP = 0.2;
     const WHEEL_ZOOM_PER_PIXEL = 0.0014;
@@ -706,13 +705,20 @@
       }
     };
 
-    const getPanBounds = () => {
+    const getFittedSize = () => {
       const canvasWidth = canvas.clientWidth;
       const canvasHeight = canvas.clientHeight;
       const naturalWidth = image.naturalWidth;
       const naturalHeight = image.naturalHeight;
       if (canvasWidth <= 0 || canvasHeight <= 0 || naturalWidth <= 0 || naturalHeight <= 0) {
-        return { maxX: 0, maxY: 0 };
+        return {
+          canvasWidth: Math.max(0, canvasWidth),
+          canvasHeight: Math.max(0, canvasHeight),
+          naturalWidth: Math.max(0, naturalWidth),
+          naturalHeight: Math.max(0, naturalHeight),
+          fittedWidth: 0,
+          fittedHeight: 0,
+        };
       }
       const imageAspect = naturalWidth / naturalHeight;
       const canvasAspect = canvasWidth / canvasHeight;
@@ -724,6 +730,40 @@
       } else {
         fittedHeight = canvasHeight;
         fittedWidth = canvasHeight * imageAspect;
+      }
+      return {
+        canvasWidth,
+        canvasHeight,
+        naturalWidth,
+        naturalHeight,
+        fittedWidth,
+        fittedHeight,
+      };
+    };
+
+    const getDynamicMaxZoom = () => {
+      const { naturalWidth, naturalHeight, fittedWidth, fittedHeight } = getFittedSize();
+      if (naturalWidth <= 0 || naturalHeight <= 0 || fittedWidth <= 0 || fittedHeight <= 0) {
+        return MIN_ZOOM;
+      }
+      const widthLimit = naturalWidth / fittedWidth;
+      const heightLimit = naturalHeight / fittedHeight;
+      const densityLimitedMax = Math.min(widthLimit, heightLimit);
+      if (!Number.isFinite(densityLimitedMax) || densityLimitedMax <= 0) {
+        return MIN_ZOOM;
+      }
+      return Math.max(MIN_ZOOM, densityLimitedMax);
+    };
+
+    const clampZoom = (value) => {
+      const maxZoom = getDynamicMaxZoom();
+      return Math.max(MIN_ZOOM, Math.min(maxZoom, value));
+    };
+
+    const getPanBounds = () => {
+      const { canvasWidth, canvasHeight, fittedWidth, fittedHeight } = getFittedSize();
+      if (canvasWidth <= 0 || canvasHeight <= 0 || fittedWidth <= 0 || fittedHeight <= 0) {
+        return { maxX: 0, maxY: 0 };
       }
       const scaledWidth = fittedWidth * zoomLevel;
       const scaledHeight = fittedHeight * zoomLevel;
@@ -830,6 +870,7 @@
     };
 
     const setTransforms = () => {
+      zoomLevel = clampZoom(zoomLevel);
       const { maxX, maxY } = clampPan();
       image.style.transform = `translate(${panX}px, ${panY}px) scale(${zoomLevel})`;
       if (scrollModeActive) {
@@ -870,8 +911,6 @@
       }
       fitView();
     };
-
-    const clampZoom = (value) => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, value));
 
     const getCanvasCenterClient = () => {
       const rect = canvas.getBoundingClientRect();
@@ -934,7 +973,8 @@
 
     const updateButtons = () => {
       const hasImages = catalog.length > 0 && currentIndex >= 0;
-      const canZoomIn = hasImages && zoomLevel < MAX_ZOOM - ZOOM_EPSILON;
+      const maxZoom = getDynamicMaxZoom();
+      const canZoomIn = hasImages && zoomLevel < maxZoom - ZOOM_EPSILON;
       const canZoomOut = hasImages && zoomLevel > MIN_ZOOM + ZOOM_EPSILON;
       prevButton.disabled = !hasImages || currentIndex <= 0;
       nextButton.disabled = !hasImages || currentIndex >= catalog.length - 1;
