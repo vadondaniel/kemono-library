@@ -939,6 +939,41 @@ class LibraryDB:
                 conn=own_conn,
             )
 
+    def find_version_by_source_global(
+        self,
+        *,
+        service: str,
+        external_user_id: str,
+        external_post_id: str,
+        conn: sqlite3.Connection | None = None,
+    ) -> sqlite3.Row | None:
+        if conn is not None:
+            return conn.execute(
+                """
+                SELECT v.*,
+                       p.creator_id,
+                       CASE WHEN p.default_version_id = v.id THEN 1 ELSE 0 END AS is_default
+                FROM post_versions v
+                JOIN posts p ON p.id = v.post_id
+                WHERE v.source_service = ?
+                  AND v.source_user_id = ?
+                  AND v.source_post_id = ?
+                ORDER BY
+                    CASE WHEN p.default_version_id = v.id THEN 0 ELSE 1 END ASC,
+                    v.updated_at DESC,
+                    v.id DESC
+                LIMIT 1
+                """,
+                (service, external_user_id, external_post_id),
+            ).fetchone()
+        with self._connect() as own_conn:
+            return self.find_version_by_source_global(
+                service=service,
+                external_user_id=external_user_id,
+                external_post_id=external_post_id,
+                conn=own_conn,
+            )
+
     def replace_attachments(
         self,
         post_id: int,
@@ -1482,6 +1517,7 @@ class LibraryDB:
             );
             """
         )
+        self._ensure_post_version_indexes(conn)
 
     def _backfill_post_versions(self, conn: sqlite3.Connection) -> None:
         posts = conn.execute("SELECT * FROM posts ORDER BY id").fetchall()
@@ -1584,6 +1620,21 @@ class LibraryDB:
         next_external_post_id: str | None,
         prev_external_post_id: str | None,
     ) -> int:
+        normalized_source_service = self._normalize_optional_text(source_service)
+        normalized_source_user_id = self._normalize_optional_text(source_user_id)
+        normalized_source_post_id = self._normalize_optional_text(source_post_id)
+        if normalized_source_service and normalized_source_user_id and normalized_source_post_id:
+            existing_version = self.find_version_by_source_global(
+                service=normalized_source_service,
+                external_user_id=normalized_source_user_id,
+                external_post_id=normalized_source_post_id,
+                conn=conn,
+            )
+            if existing_version:
+                raise ValueError(
+                    "This source version already exists locally under "
+                    f"post #{int(existing_version['post_id'])} as version #{int(existing_version['id'])}."
+                )
         cursor = conn.execute(
             """
             INSERT INTO post_versions (
@@ -1613,9 +1664,9 @@ class LibraryDB:
                 self._normalize_required_label(label),
                 self._normalize_optional_text(language),
                 1 if is_manual else 0,
-                self._normalize_optional_text(source_service),
-                self._normalize_optional_text(source_user_id),
-                self._normalize_optional_text(source_post_id),
+                normalized_source_service,
+                normalized_source_user_id,
+                normalized_source_post_id,
                 title,
                 content,
                 self._normalize_optional_text(thumbnail_name),
@@ -1710,6 +1761,47 @@ class LibraryDB:
         if not row:
             return None
         return int(row["default_version_id"]) if row["default_version_id"] is not None else None
+
+    def _ensure_post_version_indexes(self, conn: sqlite3.Connection) -> None:
+        existing_indexes = {
+            row["name"]
+            for row in conn.execute("PRAGMA index_list(post_versions)").fetchall()
+        }
+        unique_source_index = "ux_post_versions_global_source"
+        lookup_source_index = "ix_post_versions_source_lookup"
+        if unique_source_index in existing_indexes or lookup_source_index in existing_indexes:
+            return
+
+        duplicate = conn.execute(
+            """
+            SELECT source_service, source_user_id, source_post_id
+            FROM post_versions
+            WHERE source_service IS NOT NULL
+              AND source_user_id IS NOT NULL
+              AND source_post_id IS NOT NULL
+            GROUP BY source_service, source_user_id, source_post_id
+            HAVING COUNT(*) > 1
+            LIMIT 1
+            """
+        ).fetchone()
+        if duplicate:
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS ix_post_versions_source_lookup
+                ON post_versions (source_service, source_user_id, source_post_id)
+                """
+            )
+            return
+
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_post_versions_global_source
+            ON post_versions (source_service, source_user_id, source_post_id)
+            WHERE source_service IS NOT NULL
+              AND source_user_id IS NOT NULL
+              AND source_post_id IS NOT NULL
+            """
+        )
 
     def _set_default_post_version_conn(self, conn: sqlite3.Connection, *, post_id: int, version_id: int) -> None:
         row = conn.execute(

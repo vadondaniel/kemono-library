@@ -2446,6 +2446,151 @@ def test_import_commit_force_target_post_version_ignores_new_mode(tmp_path, monk
     assert imported["language"] == "ko"
 
 
+def test_import_commit_rejects_source_version_already_attached_to_other_post(tmp_path, monkeypatch):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+
+    creator_id = db.create_creator("Duplicate Source Creator")
+    primary_post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="70479526",
+        external_post_id="100",
+        title="Original",
+        content="jp",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/70479526/post/100",
+    )
+    secondary_post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="70479526",
+        external_post_id="101",
+        title="Second",
+        content="jp",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/70479526/post/101",
+    )
+    db.create_post_version(
+        post_id=primary_post_id,
+        label="EN TL",
+        language="en",
+        is_manual=False,
+        source_service="fanbox",
+        source_user_id="70479526",
+        source_post_id="200",
+        title="Translated",
+        content="translated",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/70479526/post/200",
+        set_default=False,
+    )
+
+    def fail_fetch(ref, fallback_user_id=None):  # noqa: ARG001
+        raise AssertionError("fetch should not run when the source tuple already exists locally")
+
+    monkeypatch.setattr("kemono_library.web.fetch_post_json", fail_fetch)
+
+    response = app.test_client().post(
+        "/import/commit",
+        data={
+            "creator_id": str(creator_id),
+            "series_id": "",
+            "service": "fanbox",
+            "user_id": "70479526",
+            "post_id": "200",
+            "import_target_mode": "existing",
+            "target_post_id": str(secondary_post_id),
+            "overwrite_matching_version": "0",
+            "set_as_default": "0",
+            "version_label": "EN TL",
+            "version_language": "en",
+        },
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert b"This source already exists under local post" in response.data
+    assert len(db.list_post_versions(primary_post_id)) == 2
+    assert len(db.list_post_versions(secondary_post_id)) == 1
+
+
+def test_create_post_version_rejects_global_duplicate_source_tuple(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+
+    creator_id = db.create_creator("Global Source Creator")
+    first_post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="700",
+        external_post_id="100",
+        title="First",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/700/post/100",
+    )
+    second_post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="700",
+        external_post_id="101",
+        title="Second",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/700/post/101",
+    )
+    db.create_post_version(
+        post_id=first_post_id,
+        label="EN",
+        language="en",
+        is_manual=False,
+        source_service="fanbox",
+        source_user_id="700",
+        source_post_id="200",
+        title="First TL",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/700/post/200",
+        set_default=False,
+    )
+
+    with pytest.raises(ValueError, match=r"source version already exists locally under post #\d+ as version #\d+"):
+        db.create_post_version(
+            post_id=second_post_id,
+            label="Duplicate",
+            language="en",
+            is_manual=False,
+            source_service="fanbox",
+            source_user_id="700",
+            source_post_id="200",
+            title="Duplicate TL",
+            content="",
+            metadata={},
+            source_url="https://kemono.cr/fanbox/user/700/post/200",
+            set_default=False,
+        )
+
+
 def test_post_detail_uses_requested_version_id(tmp_path):
     app = create_app(
         {

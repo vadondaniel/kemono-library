@@ -2450,6 +2450,11 @@ def _import_post_into_library(
         local_post_id = int(exact_match_post["id"])
         if import_target_mode == "new":
             raise ValueError("This source already exists locally. Import as a version or overwrite it.")
+        if import_target_mode == "existing" and target_post_id and target_post_id != local_post_id:
+            raise ValueError(
+                f"This source already exists under local post #{local_post_id}. "
+                "Pick that post or overwrite the existing version there."
+            )
     elif import_target_mode == "existing":
         if not target_post_id:
             raise ValueError("Pick a target post for version import.")
@@ -2545,6 +2550,19 @@ def _import_post_into_library(
                 external_post_id=post_id,
                 conn=conn,
             )
+            conflicting_version = None
+            if not existing_version:
+                conflicting_version = db.find_version_by_source_global(
+                    service=service,
+                    external_user_id=user_id,
+                    external_post_id=post_id,
+                    conn=conn,
+                )
+                if conflicting_version and int(conflicting_version["post_id"]) != local_post_id:
+                    raise ValueError(
+                        "This source version already exists locally under "
+                        f"post #{int(conflicting_version['post_id'])} as version #{int(conflicting_version['id'])}."
+                    )
             if existing_version and not overwrite_matching_version and not imported_into_new_local_post:
                 raise ValueError("Matching source version already exists. Enable overwrite to replace it.")
 
@@ -2724,7 +2742,15 @@ def _find_import_source_match(
     post_id: str,
     creator_id: int,
 ):
-    exact_match = db.find_post_by_source(service, user_id, post_id)
+    version_match = db.find_version_by_source_global(
+        service=service,
+        external_user_id=user_id,
+        external_post_id=post_id,
+    )
+    if version_match:
+        exact_match = db.get_post(int(version_match["post_id"]))
+    else:
+        exact_match = db.find_post_by_source(service, user_id, post_id)
     if not exact_match:
         return None
     if int(exact_match["creator_id"]) == creator_id:
@@ -2736,6 +2762,11 @@ def _find_import_source_match(
         if conflicting_creator and conflicting_creator["name"]
         else f"creator #{exact_match['creator_id']}"
     )
+    if version_match:
+        raise ValueError(
+            f'This source already exists under creator "{conflicting_name}" '
+            f'as post #{exact_match["id"]} version #{int(version_match["id"])}.'
+        )
     raise ValueError(f'This source already exists under creator "{conflicting_name}" as post #{exact_match["id"]}.')
 
 
