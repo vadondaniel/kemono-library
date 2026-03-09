@@ -2802,6 +2802,71 @@ body.is-busy-overlay-open {
   text-align: center;
 }
 
+.post-reader-scrollbar {
+  position: absolute;
+  top: 0.6rem;
+  bottom: 0.6rem;
+  right: 0.34rem;
+  width: 0.95rem;
+  --post-reader-scroll-thumb-size: 2rem;
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: slider-vertical;
+  writing-mode: vertical-lr;
+  direction: rtl;
+  background: transparent;
+  z-index: 4;
+  cursor: ns-resize;
+  opacity: 0;
+  pointer-events: auto;
+  transform: translateX(4px);
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.post-reader-stage.is-scroll-active .post-reader-scrollbar,
+.post-reader-canvas.is-dragging ~ .post-reader-scrollbar,
+.post-reader-scrollbar:hover,
+.post-reader-scrollbar:active,
+.post-reader-scrollbar:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0);
+}
+
+.post-reader-scrollbar::-webkit-slider-runnable-track {
+  width: 0.42rem;
+  border-radius: 0.35rem;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  background: color-mix(in srgb, var(--card-solid) 86%, black 14%);
+}
+
+.post-reader-scrollbar::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 0.74rem;
+  height: var(--post-reader-scroll-thumb-size);
+  border-radius: 0.35rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 44%, var(--border));
+  background: color-mix(in srgb, var(--accent-soft) 52%, var(--card-solid));
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28);
+}
+
+.post-reader-scrollbar::-moz-range-track {
+  width: 0.42rem;
+  border-radius: 0.35rem;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  background: color-mix(in srgb, var(--card-solid) 86%, black 14%);
+}
+
+.post-reader-scrollbar::-moz-range-thumb {
+  width: 0.74rem;
+  height: var(--post-reader-scroll-thumb-size);
+  border-radius: 0.35rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 44%, var(--border));
+  background: color-mix(in srgb, var(--accent-soft) 52%, var(--card-solid));
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28);
+}
+
 .post-reader-caption {
   grid-area: caption;
   margin: 0;

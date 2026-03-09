@@ -614,6 +614,7 @@
     }
     const panel = document.querySelector("[data-post-reader-panel]");
     const canvas = document.querySelector("[data-post-reader-canvas]");
+    const stage = panel instanceof HTMLElement ? panel.querySelector(".post-reader-stage") : null;
     const image = document.querySelector("[data-post-reader-image]");
     const emptyState = document.querySelector("[data-post-reader-empty]");
     const caption = document.querySelector("[data-post-reader-caption]");
@@ -623,6 +624,7 @@
     const zoomInButton = document.querySelector("[data-post-reader-zoom-in]");
     const zoomOutButton = document.querySelector("[data-post-reader-zoom-out]");
     const zoomFitButton = document.querySelector("[data-post-reader-zoom-fit]");
+    const scrollBar = document.querySelector("[data-post-reader-scrollbar]");
     const openTabLink = document.querySelector("[data-post-reader-open-tab]");
 
     if (
@@ -651,14 +653,17 @@
     const ZOOM_EPSILON = 0.0001;
     const BUTTON_ZOOM_STEP = 0.2;
     const WHEEL_ZOOM_PER_PIXEL = 0.0014;
+    const SCROLL_MODE_PAN_PER_PIXEL = 1;
     let zoomLevel = 1;
     let panX = 0;
     let panY = 0;
+    let scrollModeActive = false;
     let dragPointerId = null;
     let dragStartX = 0;
     let dragStartY = 0;
     let dragPanX = 0;
     let dragPanY = 0;
+    let scrollActivityTimer = null;
 
     const readSavedImageIndex = () => {
       if (!imageStateStorageKey) {
@@ -759,13 +764,65 @@
       return { maxX, maxY };
     };
 
+    const isDefaultView = () =>
+      Math.abs(zoomLevel - MIN_ZOOM) <= ZOOM_EPSILON &&
+      Math.abs(panX) <= ZOOM_EPSILON &&
+      Math.abs(panY) <= ZOOM_EPSILON;
+
+    const updateScrollBar = (maxY) => {
+      if (!(scrollBar instanceof HTMLInputElement)) {
+        return;
+      }
+      const hasImages = catalog.length > 0 && currentIndex >= 0;
+      const usableMaxY = Number.isFinite(maxY) ? Math.max(0, maxY) : Math.max(0, getPanBounds().maxY);
+      const canvasHeight = Math.max(1, canvas.clientHeight);
+      const totalHeight = canvasHeight + 2 * usableMaxY;
+      const viewportRatio = Math.max(0, Math.min(1, canvasHeight / totalHeight));
+      const railHeight = Math.max(1, scrollBar.clientHeight || canvasHeight);
+      const thumbPx = Math.round(Math.max(18, Math.min(railHeight * 0.92, railHeight * viewportRatio)));
+      scrollBar.style.setProperty("--post-reader-scroll-thumb-size", `${thumbPx}px`);
+      const active = hasImages && scrollModeActive && usableMaxY > ZOOM_EPSILON;
+      scrollBar.hidden = !active;
+      scrollBar.disabled = !active;
+      if (!active) {
+        scrollBar.value = "0";
+        return;
+      }
+      const progress = (panY + usableMaxY) / (2 * usableMaxY);
+      const clamped = Math.max(0, Math.min(1, progress));
+      scrollBar.value = String(Math.round(clamped * 100));
+    };
+
+    const markScrollActivity = () => {
+      if (!(stage instanceof HTMLElement)) {
+        return;
+      }
+      stage.classList.add("is-scroll-active");
+      if (scrollActivityTimer !== null) {
+        window.clearTimeout(scrollActivityTimer);
+      }
+      scrollActivityTimer = window.setTimeout(() => {
+        stage.classList.remove("is-scroll-active");
+        scrollActivityTimer = null;
+      }, 900);
+    };
+
     const setTransforms = () => {
+      if (scrollModeActive) {
+        panX = 0;
+      }
       const { maxX, maxY } = clampPan();
       image.style.transform = `translate(${panX}px, ${panY}px) scale(${zoomLevel})`;
-      image.style.cursor = maxX > ZOOM_EPSILON || maxY > ZOOM_EPSILON ? "grab" : "default";
+      if (scrollModeActive) {
+        image.style.cursor = maxY > ZOOM_EPSILON ? "ns-resize" : "default";
+      } else {
+        image.style.cursor = maxX > ZOOM_EPSILON || maxY > ZOOM_EPSILON ? "grab" : "default";
+      }
+      updateScrollBar(maxY);
     };
 
     const fitView = () => {
+      scrollModeActive = false;
       zoomLevel = 1;
       panX = 0;
       panY = 0;
@@ -773,17 +830,22 @@
       updateButtons();
     };
 
+    const enterScrollMode = () => {
+      scrollModeActive = true;
+      zoomLevel = computeCoverZoom();
+      panX = 0;
+      panY = 0;
+      setTransforms();
+      const { maxY } = getPanBounds();
+      panY = maxY;
+      setTransforms();
+      markScrollActivity();
+      updateButtons();
+    };
+
     const toggleFitMode = () => {
-      const isDefaultFit =
-        Math.abs(zoomLevel - MIN_ZOOM) <= ZOOM_EPSILON &&
-        Math.abs(panX) <= ZOOM_EPSILON &&
-        Math.abs(panY) <= ZOOM_EPSILON;
-      if (isDefaultFit) {
-        zoomLevel = computeCoverZoom();
-        panX = 0;
-        panY = 0;
-        setTransforms();
-        updateButtons();
+      if (isDefaultView()) {
+        enterScrollMode();
         return;
       }
       fitView();
@@ -804,6 +866,7 @@
       if (Math.abs(clamped - zoomLevel) <= ZOOM_EPSILON) {
         return;
       }
+      scrollModeActive = false;
       const beforeRect = image.getBoundingClientRect();
       const canAnchor = beforeRect.width > 0 && beforeRect.height > 0;
       let relX = 0.5;
@@ -858,6 +921,7 @@
       zoomInButton.disabled = !canZoomIn;
       zoomOutButton.disabled = !canZoomOut;
       zoomFitButton.disabled = !hasImages;
+      zoomFitButton.textContent = hasImages && isDefaultView() ? "Scroll" : "Fit";
     };
 
     const renderActive = () => {
@@ -1026,6 +1090,22 @@
     zoomInButton.addEventListener("click", () => zoomBy(BUTTON_ZOOM_STEP));
     zoomOutButton.addEventListener("click", () => zoomBy(-BUTTON_ZOOM_STEP));
     zoomFitButton.addEventListener("click", toggleFitMode);
+    if (scrollBar instanceof HTMLInputElement) {
+      scrollBar.addEventListener("input", () => {
+        if (!scrollModeActive) {
+          return;
+        }
+        const { maxY } = getPanBounds();
+        if (maxY <= ZOOM_EPSILON) {
+          return;
+        }
+        const ratio = Math.max(0, Math.min(1, Number.parseFloat(scrollBar.value) / 100));
+        panX = 0;
+        panY = -maxY + ratio * (2 * maxY);
+        setTransforms();
+        markScrollActivity();
+      });
+    }
 
     canvas.addEventListener(
       "wheel",
@@ -1033,8 +1113,21 @@
         if (catalog.length === 0) {
           return;
         }
-        event.preventDefault();
         const deltaPixels = normalizedWheelDeltaPixels(event);
+        if (scrollModeActive) {
+          const { maxY } = getPanBounds();
+          if (maxY <= ZOOM_EPSILON) {
+            return;
+          }
+          event.preventDefault();
+          panX = 0;
+          panY -= deltaPixels * SCROLL_MODE_PAN_PER_PIXEL;
+          setTransforms();
+          markScrollActivity();
+          updateButtons();
+          return;
+        }
+        event.preventDefault();
         const factor = Math.exp(-deltaPixels * WHEEL_ZOOM_PER_PIXEL);
         const next = zoomLevel * factor;
         setZoomAroundPoint(next, event.clientX, event.clientY);
@@ -1066,6 +1159,7 @@
       panX = dragPanX + (event.clientX - dragStartX);
       panY = dragPanY + (event.clientY - dragStartY);
       setTransforms();
+      markScrollActivity();
     });
 
     const endDrag = (event) => {
@@ -1080,6 +1174,13 @@
     };
     canvas.addEventListener("pointerup", endDrag);
     canvas.addEventListener("pointercancel", endDrag);
+    window.addEventListener("resize", () => {
+      if (catalog.length === 0 || currentIndex < 0) {
+        return;
+      }
+      setTransforms();
+      updateButtons();
+    });
 
     window.addEventListener("keydown", (event) => {
       const target = event.target;
