@@ -579,9 +579,13 @@ class LibraryDB:
             rows = conn.execute(
                 """
                 SELECT v.*,
+                       parent.label AS derived_from_label,
+                       parent.language AS derived_from_language,
+                       parent.title AS derived_from_title,
                        CASE WHEN p.default_version_id = v.id THEN 1 ELSE 0 END AS is_default
                 FROM post_versions v
                 JOIN posts p ON p.id = v.post_id
+                LEFT JOIN post_versions parent ON parent.id = v.derived_from_version_id
                 WHERE v.post_id = ?
                 ORDER BY
                     CASE WHEN p.default_version_id = v.id THEN 0 ELSE 1 END ASC,
@@ -600,9 +604,13 @@ class LibraryDB:
             return conn.execute(
                 """
                 SELECT v.*,
+                       parent.label AS derived_from_label,
+                       parent.language AS derived_from_language,
+                       parent.title AS derived_from_title,
                        CASE WHEN p.default_version_id = v.id THEN 1 ELSE 0 END AS is_default
                 FROM post_versions v
                 JOIN posts p ON p.id = v.post_id
+                LEFT JOIN post_versions parent ON parent.id = v.derived_from_version_id
                 WHERE v.id = ? AND v.post_id = ?
                 """,
                 (resolved_version_id, post_id),
@@ -629,6 +637,7 @@ class LibraryDB:
         edited_at: str | None = None,
         next_external_post_id: str | None = None,
         prev_external_post_id: str | None = None,
+        derived_from_version_id: int | None = None,
         set_default: bool = False,
         conn: sqlite3.Connection | None = None,
     ) -> int:
@@ -653,6 +662,7 @@ class LibraryDB:
                 edited_at=edited_at,
                 next_external_post_id=next_external_post_id,
                 prev_external_post_id=prev_external_post_id,
+                derived_from_version_id=derived_from_version_id,
             )
             if set_default or not self._get_default_version_id_conn(conn, post_id):
                 self._set_default_post_version_conn(conn, post_id=post_id, version_id=version_id)
@@ -678,6 +688,7 @@ class LibraryDB:
                 edited_at=edited_at,
                 next_external_post_id=next_external_post_id,
                 prev_external_post_id=prev_external_post_id,
+                derived_from_version_id=derived_from_version_id,
                 set_default=set_default,
                 conn=own_conn,
             )
@@ -719,6 +730,7 @@ class LibraryDB:
                 edited_at=source["edited_at"],
                 next_external_post_id=source["next_external_post_id"],
                 prev_external_post_id=source["prev_external_post_id"],
+                derived_from_version_id=source_version_id,
             )
 
             attachments = conn.execute(
@@ -872,6 +884,10 @@ class LibraryDB:
             ).fetchone()
             if not row:
                 return False
+            conn.execute(
+                "UPDATE post_versions SET derived_from_version_id = NULL WHERE derived_from_version_id = ?",
+                (version_id,),
+            )
             conn.execute("DELETE FROM post_versions WHERE id = ?", (version_id,))
             fallback = conn.execute(
                 """
@@ -1477,12 +1493,14 @@ class LibraryDB:
                 edited_at TEXT,
                 next_external_post_id TEXT,
                 prev_external_post_id TEXT,
+                derived_from_version_id INTEGER,
                 metadata_json TEXT NOT NULL DEFAULT '{}',
                 source_url TEXT,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE (post_id, source_service, source_user_id, source_post_id),
-                FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
+                FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE,
+                FOREIGN KEY (derived_from_version_id) REFERENCES post_versions(id) ON DELETE SET NULL
             );
 
             CREATE TABLE IF NOT EXISTS post_version_attachments (
@@ -1517,6 +1535,12 @@ class LibraryDB:
             );
             """
         )
+        existing_columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(post_versions)").fetchall()
+        }
+        if "derived_from_version_id" not in existing_columns:
+            conn.execute("ALTER TABLE post_versions ADD COLUMN derived_from_version_id INTEGER")
         self._ensure_post_version_indexes(conn)
 
     def _backfill_post_versions(self, conn: sqlite3.Connection) -> None:
@@ -1619,10 +1643,19 @@ class LibraryDB:
         edited_at: str | None,
         next_external_post_id: str | None,
         prev_external_post_id: str | None,
+        derived_from_version_id: int | None,
     ) -> int:
         normalized_source_service = self._normalize_optional_text(source_service)
         normalized_source_user_id = self._normalize_optional_text(source_user_id)
         normalized_source_post_id = self._normalize_optional_text(source_post_id)
+        normalized_derived_from_version_id = int(derived_from_version_id) if derived_from_version_id else None
+        if normalized_derived_from_version_id is not None:
+            parent_row = conn.execute(
+                "SELECT id FROM post_versions WHERE id = ? AND post_id = ?",
+                (normalized_derived_from_version_id, post_id),
+            ).fetchone()
+            if not parent_row:
+                raise ValueError("Parent version not found on this post.")
         if normalized_source_service and normalized_source_user_id and normalized_source_post_id:
             existing_version = self.find_version_by_source_global(
                 service=normalized_source_service,
@@ -1654,10 +1687,11 @@ class LibraryDB:
                 edited_at,
                 next_external_post_id,
                 prev_external_post_id,
+                derived_from_version_id,
                 metadata_json,
                 source_url
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 post_id,
@@ -1676,6 +1710,7 @@ class LibraryDB:
                 self._normalize_optional_text(edited_at),
                 self._normalize_optional_text(next_external_post_id),
                 self._normalize_optional_text(prev_external_post_id),
+                normalized_derived_from_version_id,
                 json.dumps(metadata, ensure_ascii=True),
                 self._normalize_optional_text(source_url),
             ),
@@ -1769,37 +1804,40 @@ class LibraryDB:
         }
         unique_source_index = "ux_post_versions_global_source"
         lookup_source_index = "ix_post_versions_source_lookup"
-        if unique_source_index in existing_indexes or lookup_source_index in existing_indexes:
-            return
-
-        duplicate = conn.execute(
-            """
-            SELECT source_service, source_user_id, source_post_id
-            FROM post_versions
-            WHERE source_service IS NOT NULL
-              AND source_user_id IS NOT NULL
-              AND source_post_id IS NOT NULL
-            GROUP BY source_service, source_user_id, source_post_id
-            HAVING COUNT(*) > 1
-            LIMIT 1
-            """
-        ).fetchone()
-        if duplicate:
-            conn.execute(
+        if unique_source_index not in existing_indexes and lookup_source_index not in existing_indexes:
+            duplicate = conn.execute(
                 """
-                CREATE INDEX IF NOT EXISTS ix_post_versions_source_lookup
-                ON post_versions (source_service, source_user_id, source_post_id)
+                SELECT source_service, source_user_id, source_post_id
+                FROM post_versions
+                WHERE source_service IS NOT NULL
+                  AND source_user_id IS NOT NULL
+                  AND source_post_id IS NOT NULL
+                GROUP BY source_service, source_user_id, source_post_id
+                HAVING COUNT(*) > 1
+                LIMIT 1
                 """
-            )
-            return
-
+            ).fetchone()
+            if duplicate:
+                conn.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS ix_post_versions_source_lookup
+                    ON post_versions (source_service, source_user_id, source_post_id)
+                    """
+                )
+            else:
+                conn.execute(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS ux_post_versions_global_source
+                    ON post_versions (source_service, source_user_id, source_post_id)
+                    WHERE source_service IS NOT NULL
+                      AND source_user_id IS NOT NULL
+                      AND source_post_id IS NOT NULL
+                    """
+                )
         conn.execute(
             """
-            CREATE UNIQUE INDEX IF NOT EXISTS ux_post_versions_global_source
-            ON post_versions (source_service, source_user_id, source_post_id)
-            WHERE source_service IS NOT NULL
-              AND source_user_id IS NOT NULL
-              AND source_post_id IS NOT NULL
+            CREATE INDEX IF NOT EXISTS ix_post_versions_derived_from
+            ON post_versions (derived_from_version_id)
             """
         )
 

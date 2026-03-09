@@ -54,6 +54,9 @@
             {% if active_version['edited_at'] %}
               <span class="post-viewer-chip"><strong>Edited:</strong> <time datetime="{{ active_version['edited_at'] }}">{{ active_version['edited_at']|format_datetime }}</time></span>
             {% endif %}
+            {% if active_version['derived_from_version_id'] %}
+              <a class="post-viewer-chip post-viewer-chip-link" href="{{ url_for('post_detail', post_id=post['id'], version_id=active_version['derived_from_version_id'], nav_scope=navigator_scope) }}">Based on: {{ active_version['derived_from_label'] or 'Earlier version' }}{% if active_version['derived_from_language'] %} ({{ active_version['derived_from_language'] }}){% endif %}</a>
+            {% endif %}
             {% if active_version['source_url'] %}
               <a class="post-viewer-chip post-viewer-chip-link" href="{{ active_version['source_url'] }}" target="_blank" rel="noopener noreferrer">Source</a>
             {% else %}

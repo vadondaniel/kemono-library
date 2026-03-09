@@ -12,6 +12,9 @@
         {% if active_version['language'] %}
           <span class="post-edit-chip">Lang: {{ active_version['language'] }}</span>
         {% endif %}
+        {% if active_version['derived_from_version_id'] %}
+          <a class="post-edit-chip post-edit-chip-link" href="{{ url_for('post_detail', post_id=post['id'], version_id=active_version['derived_from_version_id']) }}">Based on: {{ active_version['derived_from_label'] or 'Earlier version' }}{% if active_version['derived_from_language'] %} ({{ active_version['derived_from_language'] }}){% endif %}</a>
+        {% endif %}
         {% if active_version['is_default'] %}
           <span class="post-edit-chip">Default version</span>
         {% endif %}

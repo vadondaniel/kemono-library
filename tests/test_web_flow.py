@@ -1,9 +1,11 @@
+import sqlite3
 from pathlib import Path
 import time
 from bs4 import BeautifulSoup
 import pytest
 from werkzeug.datastructures import MultiDict
 
+from kemono_library.db import LibraryDB
 from kemono_library.web import _import_post_into_library, create_app
 
 
@@ -2645,6 +2647,179 @@ def test_post_detail_uses_requested_version_id(tmp_path):
     detail = app.test_client().get(f"/posts/{post_id}?version_id={clone_id}")
     assert detail.status_code == 200
     assert b"English title" in detail.data
+
+
+def test_clone_post_version_records_lineage_and_shows_parent_link(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Lineage Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="600",
+        external_post_id="100",
+        title="Original title",
+        content="original",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/600/post/100",
+    )
+
+    source_version = db.get_post_version(post_id)
+    assert source_version is not None
+    source_version_id = int(source_version["id"])
+
+    clone_id = db.clone_post_version(
+        post_id=post_id,
+        source_version_id=source_version_id,
+        label="EN",
+        language="en",
+        set_default=False,
+    )
+    clone_row = db.get_post_version(post_id, clone_id)
+    assert clone_row is not None
+    assert int(clone_row["derived_from_version_id"]) == source_version_id
+    assert clone_row["derived_from_label"] == source_version["label"]
+    assert clone_row["derived_from_title"] == source_version["title"]
+
+    detail = app.test_client().get(f"/posts/{post_id}?version_id={clone_id}")
+    assert detail.status_code == 200
+    assert b"Based on: Original" in detail.data
+    assert f"version_id={source_version_id}".encode() in detail.data
+
+
+def test_delete_post_version_clears_child_lineage(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Lineage Delete Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="601",
+        external_post_id="100",
+        title="Original title",
+        content="original",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/601/post/100",
+    )
+
+    source_version = db.get_post_version(post_id)
+    assert source_version is not None
+    source_version_id = int(source_version["id"])
+    clone_id = db.clone_post_version(
+        post_id=post_id,
+        source_version_id=source_version_id,
+        label="EN",
+        language="en",
+        set_default=False,
+    )
+
+    assert db.delete_post_version(post_id, source_version_id) is True
+    clone_row = db.get_post_version(post_id, clone_id)
+    assert clone_row is not None
+    assert clone_row["derived_from_version_id"] is None
+    assert clone_row["derived_from_label"] is None
+
+
+def test_init_schema_adds_lineage_column_to_legacy_post_versions_table(tmp_path):
+    db_path = tmp_path / "legacy.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE creators (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            service TEXT,
+            external_user_id TEXT,
+            icon_remote_url TEXT,
+            icon_local_path TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE series (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            creator_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (creator_id, name),
+            FOREIGN KEY (creator_id) REFERENCES creators(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE posts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            creator_id INTEGER NOT NULL,
+            series_id INTEGER,
+            service TEXT NOT NULL,
+            external_user_id TEXT NOT NULL,
+            external_post_id TEXT NOT NULL,
+            title TEXT NOT NULL,
+            content TEXT,
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            source_url TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (service, external_user_id, external_post_id),
+            FOREIGN KEY (creator_id) REFERENCES creators(id) ON DELETE CASCADE,
+            FOREIGN KEY (series_id) REFERENCES series(id) ON DELETE SET NULL
+        );
+
+        CREATE TABLE post_versions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            post_id INTEGER NOT NULL,
+            label TEXT NOT NULL DEFAULT 'Original',
+            language TEXT,
+            is_manual INTEGER NOT NULL DEFAULT 0,
+            source_service TEXT,
+            source_user_id TEXT,
+            source_post_id TEXT,
+            title TEXT NOT NULL,
+            content TEXT,
+            thumbnail_name TEXT,
+            thumbnail_remote_url TEXT,
+            thumbnail_local_path TEXT,
+            published_at TEXT,
+            edited_at TEXT,
+            next_external_post_id TEXT,
+            prev_external_post_id TEXT,
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            source_url TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (post_id, source_service, source_user_id, source_post_id),
+            FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
+        );
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    db = LibraryDB(db_path)
+    db.init_schema()
+
+    verify_conn = sqlite3.connect(db_path)
+    column_names = {
+        row[1]
+        for row in verify_conn.execute("PRAGMA table_info(post_versions)").fetchall()
+    }
+    verify_conn.close()
+    assert "derived_from_version_id" in column_names
 
 
 def test_edit_version_reimport_link_only_for_non_manual_versions(tmp_path):
