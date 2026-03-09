@@ -2738,6 +2738,105 @@ def test_delete_post_version_clears_child_lineage(tmp_path):
     assert clone_row["derived_from_label"] is None
 
 
+def test_post_projection_tracks_default_version_even_without_source_url(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Projection Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="610",
+        external_post_id="100",
+        title="Original title",
+        content="original",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/610/post/100",
+    )
+
+    source_version = db.get_post_version(post_id)
+    assert source_version is not None
+    clone_id = db.clone_post_version(
+        post_id=post_id,
+        source_version_id=int(source_version["id"]),
+        label="Local edit",
+        language="en",
+        set_default=True,
+    )
+
+    clone_row = db.get_post_version(post_id, clone_id)
+    assert clone_row is not None
+    db.update_post_version(
+        version_id=clone_id,
+        label="Local edit",
+        language="en",
+        title="Manual title",
+        content="manual body",
+        thumbnail_name=clone_row["thumbnail_name"],
+        thumbnail_remote_url=clone_row["thumbnail_remote_url"],
+        thumbnail_local_path=clone_row["thumbnail_local_path"],
+        published_at=clone_row["published_at"],
+        edited_at=clone_row["edited_at"],
+        next_external_post_id=clone_row["next_external_post_id"],
+        prev_external_post_id=clone_row["prev_external_post_id"],
+        metadata={},
+        source_url=None,
+    )
+
+    post = db.get_post(post_id)
+    assert post is not None
+    assert int(post["default_version_id"]) == clone_id
+    assert post["title"] == "Manual title"
+    assert post["content"] == "manual body"
+    assert post["source_url"] == ""
+
+
+def test_delete_last_post_version_clears_post_projection(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Versionless Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="611",
+        external_post_id="100",
+        title="Original title",
+        content="original",
+        metadata={"files": [{"path": "/x"}]},
+        source_url="https://kemono.cr/fanbox/user/611/post/100",
+    )
+
+    source_version = db.get_post_version(post_id)
+    assert source_version is not None
+
+    assert db.delete_post_version(post_id, int(source_version["id"])) is True
+
+    post = db.get_post(post_id)
+    assert post is not None
+    assert post["default_version_id"] is None
+    assert post["title"] == ""
+    assert post["content"] is None
+    assert post["metadata_json"] == "{}"
+    assert post["source_url"] == ""
+
+
 def test_init_schema_adds_lineage_column_to_legacy_post_versions_table(tmp_path):
     db_path = tmp_path / "legacy.db"
     conn = sqlite3.connect(db_path)

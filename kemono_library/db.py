@@ -449,50 +449,6 @@ class LibraryDB:
                     conn=own_conn,
                 )
 
-        cursor = conn.execute(
-            """
-            INSERT INTO posts (
-                creator_id, series_id, service, external_user_id, external_post_id,
-                title, content, thumbnail_name, thumbnail_remote_url, thumbnail_local_path,
-                published_at, edited_at, next_external_post_id,
-                prev_external_post_id, metadata_json, source_url
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(service, external_user_id, external_post_id) DO UPDATE SET
-                creator_id = excluded.creator_id,
-                series_id = excluded.series_id,
-                title = excluded.title,
-                content = excluded.content,
-                thumbnail_name = excluded.thumbnail_name,
-                thumbnail_remote_url = excluded.thumbnail_remote_url,
-                thumbnail_local_path = excluded.thumbnail_local_path,
-                published_at = excluded.published_at,
-                edited_at = excluded.edited_at,
-                next_external_post_id = excluded.next_external_post_id,
-                prev_external_post_id = excluded.prev_external_post_id,
-                metadata_json = excluded.metadata_json,
-                source_url = excluded.source_url,
-                updated_at = CURRENT_TIMESTAMP
-            """,
-            (
-                creator_id,
-                series_id,
-                service,
-                external_user_id,
-                external_post_id,
-                title,
-                content,
-                thumbnail_name,
-                thumbnail_remote_url,
-                thumbnail_local_path,
-                published_at,
-                edited_at,
-                next_external_post_id,
-                prev_external_post_id,
-                json.dumps(metadata, ensure_ascii=True),
-                source_url,
-            ),
-        )
         row = conn.execute(
             """
             SELECT id
@@ -501,7 +457,51 @@ class LibraryDB:
             """,
             (service, external_user_id, external_post_id),
         ).fetchone()
-        post_id = int(row["id"])
+        if row:
+            post_id = int(row["id"])
+            conn.execute(
+                """
+                UPDATE posts
+                SET creator_id = ?,
+                    series_id = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (creator_id, series_id, post_id),
+            )
+        else:
+            cursor = conn.execute(
+                """
+                INSERT INTO posts (
+                    creator_id, series_id, service, external_user_id, external_post_id,
+                    title, content, thumbnail_name, thumbnail_remote_url, thumbnail_local_path,
+                    published_at, edited_at, next_external_post_id,
+                    prev_external_post_id, metadata_json, source_url
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    creator_id,
+                    series_id,
+                    service,
+                    external_user_id,
+                    external_post_id,
+                    title,
+                    content,
+                    thumbnail_name,
+                    thumbnail_remote_url,
+                    thumbnail_local_path,
+                    published_at,
+                    edited_at,
+                    next_external_post_id,
+                    prev_external_post_id,
+                    json.dumps(metadata, ensure_ascii=True),
+                    source_url,
+                ),
+            )
+            if cursor.lastrowid is None:
+                raise RuntimeError("Failed to create post row.")
+            post_id = int(cursor.lastrowid)
 
         existing_version = conn.execute(
             """
@@ -548,6 +548,8 @@ class LibraryDB:
                     int(existing_version["id"]),
                 ),
             )
+            if not self._get_default_version_id_conn(conn, post_id):
+                self._set_default_post_version_conn(conn, post_id=post_id, version_id=int(existing_version["id"]))
         else:
             self.create_post_version(
                 post_id=post_id,
@@ -910,6 +912,7 @@ class LibraryDB:
                     """,
                     (post_id,),
                 )
+                self._sync_post_from_default_version_conn(conn, post_id)
             return True
 
     def find_post_by_source(self, service: str, external_user_id: str, external_post_id: str) -> sqlite3.Row | None:
@@ -1372,6 +1375,9 @@ class LibraryDB:
 
     def update_post(self, post_id: int, title: str, content: str, series_id: int | None) -> None:
         with self._connect() as conn:
+            default_version_id = self._get_default_version_id_conn(conn, post_id)
+            if not default_version_id:
+                raise ValueError("Post has no default version.")
             conn.execute(
                 """
                 UPDATE posts
@@ -1380,30 +1386,29 @@ class LibraryDB:
                 """,
                 (series_id, post_id),
             )
-            default_version_id = self._get_default_version_id_conn(conn, post_id)
-            if default_version_id:
-                conn.execute(
-                    """
-                    UPDATE post_versions
-                    SET title = ?, content = ?, updated_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
-                    """,
-                    (title, content, default_version_id),
-                )
+            conn.execute(
+                """
+                UPDATE post_versions
+                SET title = ?, content = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (title, content, default_version_id),
+            )
             self._sync_post_from_default_version_conn(conn, post_id)
 
     def update_post_thumbnail(self, post_id: int, thumbnail_local_path: str | None) -> None:
         with self._connect() as conn:
             default_version_id = self._get_default_version_id_conn(conn, post_id)
-            if default_version_id:
-                conn.execute(
-                    """
-                    UPDATE post_versions
-                    SET thumbnail_local_path = ?, updated_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
-                    """,
-                    (thumbnail_local_path, default_version_id),
-                )
+            if not default_version_id:
+                raise ValueError("Post has no default version.")
+            conn.execute(
+                """
+                UPDATE post_versions
+                SET thumbnail_local_path = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (thumbnail_local_path, default_version_id),
+            )
             self._sync_post_from_default_version_conn(conn, post_id)
 
     def find_local_post(
@@ -1854,6 +1859,27 @@ class LibraryDB:
         )
         self._sync_post_from_default_version_conn(conn, post_id)
 
+    def _clear_post_projection_conn(self, conn: sqlite3.Connection, post_id: int) -> None:
+        conn.execute(
+            """
+            UPDATE posts
+            SET title = '',
+                content = NULL,
+                thumbnail_name = NULL,
+                thumbnail_remote_url = NULL,
+                thumbnail_local_path = NULL,
+                published_at = NULL,
+                edited_at = NULL,
+                next_external_post_id = NULL,
+                prev_external_post_id = NULL,
+                metadata_json = '{}',
+                source_url = '',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (post_id,),
+        )
+
     def _sync_post_from_default_version_conn(self, conn: sqlite3.Connection, post_id: int) -> None:
         row = conn.execute(
             """
@@ -1865,6 +1891,7 @@ class LibraryDB:
             (post_id,),
         ).fetchone()
         if not row:
+            self._clear_post_projection_conn(conn, post_id)
             return
         conn.execute(
             """
@@ -1879,7 +1906,7 @@ class LibraryDB:
                 next_external_post_id = ?,
                 prev_external_post_id = ?,
                 metadata_json = ?,
-                source_url = COALESCE(?, source_url),
+                source_url = ?,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
             """,
@@ -1894,7 +1921,7 @@ class LibraryDB:
                 row["next_external_post_id"],
                 row["prev_external_post_id"],
                 row["metadata_json"],
-                row["source_url"],
+                self._normalize_optional_text(row["source_url"]) or "",
                 post_id,
             ),
         )
