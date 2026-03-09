@@ -2497,156 +2497,178 @@ def _import_post_into_library(
         field_present=field_presence.get("prev_external_post_id", False),
     )
     source_url = post_ref.canonical_url
-    if imported_into_new_local_post:
-        local_post_id = db.upsert_post(
-            creator_id=creator_id,
-            series_id=series_id,
-            service=service,
-            external_user_id=user_id,
-            external_post_id=post_id,
-            title=str(title),
-            content=str(content),
-            metadata=raw_payload,
-            source_url=source_url,
-            thumbnail_name=thumbnail_name,
-            thumbnail_remote_url=thumbnail_remote_url,
-            thumbnail_local_path=None,
-            published_at=published_at,
-            edited_at=edited_at,
-            next_external_post_id=next_external_post_id,
-            prev_external_post_id=prev_external_post_id,
-        )
-    if local_post_id is None:
-        raise RuntimeError("Import target resolution failed.")
+    created_files: set[Path] = set()
+    download_root: Path | None = None
+    try:
+        with db.transaction() as conn:
+            if imported_into_new_local_post:
+                local_post_id = db.upsert_post(
+                    creator_id=creator_id,
+                    series_id=series_id,
+                    service=service,
+                    external_user_id=user_id,
+                    external_post_id=post_id,
+                    title=str(title),
+                    content=str(content),
+                    metadata=raw_payload,
+                    source_url=source_url,
+                    thumbnail_name=thumbnail_name,
+                    thumbnail_remote_url=thumbnail_remote_url,
+                    thumbnail_local_path=None,
+                    published_at=published_at,
+                    edited_at=edited_at,
+                    next_external_post_id=next_external_post_id,
+                    prev_external_post_id=prev_external_post_id,
+                    conn=conn,
+                )
+            if local_post_id is None:
+                raise RuntimeError("Import target resolution failed.")
 
-    if series_id is not None:
-        db.update_post_series(local_post_id, series_id)
+            if series_id is not None:
+                db.update_post_series(local_post_id, series_id, conn=conn)
 
-    existing_version = db.find_version_by_source(
-        post_id=local_post_id,
-        service=service,
-        external_user_id=user_id,
-        external_post_id=post_id,
-    )
-    if existing_version and not overwrite_matching_version and not imported_into_new_local_post:
-        raise ValueError("Matching source version already exists. Enable overwrite to replace it.")
-
-    is_new_version = existing_version is None or imported_into_new_local_post
-    resolved_version_label = _resolve_import_version_label(version_label, payload.get("title"), is_new_version)
-    resolved_version_language = _optional_str(version_language)
-
-    if existing_version:
-        version_id = int(existing_version["id"])
-        db.update_post_version(
-            version_id=version_id,
-            label=resolved_version_label,
-            language=resolved_version_language,
-            title=str(title),
-            content=str(content),
-            thumbnail_name=thumbnail_name,
-            thumbnail_remote_url=thumbnail_remote_url,
-            thumbnail_local_path=None,
-            published_at=published_at,
-            edited_at=edited_at,
-            next_external_post_id=next_external_post_id,
-            prev_external_post_id=prev_external_post_id,
-            metadata=raw_payload,
-            source_url=source_url,
-        )
-    else:
-        version_id = db.create_post_version(
-            post_id=local_post_id,
-            label=resolved_version_label,
-            language=resolved_version_language,
-            is_manual=False,
-            source_service=service,
-            source_user_id=user_id,
-            source_post_id=post_id,
-            title=str(title),
-            content=str(content),
-            metadata=raw_payload,
-            source_url=source_url,
-            thumbnail_name=thumbnail_name,
-            thumbnail_remote_url=thumbnail_remote_url,
-            thumbnail_local_path=None,
-            published_at=published_at,
-            edited_at=edited_at,
-            next_external_post_id=next_external_post_id,
-            prev_external_post_id=prev_external_post_id,
-            set_default=set_as_default,
-        )
-
-    download_root = files_base / f"post_{local_post_id}"
-    existing_rows = db.list_all_attachments_for_post(local_post_id)
-    existing_by_remote, existing_by_path_key, existing_by_name = _build_existing_file_indexes(
-        files_base,
-        existing_rows,
-    )
-
-    saved: list[dict[str, Any]] = []
-    total = len(selected_attachments)
-    for idx, candidate in enumerate(selected_attachments, start=1):
-        filename = sanitize_filename(candidate.name)
-        path_key = _remote_path_key(candidate.remote_url)
-        destination = (
-            existing_by_remote.get(candidate.remote_url)
-            or existing_by_path_key.get(path_key)
-            or existing_by_name.get(filename)
-            or (download_root / filename)
-        )
-        needs_download = not _is_valid_file(destination)
-        if needs_download:
-            used_remote_url = _download_with_fallback_remote_url(
-                candidate.remote_url,
-                destination,
-                candidate.name,
+            existing_version = db.find_version_by_source(
+                post_id=local_post_id,
+                service=service,
+                external_user_id=user_id,
+                external_post_id=post_id,
+                conn=conn,
             )
-            if not used_remote_url:
-                destination = None
-        if destination and _is_valid_file(destination):
-            local_path = destination.relative_to(files_base).as_posix()
-        else:
-            local_path = None
-        saved.append(
-            {
-                "name": candidate.name,
-                "remote_url": candidate.remote_url,
-                "local_path": local_path,
-                "kind": candidate.kind,
-            }
-        )
-        if progress_callback:
-            progress_callback(idx, total, candidate.name)
+            if existing_version and not overwrite_matching_version and not imported_into_new_local_post:
+                raise ValueError("Matching source version already exists. Enable overwrite to replace it.")
 
-    thumbnail_local_path = _find_thumbnail_local_path(
-        saved,
-        thumbnail_name=thumbnail_name,
-        thumbnail_remote_url=thumbnail_remote_url,
-    )
-    db.replace_attachments(local_post_id, saved, version_id=version_id)
-    db.update_post_version(
-        version_id=version_id,
-        label=resolved_version_label,
-        language=resolved_version_language,
-        title=str(title),
-        content=str(content),
-        thumbnail_name=thumbnail_name,
-        thumbnail_remote_url=thumbnail_remote_url,
-        thumbnail_local_path=thumbnail_local_path,
-        published_at=published_at,
-        edited_at=edited_at,
-        next_external_post_id=next_external_post_id,
-        prev_external_post_id=prev_external_post_id,
-        metadata=raw_payload,
-        source_url=source_url,
-    )
-    tags = _parse_tags_text(tags_text) if tags_text is not None else _extract_tags(payload)
-    db.replace_tags(local_post_id, tags, version_id=version_id)
-    db.replace_previews(local_post_id, _extract_previews(raw_payload), version_id=version_id)
-    if set_as_default:
-        db.set_default_post_version(local_post_id, version_id)
-    else:
-        db.sync_post_from_default_version(local_post_id)
+            is_new_version = existing_version is None or imported_into_new_local_post
+            resolved_version_label = _resolve_import_version_label(version_label, payload.get("title"), is_new_version)
+            resolved_version_language = _optional_str(version_language)
+
+            if existing_version:
+                version_id = int(existing_version["id"])
+                db.update_post_version(
+                    version_id=version_id,
+                    label=resolved_version_label,
+                    language=resolved_version_language,
+                    title=str(title),
+                    content=str(content),
+                    thumbnail_name=thumbnail_name,
+                    thumbnail_remote_url=thumbnail_remote_url,
+                    thumbnail_local_path=None,
+                    published_at=published_at,
+                    edited_at=edited_at,
+                    next_external_post_id=next_external_post_id,
+                    prev_external_post_id=prev_external_post_id,
+                    metadata=raw_payload,
+                    source_url=source_url,
+                    conn=conn,
+                )
+            else:
+                version_id = db.create_post_version(
+                    post_id=local_post_id,
+                    label=resolved_version_label,
+                    language=resolved_version_language,
+                    is_manual=False,
+                    source_service=service,
+                    source_user_id=user_id,
+                    source_post_id=post_id,
+                    title=str(title),
+                    content=str(content),
+                    metadata=raw_payload,
+                    source_url=source_url,
+                    thumbnail_name=thumbnail_name,
+                    thumbnail_remote_url=thumbnail_remote_url,
+                    thumbnail_local_path=None,
+                    published_at=published_at,
+                    edited_at=edited_at,
+                    next_external_post_id=next_external_post_id,
+                    prev_external_post_id=prev_external_post_id,
+                    set_default=set_as_default,
+                    conn=conn,
+                )
+
+            download_root = files_base / f"post_{local_post_id}"
+            existing_rows = db.list_all_attachments_for_post(local_post_id, conn=conn)
+            existing_by_remote, existing_by_path_key, existing_by_name = _build_existing_file_indexes(
+                files_base,
+                existing_rows,
+            )
+
+            saved: list[dict[str, Any]] = []
+            total = len(selected_attachments)
+            for idx, candidate in enumerate(selected_attachments, start=1):
+                filename = sanitize_filename(candidate.name)
+                path_key = _remote_path_key(candidate.remote_url)
+                destination = (
+                    existing_by_remote.get(candidate.remote_url)
+                    or existing_by_path_key.get(path_key)
+                    or existing_by_name.get(filename)
+                    or (download_root / filename)
+                )
+                needs_download = not _is_valid_file(destination)
+                if needs_download:
+                    used_remote_url = _download_with_fallback_remote_url(
+                        candidate.remote_url,
+                        destination,
+                        candidate.name,
+                    )
+                    if used_remote_url and destination is not None and _is_valid_file(destination):
+                        created_files.add(destination)
+                    if not used_remote_url:
+                        destination = None
+                if destination and _is_valid_file(destination):
+                    local_path = destination.relative_to(files_base).as_posix()
+                else:
+                    local_path = None
+                saved.append(
+                    {
+                        "name": candidate.name,
+                        "remote_url": candidate.remote_url,
+                        "local_path": local_path,
+                        "kind": candidate.kind,
+                    }
+                )
+                if progress_callback:
+                    progress_callback(idx, total, candidate.name)
+
+            thumbnail_local_path = _find_thumbnail_local_path(
+                saved,
+                thumbnail_name=thumbnail_name,
+                thumbnail_remote_url=thumbnail_remote_url,
+            )
+            db.replace_attachments(local_post_id, saved, version_id=version_id, conn=conn)
+            db.update_post_version(
+                version_id=version_id,
+                label=resolved_version_label,
+                language=resolved_version_language,
+                title=str(title),
+                content=str(content),
+                thumbnail_name=thumbnail_name,
+                thumbnail_remote_url=thumbnail_remote_url,
+                thumbnail_local_path=thumbnail_local_path,
+                published_at=published_at,
+                edited_at=edited_at,
+                next_external_post_id=next_external_post_id,
+                prev_external_post_id=prev_external_post_id,
+                metadata=raw_payload,
+                source_url=source_url,
+                conn=conn,
+            )
+            tags = _parse_tags_text(tags_text) if tags_text is not None else _extract_tags(payload)
+            db.replace_tags(local_post_id, tags, version_id=version_id, conn=conn)
+            db.replace_previews(local_post_id, _extract_previews(raw_payload), version_id=version_id, conn=conn)
+            if set_as_default:
+                db.set_default_post_version(local_post_id, version_id, conn=conn)
+            else:
+                db.sync_post_from_default_version(local_post_id, conn=conn)
+    except Exception:
+        for path in created_files:
+            try:
+                if path.is_file():
+                    path.unlink()
+            except OSError:
+                pass
+        if imported_into_new_local_post and download_root is not None:
+            shutil.rmtree(download_root, ignore_errors=True)
+        raise
+
     return local_post_id, version_id
 
 

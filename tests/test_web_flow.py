@@ -1,9 +1,10 @@
 from pathlib import Path
 import time
 from bs4 import BeautifulSoup
+import pytest
 from werkzeug.datastructures import MultiDict
 
-from kemono_library.web import create_app
+from kemono_library.web import _import_post_into_library, create_app
 
 
 def test_import_and_resolve_flow(tmp_path, monkeypatch):
@@ -417,6 +418,88 @@ def test_import_commit_rejects_source_owned_by_other_creator(tmp_path):
     assert original is not None
     assert int(original["creator_id"]) == creator_a
     assert original["title"] == "Existing title"
+
+
+def test_import_commit_rolls_back_new_post_when_download_fails(tmp_path, monkeypatch):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+
+    payload = {
+        "post": {
+            "title": "Broken Import",
+            "content": "",
+            "user": "70479526",
+            "file": {"name": "boom.jpg", "path": "/aa/bb/boom.jpg"},
+            "attachments": [],
+        },
+        "attachments": [],
+    }
+
+    def fake_fetch(ref, fallback_user_id=None):  # noqa: ARG001
+        return payload
+
+    def fake_download(remote_url, destination):  # noqa: ARG001
+        Path(destination).parent.mkdir(parents=True, exist_ok=True)
+        Path(destination).write_bytes(b"ok")
+
+    def fake_icon_download(service, user_id, icons_root):  # noqa: ARG001
+        destination = Path(icons_root) / f"{service}_{user_id}.jpg"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"icon")
+        return (f"https://img.kemono.cr/icons/{service}/{user_id}", destination)
+
+    monkeypatch.setattr("kemono_library.web.fetch_post_json", fake_fetch)
+    monkeypatch.setattr("kemono_library.web.download_attachment", fake_download)
+    monkeypatch.setattr("kemono_library.web.download_creator_icon", fake_icon_download)
+
+    def failing_replace_attachments(*args, **kwargs):  # noqa: ARG001
+        raise RuntimeError("replace attachments failed")
+
+    monkeypatch.setattr(db, "replace_attachments", failing_replace_attachments)
+
+    creator_id = db.create_creator("Creator A")
+    with pytest.raises(RuntimeError, match="replace attachments failed"):
+        _import_post_into_library(
+            db,
+            files_base=Path(app.config["FILES_DIR"]),
+            icons_base=Path(app.config["ICONS_DIR"]),
+            creator_id=creator_id,
+            series_id=None,
+            service="fanbox",
+            user_id="70479526",
+            post_id="100",
+            import_target_mode="new",
+            target_post_id=None,
+            overwrite_matching_version=False,
+            set_as_default=True,
+            version_label=None,
+            version_language=None,
+            requested_title=None,
+            requested_content=None,
+            requested_published_at=None,
+            requested_edited_at=None,
+            requested_next_external_post_id=None,
+            requested_prev_external_post_id=None,
+            tags_text=None,
+            field_presence={
+                "published_at": False,
+                "edited_at": False,
+                "next_external_post_id": False,
+                "prev_external_post_id": False,
+            },
+            selected_attachment_indices={"0"},
+        )
+
+    assert db.list_posts_for_creator(creator_id) == []
+    assert not (Path(app.config["FILES_DIR"]) / "post_1").exists()
 
 
 def test_import_commit_applies_metadata_overrides(tmp_path, monkeypatch):

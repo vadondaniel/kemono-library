@@ -13,14 +13,30 @@ class LibraryDB:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    @contextmanager
-    def _connect(self) -> Iterator[sqlite3.Connection]:
+    def _open_connection(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
+        return conn
+
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        conn = self._open_connection()
         try:
             yield conn
             conn.commit()
+        finally:
+            conn.close()
+
+    @contextmanager
+    def transaction(self) -> Iterator[sqlite3.Connection]:
+        conn = self._open_connection()
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
         finally:
             conn.close()
 
@@ -387,116 +403,16 @@ class LibraryDB:
         edited_at: str | None = None,
         next_external_post_id: str | None = None,
         prev_external_post_id: str | None = None,
+        conn: sqlite3.Connection | None = None,
     ) -> int:
-        with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO posts (
-                    creator_id, series_id, service, external_user_id, external_post_id,
-                    title, content, thumbnail_name, thumbnail_remote_url, thumbnail_local_path,
-                    published_at, edited_at, next_external_post_id,
-                    prev_external_post_id, metadata_json, source_url
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(service, external_user_id, external_post_id) DO UPDATE SET
-                    creator_id = excluded.creator_id,
-                    series_id = excluded.series_id,
-                    title = excluded.title,
-                    content = excluded.content,
-                    thumbnail_name = excluded.thumbnail_name,
-                    thumbnail_remote_url = excluded.thumbnail_remote_url,
-                    thumbnail_local_path = excluded.thumbnail_local_path,
-                    published_at = excluded.published_at,
-                    edited_at = excluded.edited_at,
-                    next_external_post_id = excluded.next_external_post_id,
-                    prev_external_post_id = excluded.prev_external_post_id,
-                    metadata_json = excluded.metadata_json,
-                    source_url = excluded.source_url,
-                    updated_at = CURRENT_TIMESTAMP
-                """,
-                (
-                    creator_id,
-                    series_id,
-                    service,
-                    external_user_id,
-                    external_post_id,
-                    title,
-                    content,
-                    thumbnail_name,
-                    thumbnail_remote_url,
-                    thumbnail_local_path,
-                    published_at,
-                    edited_at,
-                    next_external_post_id,
-                    prev_external_post_id,
-                    json.dumps(metadata, ensure_ascii=True),
-                    source_url,
-                ),
-            )
-            row = conn.execute(
-                """
-                SELECT id
-                FROM posts
-                WHERE service = ? AND external_user_id = ? AND external_post_id = ?
-                """,
-                (service, external_user_id, external_post_id),
-            ).fetchone()
-            post_id = int(row["id"])
-
-            existing_version = conn.execute(
-                """
-                SELECT id
-                FROM post_versions
-                WHERE post_id = ?
-                  AND source_service = ?
-                  AND source_user_id = ?
-                  AND source_post_id = ?
-                LIMIT 1
-                """,
-                (post_id, service, external_user_id, external_post_id),
-            ).fetchone()
-            if existing_version:
-                conn.execute(
-                    """
-                    UPDATE post_versions
-                    SET title = ?,
-                        content = ?,
-                        thumbnail_name = ?,
-                        thumbnail_remote_url = ?,
-                        thumbnail_local_path = ?,
-                        published_at = ?,
-                        edited_at = ?,
-                        next_external_post_id = ?,
-                        prev_external_post_id = ?,
-                        metadata_json = ?,
-                        source_url = ?,
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
-                    """,
-                    (
-                        title,
-                        content,
-                        thumbnail_name,
-                        thumbnail_remote_url,
-                        thumbnail_local_path,
-                        published_at,
-                        edited_at,
-                        next_external_post_id,
-                        prev_external_post_id,
-                        json.dumps(metadata, ensure_ascii=True),
-                        source_url,
-                        int(existing_version["id"]),
-                    ),
-                )
-            else:
-                self.create_post_version(
-                    post_id=post_id,
-                    label="Original",
-                    language=None,
-                    is_manual=False,
-                    source_service=service,
-                    source_user_id=external_user_id,
-                    source_post_id=external_post_id,
+        if conn is None:
+            with self._connect() as own_conn:
+                return self.upsert_post(
+                    creator_id=creator_id,
+                    series_id=series_id,
+                    service=service,
+                    external_user_id=external_user_id,
+                    external_post_id=external_post_id,
                     title=title,
                     content=content,
                     metadata=metadata,
@@ -508,11 +424,133 @@ class LibraryDB:
                     edited_at=edited_at,
                     next_external_post_id=next_external_post_id,
                     prev_external_post_id=prev_external_post_id,
-                    set_default=not self._get_default_version_id_conn(conn, post_id),
-                    conn=conn,
+                    conn=own_conn,
                 )
-            self._sync_post_from_default_version_conn(conn, post_id)
-            return post_id
+
+        cursor = conn.execute(
+            """
+            INSERT INTO posts (
+                creator_id, series_id, service, external_user_id, external_post_id,
+                title, content, thumbnail_name, thumbnail_remote_url, thumbnail_local_path,
+                published_at, edited_at, next_external_post_id,
+                prev_external_post_id, metadata_json, source_url
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(service, external_user_id, external_post_id) DO UPDATE SET
+                creator_id = excluded.creator_id,
+                series_id = excluded.series_id,
+                title = excluded.title,
+                content = excluded.content,
+                thumbnail_name = excluded.thumbnail_name,
+                thumbnail_remote_url = excluded.thumbnail_remote_url,
+                thumbnail_local_path = excluded.thumbnail_local_path,
+                published_at = excluded.published_at,
+                edited_at = excluded.edited_at,
+                next_external_post_id = excluded.next_external_post_id,
+                prev_external_post_id = excluded.prev_external_post_id,
+                metadata_json = excluded.metadata_json,
+                source_url = excluded.source_url,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (
+                creator_id,
+                series_id,
+                service,
+                external_user_id,
+                external_post_id,
+                title,
+                content,
+                thumbnail_name,
+                thumbnail_remote_url,
+                thumbnail_local_path,
+                published_at,
+                edited_at,
+                next_external_post_id,
+                prev_external_post_id,
+                json.dumps(metadata, ensure_ascii=True),
+                source_url,
+            ),
+        )
+        row = conn.execute(
+            """
+            SELECT id
+            FROM posts
+            WHERE service = ? AND external_user_id = ? AND external_post_id = ?
+            """,
+            (service, external_user_id, external_post_id),
+        ).fetchone()
+        post_id = int(row["id"])
+
+        existing_version = conn.execute(
+            """
+            SELECT id
+            FROM post_versions
+            WHERE post_id = ?
+              AND source_service = ?
+              AND source_user_id = ?
+              AND source_post_id = ?
+            LIMIT 1
+            """,
+            (post_id, service, external_user_id, external_post_id),
+        ).fetchone()
+        if existing_version:
+            conn.execute(
+                """
+                UPDATE post_versions
+                SET title = ?,
+                    content = ?,
+                    thumbnail_name = ?,
+                    thumbnail_remote_url = ?,
+                    thumbnail_local_path = ?,
+                    published_at = ?,
+                    edited_at = ?,
+                    next_external_post_id = ?,
+                    prev_external_post_id = ?,
+                    metadata_json = ?,
+                    source_url = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (
+                    title,
+                    content,
+                    thumbnail_name,
+                    thumbnail_remote_url,
+                    thumbnail_local_path,
+                    published_at,
+                    edited_at,
+                    next_external_post_id,
+                    prev_external_post_id,
+                    json.dumps(metadata, ensure_ascii=True),
+                    source_url,
+                    int(existing_version["id"]),
+                ),
+            )
+        else:
+            self.create_post_version(
+                post_id=post_id,
+                label="Original",
+                language=None,
+                is_manual=False,
+                source_service=service,
+                source_user_id=external_user_id,
+                source_post_id=external_post_id,
+                title=title,
+                content=content,
+                metadata=metadata,
+                source_url=source_url,
+                thumbnail_name=thumbnail_name,
+                thumbnail_remote_url=thumbnail_remote_url,
+                thumbnail_local_path=thumbnail_local_path,
+                published_at=published_at,
+                edited_at=edited_at,
+                next_external_post_id=next_external_post_id,
+                prev_external_post_id=prev_external_post_id,
+                set_default=not self._get_default_version_id_conn(conn, post_id),
+                conn=conn,
+            )
+        self._sync_post_from_default_version_conn(conn, post_id)
+        return post_id
 
     def list_post_versions(self, post_id: int) -> list[sqlite3.Row]:
         with self._connect() as conn:
@@ -728,52 +766,81 @@ class LibraryDB:
         prev_external_post_id: str | None,
         metadata: dict[str, Any],
         source_url: str | None,
+        conn: sqlite3.Connection | None = None,
     ) -> None:
-        with self._connect() as conn:
-            row = conn.execute("SELECT post_id FROM post_versions WHERE id = ?", (version_id,)).fetchone()
-            if not row:
-                return
-            conn.execute(
-                """
-                UPDATE post_versions
-                SET label = ?,
-                    language = ?,
-                    title = ?,
-                    content = ?,
-                    thumbnail_name = ?,
-                    thumbnail_remote_url = ?,
-                    thumbnail_local_path = ?,
-                    published_at = ?,
-                    edited_at = ?,
-                    next_external_post_id = ?,
-                    prev_external_post_id = ?,
-                    metadata_json = ?,
-                    source_url = ?,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-                """,
-                (
-                    self._normalize_required_label(label),
-                    self._normalize_optional_text(language),
-                    title,
-                    content,
-                    self._normalize_optional_text(thumbnail_name),
-                    self._normalize_optional_text(thumbnail_remote_url),
-                    self._normalize_optional_text(thumbnail_local_path),
-                    self._normalize_optional_text(published_at),
-                    self._normalize_optional_text(edited_at),
-                    self._normalize_optional_text(next_external_post_id),
-                    self._normalize_optional_text(prev_external_post_id),
-                    json.dumps(metadata, ensure_ascii=True),
-                    self._normalize_optional_text(source_url),
-                    version_id,
-                ),
-            )
-            self._sync_post_from_default_version_conn(conn, int(row["post_id"]))
+        if conn is None:
+            with self._connect() as own_conn:
+                return self.update_post_version(
+                    version_id=version_id,
+                    label=label,
+                    language=language,
+                    title=title,
+                    content=content,
+                    thumbnail_name=thumbnail_name,
+                    thumbnail_remote_url=thumbnail_remote_url,
+                    thumbnail_local_path=thumbnail_local_path,
+                    published_at=published_at,
+                    edited_at=edited_at,
+                    next_external_post_id=next_external_post_id,
+                    prev_external_post_id=prev_external_post_id,
+                    metadata=metadata,
+                    source_url=source_url,
+                    conn=own_conn,
+                )
 
-    def set_default_post_version(self, post_id: int, version_id: int) -> None:
-        with self._connect() as conn:
+        row = conn.execute("SELECT post_id FROM post_versions WHERE id = ?", (version_id,)).fetchone()
+        if not row:
+            return
+        conn.execute(
+            """
+            UPDATE post_versions
+            SET label = ?,
+                language = ?,
+                title = ?,
+                content = ?,
+                thumbnail_name = ?,
+                thumbnail_remote_url = ?,
+                thumbnail_local_path = ?,
+                published_at = ?,
+                edited_at = ?,
+                next_external_post_id = ?,
+                prev_external_post_id = ?,
+                metadata_json = ?,
+                source_url = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (
+                self._normalize_required_label(label),
+                self._normalize_optional_text(language),
+                title,
+                content,
+                self._normalize_optional_text(thumbnail_name),
+                self._normalize_optional_text(thumbnail_remote_url),
+                self._normalize_optional_text(thumbnail_local_path),
+                self._normalize_optional_text(published_at),
+                self._normalize_optional_text(edited_at),
+                self._normalize_optional_text(next_external_post_id),
+                self._normalize_optional_text(prev_external_post_id),
+                json.dumps(metadata, ensure_ascii=True),
+                self._normalize_optional_text(source_url),
+                version_id,
+            ),
+        )
+        self._sync_post_from_default_version_conn(conn, int(row["post_id"]))
+
+    def set_default_post_version(
+        self,
+        post_id: int,
+        version_id: int,
+        *,
+        conn: sqlite3.Connection | None = None,
+    ) -> None:
+        if conn is not None:
             self._set_default_post_version_conn(conn, post_id=post_id, version_id=version_id)
+            return
+        with self._connect() as own_conn:
+            self._set_default_post_version_conn(own_conn, post_id=post_id, version_id=version_id)
 
     def delete_post_version(self, post_id: int, version_id: int) -> bool:
         with self._connect() as conn:
@@ -826,8 +893,9 @@ class LibraryDB:
         service: str,
         external_user_id: str,
         external_post_id: str,
+        conn: sqlite3.Connection | None = None,
     ) -> sqlite3.Row | None:
-        with self._connect() as conn:
+        if conn is not None:
             return conn.execute(
                 """
                 SELECT *
@@ -840,6 +908,14 @@ class LibraryDB:
                 """,
                 (post_id, service, external_user_id, external_post_id),
             ).fetchone()
+        with self._connect() as own_conn:
+            return self.find_version_by_source(
+                post_id=post_id,
+                service=service,
+                external_user_id=external_user_id,
+                external_post_id=external_post_id,
+                conn=own_conn,
+            )
 
     def replace_attachments(
         self,
@@ -847,13 +923,21 @@ class LibraryDB:
         attachments: list[dict[str, Any]],
         *,
         version_id: int | None = None,
+        conn: sqlite3.Connection | None = None,
     ) -> None:
-        with self._connect() as conn:
-            resolved_version = version_id or self._get_default_version_id_conn(conn, post_id)
-            if not resolved_version:
-                return
-            self._replace_version_attachments_conn(conn, resolved_version, attachments)
-            self._sync_post_from_default_version_conn(conn, post_id)
+        if conn is None:
+            with self._connect() as own_conn:
+                return self.replace_attachments(
+                    post_id,
+                    attachments,
+                    version_id=version_id,
+                    conn=own_conn,
+                )
+        resolved_version = version_id or self._get_default_version_id_conn(conn, post_id)
+        if not resolved_version:
+            return
+        self._replace_version_attachments_conn(conn, resolved_version, attachments)
+        self._sync_post_from_default_version_conn(conn, post_id)
 
     def list_attachments(self, post_id: int, *, version_id: int | None = None) -> list[sqlite3.Row]:
         with self._connect() as conn:
@@ -871,8 +955,13 @@ class LibraryDB:
             ).fetchall()
             return list(rows)
 
-    def list_all_attachments_for_post(self, post_id: int) -> list[sqlite3.Row]:
-        with self._connect() as conn:
+    def list_all_attachments_for_post(
+        self,
+        post_id: int,
+        *,
+        conn: sqlite3.Connection | None = None,
+    ) -> list[sqlite3.Row]:
+        if conn is not None:
             rows = conn.execute(
                 """
                 SELECT a.*
@@ -884,6 +973,8 @@ class LibraryDB:
                 (post_id,),
             ).fetchall()
             return list(rows)
+        with self._connect() as own_conn:
+            return self.list_all_attachments_for_post(post_id, conn=own_conn)
 
     def list_all_attachments_for_posts(self, post_ids: list[int]) -> list[sqlite3.Row]:
         if not post_ids:
@@ -1016,12 +1107,26 @@ class LibraryDB:
             self._sync_post_from_default_version_conn(conn, int(row["post_id"]))
             
 
-    def replace_tags(self, post_id: int, tags: list[str], *, version_id: int | None = None) -> None:
-        with self._connect() as conn:
-            resolved_version = version_id or self._get_default_version_id_conn(conn, post_id)
-            if not resolved_version:
-                return
-            self._replace_version_tags_conn(conn, resolved_version, tags)
+    def replace_tags(
+        self,
+        post_id: int,
+        tags: list[str],
+        *,
+        version_id: int | None = None,
+        conn: sqlite3.Connection | None = None,
+    ) -> None:
+        if conn is None:
+            with self._connect() as own_conn:
+                return self.replace_tags(
+                    post_id,
+                    tags,
+                    version_id=version_id,
+                    conn=own_conn,
+                )
+        resolved_version = version_id or self._get_default_version_id_conn(conn, post_id)
+        if not resolved_version:
+            return
+        self._replace_version_tags_conn(conn, resolved_version, tags)
 
     def list_tags(self, post_id: int, *, version_id: int | None = None) -> list[sqlite3.Row]:
         with self._connect() as conn:
@@ -1034,12 +1139,26 @@ class LibraryDB:
             ).fetchall()
             return list(rows)
 
-    def replace_previews(self, post_id: int, previews: list[dict], *, version_id: int | None = None) -> None:
-        with self._connect() as conn:
-            resolved_version = version_id or self._get_default_version_id_conn(conn, post_id)
-            if not resolved_version:
-                return
-            self._replace_version_previews_conn(conn, resolved_version, previews)
+    def replace_previews(
+        self,
+        post_id: int,
+        previews: list[dict],
+        *,
+        version_id: int | None = None,
+        conn: sqlite3.Connection | None = None,
+    ) -> None:
+        if conn is None:
+            with self._connect() as own_conn:
+                return self.replace_previews(
+                    post_id,
+                    previews,
+                    version_id=version_id,
+                    conn=own_conn,
+                )
+        resolved_version = version_id or self._get_default_version_id_conn(conn, post_id)
+        if not resolved_version:
+            return
+        self._replace_version_previews_conn(conn, resolved_version, previews)
 
     def list_previews(self, post_id: int, *, version_id: int | None = None) -> list[sqlite3.Row]:
         with self._connect() as conn:
@@ -1129,16 +1248,24 @@ class LibraryDB:
                 (post_id,),
             ).fetchone()
 
-    def update_post_series(self, post_id: int, series_id: int | None) -> None:
-        with self._connect() as conn:
-            conn.execute(
-                """
-                UPDATE posts
-                SET series_id = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-                """,
-                (series_id, post_id),
-            )
+    def update_post_series(
+        self,
+        post_id: int,
+        series_id: int | None,
+        *,
+        conn: sqlite3.Connection | None = None,
+    ) -> None:
+        if conn is None:
+            with self._connect() as own_conn:
+                return self.update_post_series(post_id, series_id, conn=own_conn)
+        conn.execute(
+            """
+            UPDATE posts
+            SET series_id = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (series_id, post_id),
+        )
 
     def delete_post(self, post_id: int) -> int:
         with self._connect() as conn:
@@ -1240,9 +1367,12 @@ class LibraryDB:
                 (service, external_post_id),
             ).fetchone()
 
-    def sync_post_from_default_version(self, post_id: int) -> None:
-        with self._connect() as conn:
+    def sync_post_from_default_version(self, post_id: int, *, conn: sqlite3.Connection | None = None) -> None:
+        if conn is not None:
             self._sync_post_from_default_version_conn(conn, post_id)
+            return
+        with self._connect() as own_conn:
+            self._sync_post_from_default_version_conn(own_conn, post_id)
 
     def _ensure_version_schema(self, conn: sqlite3.Connection) -> None:
         conn.executescript(
