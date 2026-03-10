@@ -148,6 +148,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                     tags_text=job_payload.get("tags_text"),
                     field_presence=dict(job_payload["field_presence"]),
                     selected_attachment_indices=set(job_payload["selected_attachment_indices"]),
+                    source_base=job_payload.get("source_base"),
                     progress_callback=progress_callback,
                 )
                 with import_jobs_lock:
@@ -942,6 +943,10 @@ def create_app(test_config: dict | None = None) -> Flask:
         )
         header_context = _build_creator_header_context(creator=creator, selected_series=selected_series)
         creator_name = _optional_str(creator["name"]) or "Creator"
+        creator_external_url = _build_creator_external_profile_url(
+            service=_optional_str(creator["service"]),
+            external_user_id=_optional_str(creator["external_user_id"]),
+        )
         if selected_series is not None:
             page_title = _build_page_title(_optional_str(selected_series.get("name")) or "Series", creator_name)
         else:
@@ -949,6 +954,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         return render_template(
             "creator_detail.html",
             creator=creator,
+            creator_external_url=creator_external_url,
             series_list=series_list,
             posts=posts,
             selected_series=selected_series,
@@ -1232,7 +1238,12 @@ def create_app(test_config: dict | None = None) -> Flask:
         prefill_version_label = request.form.get("version_label", "").strip()
         prefill_version_language = request.form.get("version_language", "").strip()
 
-        preview_ref = KemonoPostRef(service=post_ref.service, user_id=str(resolved_user_id), post_id=post_ref.post_id)
+        preview_ref = KemonoPostRef(
+            service=post_ref.service,
+            user_id=str(resolved_user_id),
+            post_id=post_ref.post_id,
+            host=post_ref.host,
+        )
         attachments = extract_attachments(raw_payload)
         embed_cards = _extract_embed_cards(raw_payload)
         creator_posts = db.list_posts_for_creator(
@@ -1285,6 +1296,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             force_overwrite_matching_version=force_overwrite_matching_version,
             target_attachment_index=target_attachment_index,
             embed_cards=embed_cards,
+            source_base=preview_ref.base_url,
             title=_build_page_title(import_preview_title, "Import Preview"),
         )
 
@@ -1360,7 +1372,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             )
 
         if not urls:
-            flash("Add at least one Kemono post URL.", "error")
+            flash("Add at least one post URL.", "error")
             return _render_import_form_page(
                 selected_creator=creator_id,
                 selected_series=series_id,
@@ -1402,6 +1414,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                     "service": post_ref.service,
                     "user_id": resolved_user_id,
                     "post_id": post_ref.post_id,
+                    "source_base": post_ref.base_url,
                     "target_post_id": None,
                     "overwrite_matching_version": True,
                     "set_as_default": True,
@@ -1480,6 +1493,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         service = request.form.get("service", "").strip()
         user_id = request.form.get("user_id", "").strip()
         post_id = request.form.get("post_id", "").strip()
+        source_base = request.form.get("source_base", "").strip() or None
 
         if not creator_id or not service or not user_id or not post_id:
             flash("Missing import fields.", "error")
@@ -1545,6 +1559,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                     "prev_external_post_id": "prev_external_post_id" in request.form,
                 },
                 selected_attachment_indices=set(request.form.getlist("selected_attachment")),
+                source_base=source_base,
             )
         except ValueError as exc:
             flash(str(exc), "error")
@@ -1565,6 +1580,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         service = request.form.get("service", "").strip()
         user_id = request.form.get("user_id", "").strip()
         post_id = request.form.get("post_id", "").strip()
+        source_base = request.form.get("source_base", "").strip() or None
 
         if not creator_id or not service or not user_id or not post_id:
             return jsonify({"error": "Missing import fields."}), 400
@@ -1606,6 +1622,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             "service": service,
             "user_id": user_id,
             "post_id": post_id,
+            "source_base": source_base,
             "import_target_mode": import_target_mode,
             "target_post_id": request.form.get("target_post_id", type=int),
             "overwrite_matching_version": overwrite_matching_version,
@@ -2443,18 +2460,22 @@ def create_app(test_config: dict | None = None) -> Flask:
         inferred_user = user_external_id
         creator_id = None
         series_id = None
+        archive_base = _archive_base_for_service(service)
         if from_post:
             source_post = db.get_post(from_post)
             if source_post:
                 creator_id = int(source_post["creator_id"])
                 series_id = int(source_post["series_id"]) if source_post["series_id"] else None
+                source_base = _archive_base_from_url(_optional_str(source_post["source_url"]))
+                if source_base:
+                    archive_base = source_base
                 if not inferred_user and assumed:
                     inferred_user = source_post["external_user_id"]
 
         if inferred_user:
-            kemono_url = f"https://kemono.cr/{service}/user/{inferred_user}/post/{post_external_id}"
+            kemono_url = f"{archive_base}/{service}/user/{inferred_user}/post/{post_external_id}"
         else:
-            kemono_url = f"https://kemono.cr/{service}/post/{post_external_id}"
+            kemono_url = f"{archive_base}/{service}/post/{post_external_id}"
 
         import_url = url_for(
             "import_form",
@@ -2837,6 +2858,89 @@ def _build_local_file_url(relative_path: str | None) -> str | None:
     return "/files/" + "/".join(segments)
 
 
+_ARCHIVE_HOSTS = {"kemono.cr", "coomer.st"}
+_COOMER_SERVICES = {"onlyfans", "fansly"}
+
+
+def _normalize_archive_host(host: str | None) -> str | None:
+    if not isinstance(host, str):
+        return None
+    cleaned = host.strip().lower()
+    if not cleaned:
+        return None
+    if "@" in cleaned:
+        cleaned = cleaned.rsplit("@", 1)[-1]
+    cleaned = cleaned.split(":", 1)[0]
+    if cleaned.startswith("www."):
+        cleaned = cleaned[4:]
+    return cleaned or None
+
+
+def _archive_host_from_base(base_url: str | None) -> str | None:
+    if not isinstance(base_url, str) or not base_url.strip():
+        return None
+    parsed = urlparse(base_url.strip() if "://" in base_url else f"https://{base_url.strip().lstrip('/')}")
+    host = _normalize_archive_host(parsed.netloc)
+    if host in _ARCHIVE_HOSTS:
+        return host
+    return None
+
+
+def _archive_base_from_url(url: str | None) -> str | None:
+    if not isinstance(url, str) or not url.strip():
+        return None
+    parsed = urlparse(url.strip() if "://" in url else f"https://{url.strip().lstrip('/')}")
+    host = _normalize_archive_host(parsed.netloc)
+    if host in _ARCHIVE_HOSTS:
+        return f"https://{host}"
+    return None
+
+
+def _archive_base_for_service(service: str | None) -> str:
+    if isinstance(service, str) and service.strip().lower() in _COOMER_SERVICES:
+        return "https://coomer.st"
+    return "https://kemono.cr"
+
+
+def _archive_base_from_payload(payload: dict[str, Any] | None) -> str:
+    if isinstance(payload, dict):
+        direct_base = _archive_base_from_url(_optional_str(payload.get("__archive_base__")))
+        if direct_base:
+            return direct_base
+        nested = payload.get("post")
+        if isinstance(nested, dict):
+            nested_base = _archive_base_from_url(_optional_str(nested.get("__archive_base__")))
+            if nested_base:
+                return nested_base
+            nested_service_base = _archive_base_for_service(_optional_str(nested.get("service")))
+            if nested_service_base:
+                return nested_service_base
+        service_base = _archive_base_for_service(_optional_str(payload.get("service")))
+        if service_base:
+            return service_base
+    return "https://kemono.cr"
+
+
+def _metadata_archive_base(metadata: dict[str, Any], *, fallback_source_url: str | None = None) -> str:
+    return _archive_base_from_url(_optional_str(metadata.get("__archive_base__"))) or _archive_base_from_url(
+        fallback_source_url
+    ) or "https://kemono.cr"
+
+
+def _is_archive_media_host(host: str | None) -> bool:
+    normalized = _normalize_archive_host(host)
+    if not normalized:
+        return False
+    return any(normalized == suffix or normalized.endswith(f".{suffix}") for suffix in _ARCHIVE_HOSTS)
+
+
+def _build_creator_external_profile_url(*, service: str | None, external_user_id: str | None) -> str | None:
+    if not service or not external_user_id:
+        return None
+    base = _archive_base_for_service(service)
+    return f"{base}/{service}/user/{external_user_id}"
+
+
 def _preferred_remote_url_for_access(remote_url: str, attachment_name: Any) -> str:
     return _kemono_data_fallback_url(remote_url, attachment_name) or remote_url
 
@@ -2862,7 +2966,7 @@ def _split_filename_for_display(raw_name: Any) -> tuple[str, str]:
 def _kemono_data_fallback_url(remote_url: str, attachment_name: Any) -> str | None:
     parsed = urlparse(remote_url)
     host = parsed.netloc.lower()
-    if not host.endswith("kemono.cr"):
+    if not _is_archive_media_host(host):
         return None
 
     raw_path = parsed.path if parsed.path.startswith("/") else f"/{parsed.path}"
@@ -3148,12 +3252,17 @@ def _apply_postwide_media_aliases(
 
     for version in db.list_post_versions(post_id):
         metadata = _safe_load_metadata(version["metadata_json"])
+        metadata_base = _metadata_archive_base(metadata, fallback_source_url=_optional_str(version["source_url"]))
         for entry in _iter_metadata_media_entries(metadata):
             raw_path = entry.get("path") or entry.get("url")
             if not isinstance(raw_path, str) or not raw_path.strip():
                 continue
             server = entry.get("server")
-            resolved = _resolve_media_url(raw_path.strip(), server if isinstance(server, str) else None)
+            resolved = _resolve_media_url(
+                raw_path.strip(),
+                server if isinstance(server, str) else None,
+                base_url=metadata_base,
+            )
             if not resolved:
                 continue
             path_key = _remote_path_key(resolved)
@@ -3181,7 +3290,7 @@ def _build_remote_media_by_name(post: Any, attachments: list[Any]) -> dict[str, 
     def register_url(url: str, *, name: Any, priority: int) -> None:
         parsed = urlparse(url)
         ext = Path(parsed.path).suffix.lower()
-        if ext and parsed.netloc.lower().endswith("kemono.cr"):
+        if ext and _is_archive_media_host(parsed.netloc):
             kemono_urls_by_ext.setdefault(ext, set()).add(url)
 
         filename = Path(parsed.path).name.lower()
@@ -3223,6 +3332,7 @@ def _build_remote_media_by_name(post: Any, attachments: list[Any]) -> dict[str, 
         register_url(remote_url, name=attachment["name"], priority=kind_priority)
 
     metadata = _safe_load_metadata(post["metadata_json"])
+    metadata_base = _metadata_archive_base(metadata, fallback_source_url=_optional_str(post["source_url"]))
     for entry in _iter_metadata_media_entries(metadata):
         raw_path = entry.get("path") or entry.get("url")
         if not isinstance(raw_path, str) or not raw_path.strip():
@@ -3230,7 +3340,7 @@ def _build_remote_media_by_name(post: Any, attachments: list[Any]) -> dict[str, 
         server = entry.get("server")
         if not isinstance(server, str):
             server = None
-        resolved = _resolve_media_url(raw_path.strip(), server)
+        resolved = _resolve_media_url(raw_path.strip(), server, base_url=metadata_base)
         if not isinstance(resolved, str) or not resolved.strip():
             continue
         metadata_name = entry.get("name")
@@ -3272,6 +3382,7 @@ def _extract_embed_cards(payload: dict[str, Any]) -> list[dict[str, Any]]:
         return []
     cards: list[dict[str, Any]] = []
     seen: set[tuple[str, str, str]] = set()
+    archive_base = _archive_base_from_payload(payload)
     sources: list[dict[str, Any]] = [payload]
     nested_post = payload.get("post")
     if isinstance(nested_post, dict):
@@ -3286,7 +3397,7 @@ def _extract_embed_cards(payload: dict[str, Any]) -> list[dict[str, Any]]:
             elif isinstance(value, list):
                 embed_values.extend(item for item in value if isinstance(item, dict))
         for embed in embed_values:
-            card = _build_embed_card(embed)
+            card = _build_embed_card(embed, archive_base=archive_base)
             if not card:
                 continue
             identity = (
@@ -3301,16 +3412,16 @@ def _extract_embed_cards(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return cards
 
 
-def _build_embed_card(embed: dict[str, Any]) -> dict[str, Any] | None:
-    url = _normalize_embed_url(embed.get("url"))
+def _build_embed_card(embed: dict[str, Any], *, archive_base: str | None = None) -> dict[str, Any] | None:
+    url = _normalize_embed_url(embed.get("url"), archive_base=archive_base)
     title = _optional_str(embed.get("subject")) or _optional_str(embed.get("title"))
     description = _normalize_embed_text(embed.get("description"))
     provider_name = _optional_str(embed.get("provider_name")) or _optional_str(embed.get("provider"))
     thumbnail_url = (
-        _normalize_embed_url(embed.get("thumbnail_url"))
-        or _normalize_embed_url(embed.get("thumbnail"))
-        or _normalize_embed_url(embed.get("image"))
-        or _normalize_embed_url(embed.get("image_url"))
+        _normalize_embed_url(embed.get("thumbnail_url"), archive_base=archive_base)
+        or _normalize_embed_url(embed.get("thumbnail"), archive_base=archive_base)
+        or _normalize_embed_url(embed.get("image"), archive_base=archive_base)
+        or _normalize_embed_url(embed.get("image_url"), archive_base=archive_base)
     )
     iframe_src: str | None = None
     iframe_ratio: str | None = None
@@ -3337,14 +3448,14 @@ def _build_embed_card(embed: dict[str, Any]) -> dict[str, Any] | None:
         if not url:
             first_link = soup.find("a", href=True)
             if first_link is not None:
-                url = _normalize_embed_url(first_link.get("href"))
+                url = _normalize_embed_url(first_link.get("href"), archive_base=archive_base)
 
         if not description:
             description = _normalize_embed_text(soup.get_text(" ", strip=True))
 
         iframe_node = soup.find("iframe", src=True)
         if iframe_node is not None:
-            iframe_candidate = _normalize_embed_url(iframe_node.get("src"))
+            iframe_candidate = _normalize_embed_url(iframe_node.get("src"), archive_base=archive_base)
             if iframe_candidate and _is_allowed_embed_iframe_url(iframe_candidate):
                 iframe_src = iframe_candidate
                 iframe_ratio = _iframe_ratio_from_node(iframe_node)
@@ -3354,7 +3465,7 @@ def _build_embed_card(embed: dict[str, Any]) -> dict[str, Any] | None:
         if not thumbnail_url:
             image_node = soup.find("img", src=True)
             if image_node is not None:
-                thumbnail_url = _normalize_embed_url(image_node.get("src"))
+                thumbnail_url = _normalize_embed_url(image_node.get("src"), archive_base=archive_base)
 
     if not title:
         title = _normalize_embed_text(embed.get("author_name"))
@@ -3398,14 +3509,14 @@ def _normalize_embed_text(value: Any) -> str | None:
     return collapsed
 
 
-def _normalize_embed_url(value: Any) -> str | None:
+def _normalize_embed_url(value: Any, *, archive_base: str | None = None) -> str | None:
     url = _optional_str(value)
     if not url:
         return None
     if url.startswith("//"):
         url = f"https:{url}"
     elif url.startswith("/"):
-        url = to_absolute_kemono_url(url)
+        url = to_absolute_kemono_url(url, base_url=archive_base)
     elif not re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", url):
         if url.startswith("www."):
             url = f"https://{url}"
@@ -4526,7 +4637,8 @@ def _extract_thumbnail_from_payload(
     name = _optional_str(file_item.get("name"))
     raw_path = _optional_str(file_item.get("path") or file_item.get("url"))
     server = _optional_str(file_item.get("server"))
-    remote_url = _resolve_media_url(raw_path, server)
+    payload_base = _archive_base_from_payload(raw_payload)
+    remote_url = _resolve_media_url(raw_path, server, base_url=payload_base)
 
     if not name and remote_url:
         parsed = urlparse(remote_url)
@@ -4535,7 +4647,7 @@ def _extract_thumbnail_from_payload(
     return name, remote_url
 
 
-def _resolve_media_url(raw_path: str | None, server: str | None) -> str | None:
+def _resolve_media_url(raw_path: str | None, server: str | None, *, base_url: str | None = None) -> str | None:
     if not raw_path:
         return None
     if raw_path.startswith(("http://", "https://")):
@@ -4544,7 +4656,7 @@ def _resolve_media_url(raw_path: str | None, server: str | None) -> str | None:
         if raw_path.startswith("/"):
             return f"{server.rstrip('/')}{raw_path}"
         return f"{server.rstrip('/')}/{raw_path.lstrip('/')}"
-    return to_absolute_kemono_url(raw_path)
+    return to_absolute_kemono_url(raw_path, base_url=base_url)
 
 
 def _find_thumbnail_local_path(
@@ -4595,6 +4707,7 @@ def _import_post_into_library(
     tags_text: str | None,
     field_presence: dict[str, bool],
     selected_attachment_indices: set[str] | None,
+    source_base: str | None = None,
     skip_attachment_downloads: bool = False,
     progress_callback: Callable[[int, int, str | None], None] | None = None,
 ) -> tuple[int, int]:
@@ -4630,7 +4743,8 @@ def _import_post_into_library(
             raise ValueError("Target post was not found for this creator.")
         local_post_id = target_post_id
 
-    post_ref = KemonoPostRef(service=service, user_id=user_id, post_id=post_id)
+    source_host = _archive_host_from_base(source_base) or "kemono.cr"
+    post_ref = KemonoPostRef(service=service, user_id=user_id, post_id=post_id, host=source_host)
     raw_payload = fetch_post_json(post_ref)
     payload = normalize_post_payload(raw_payload)
     creator_icon_update = _prepare_creator_icon_update(

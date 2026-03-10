@@ -23,6 +23,14 @@ def test_parse_short_kemono_url():
     assert ref.post_id == "9581944"
 
 
+def test_parse_full_coomer_url():
+    ref = parse_kemono_post_url("https://coomer.st/onlyfans/user/belledelphine/post/997022061")
+    assert ref.service == "onlyfans"
+    assert ref.user_id == "belledelphine"
+    assert ref.post_id == "997022061"
+    assert ref.api_url() == "https://coomer.st/api/v1/onlyfans/user/belledelphine/post/997022061"
+
+
 def test_extract_attachments_collects_main_and_list():
     payload = {
         "file": {"name": "cover.png", "path": "/data/abc/cover.png"},
@@ -35,6 +43,16 @@ def test_extract_attachments_collects_main_and_list():
     assert len(items) == 3
     assert items[0].name == "cover.png"
     assert items[0].remote_url == "https://kemono.cr/data/abc/cover.png"
+
+
+def test_extract_attachments_uses_payload_archive_base_for_relative_paths():
+    payload = {
+        "__archive_base__": "https://coomer.st",
+        "file": {"name": "cover.png", "path": "/data/abc/cover.png"},
+    }
+    items = extract_attachments(payload)
+    assert len(items) == 1
+    assert items[0].remote_url == "https://coomer.st/data/abc/cover.png"
 
 
 def test_extract_attachments_ignores_previews():
@@ -152,6 +170,33 @@ def test_fetch_post_json_uses_css_accept(monkeypatch):
 
     assert payload["title"] == "ok"
     assert captured_headers["Accept"] == "text/css"
+
+
+def test_fetch_post_json_uses_coomer_headers_when_ref_host_is_coomer(monkeypatch):
+    captured_headers = {}
+
+    class FakeResponse:
+        text = '{"title":"ok"}'
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+        @staticmethod
+        def json():
+            return {"title": "ok"}
+
+    def fake_get(url, timeout, headers):  # noqa: ARG001
+        captured_headers.update(headers)
+        return FakeResponse()
+
+    monkeypatch.setattr("kemono_library.kemono.requests.get", fake_get)
+    payload = fetch_post_json(KemonoPostRef(service="onlyfans", user_id="u", post_id="p", host="coomer.st"))
+
+    assert payload["title"] == "ok"
+    assert payload["__archive_base__"] == "https://coomer.st"
+    assert captured_headers["Referer"] == "https://coomer.st/"
+    assert captured_headers["Origin"] == "https://coomer.st"
 
 
 def test_extract_attachments_includes_inline_media():

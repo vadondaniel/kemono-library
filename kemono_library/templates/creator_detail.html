@@ -35,7 +35,7 @@
           {% if creator['service'] and creator['external_user_id'] %}
             <a
               class="chip chip-link creator-meta-pill creator-meta-pill-link"
-              href="https://kemono.cr/{{ creator['service'] }}/user/{{ creator['external_user_id'] }}"
+              href="{{ creator_external_url or ('https://kemono.cr/' ~ creator['service'] ~ '/user/' ~ creator['external_user_id']) }}"
               target="_blank"
               rel="noopener noreferrer nofollow"
             >

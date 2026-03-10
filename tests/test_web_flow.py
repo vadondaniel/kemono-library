@@ -380,6 +380,71 @@ def test_import_includes_embed_links_without_attempting_download(tmp_path, monke
     assert attachments[0]["remote_url"] == "https://inkyleafpatreononly.blogspot.com/2024/08/foxy-fairy-tale.html"
 
 
+def test_import_preview_and_commit_supports_coomer_urls(tmp_path, monkeypatch):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    payload = {
+        "post": {
+            "title": "Coomer Post",
+            "content": "<p>from coomer</p>",
+            "user": "belledelphine",
+            "attachments": [],
+        },
+        "attachments": [],
+    }
+    seen_hosts: list[str] = []
+
+    def fake_fetch(ref, fallback_user_id=None):  # noqa: ARG001
+        seen_hosts.append(ref.host)
+        return payload
+
+    def fake_icon_download(service, user_id, icons_root, base_url=None):  # noqa: ARG001
+        return (f"https://img.coomer.st/icons/{service}/{user_id}", None)
+
+    monkeypatch.setattr("kemono_library.web.fetch_post_json", fake_fetch)
+    monkeypatch.setattr("kemono_library.web.download_creator_icon", fake_icon_download)
+
+    client = app.test_client()
+    creator_response = client.post("/creators", data={"name": "Coomer Creator"}, follow_redirects=False)
+    assert creator_response.status_code == 302
+
+    preview = client.post(
+        "/import/preview",
+        data={
+            "post_url": "https://coomer.st/onlyfans/user/belledelphine/post/997022061",
+            "creator_id": "1",
+            "series_id": "",
+        },
+    )
+    assert preview.status_code == 200
+    assert b'value="https://coomer.st"' in preview.data
+
+    commit = client.post(
+        "/import/commit",
+        data={
+            "creator_id": "1",
+            "series_id": "",
+            "service": "onlyfans",
+            "user_id": "belledelphine",
+            "post_id": "997022061",
+            "source_base": "https://coomer.st",
+        },
+        follow_redirects=False,
+    )
+    assert commit.status_code == 302
+    assert commit.headers["Location"].endswith("/posts/1")
+    assert seen_hosts == ["coomer.st", "coomer.st"]
+    post = app.db.get_post(1)  # type: ignore[attr-defined]
+    assert post["source_url"] == "https://coomer.st/onlyfans/user/belledelphine/post/997022061"
+
+
 def test_import_form_renders_tabbed_quick_import_ui(tmp_path):
     app = create_app(
         {
@@ -601,7 +666,7 @@ def test_quick_import_reports_failures_and_prefills_failed_urls(tmp_path, monkey
     )
     assert response.status_code == 200
     assert b"Quick import finished: 1 succeeded, 1 failed." in response.data
-    assert b"Only kemono.cr post links are supported." in response.data
+    assert b"Only supported archive post links are supported." in response.data
     assert b"https://example.com/not-kemono" in response.data
     assert db.find_post_by_source("fanbox", "70479526", "100") is not None
 

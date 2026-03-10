@@ -13,7 +13,8 @@ import requests
 from bs4 import BeautifulSoup
 
 KEMONO_BASE = "https://kemono.cr"
-KEMONO_HOSTS = {"kemono.cr"}
+COOMER_BASE = "https://coomer.st"
+SUPPORTED_ARCHIVE_HOSTS = {"kemono.cr", "coomer.st"}
 KEMONO_API_HEADERS = {
     # Kemono API quirk: some endpoints expect this Accept value.
     "Accept": "text/css",
@@ -24,6 +25,111 @@ KEMONO_API_HEADERS = {
     "Referer": f"{KEMONO_BASE}/",
     "Origin": KEMONO_BASE,
 }
+COOMER_SERVICES = {
+    "onlyfans",
+    "fansly",
+}
+
+
+def _normalize_archive_host(raw_host: str | None) -> str | None:
+    if not isinstance(raw_host, str):
+        return None
+    host = raw_host.strip().lower()
+    if not host:
+        return None
+    if "@" in host:
+        host = host.rsplit("@", 1)[-1]
+    host = host.split(":", 1)[0]
+    if host.startswith("www."):
+        host = host[4:]
+    return host or None
+
+
+def _is_supported_archive_host(raw_host: str | None) -> bool:
+    return _archive_root_host(raw_host) is not None
+
+
+def _base_url_from_host(raw_host: str | None) -> str | None:
+    host = _archive_root_host(raw_host)
+    if not host:
+        return None
+    return f"https://{host}"
+
+
+def _archive_root_host(raw_host: str | None) -> str | None:
+    host = _normalize_archive_host(raw_host)
+    if not host:
+        return None
+    for supported in SUPPORTED_ARCHIVE_HOSTS:
+        if host == supported or host.endswith(f".{supported}"):
+            return supported
+    return None
+
+
+def _normalize_archive_base(base_url: str | None) -> str | None:
+    if not isinstance(base_url, str) or not base_url.strip():
+        return None
+    raw = base_url.strip()
+    if not re.match(r"^https?://", raw, flags=re.IGNORECASE):
+        raw = f"https://{raw.lstrip('/')}"
+    parsed = urlparse(raw)
+    return _base_url_from_host(parsed.netloc)
+
+
+def _archive_base_for_service(service: str | None) -> str | None:
+    if not isinstance(service, str) or not service.strip():
+        return None
+    if service.strip().lower() in COOMER_SERVICES:
+        return COOMER_BASE
+    return KEMONO_BASE
+
+
+def _api_headers_for_base(base_url: str | None) -> dict[str, str]:
+    resolved_base = _normalize_archive_base(base_url) or KEMONO_BASE
+    return {
+        **KEMONO_API_HEADERS,
+        "Referer": f"{resolved_base}/",
+        "Origin": resolved_base,
+    }
+
+
+def _payload_archive_base(payload: dict[str, Any]) -> str:
+    if isinstance(payload, dict):
+        direct = _normalize_archive_base(payload.get("__archive_base__"))  # type: ignore[arg-type]
+        if direct:
+            return direct
+        service_guess = _archive_base_for_service(payload.get("service"))  # type: ignore[arg-type]
+        if service_guess:
+            return service_guess
+        nested = payload.get("post")
+        if isinstance(nested, dict):
+            nested_base = _normalize_archive_base(nested.get("__archive_base__"))  # type: ignore[arg-type]
+            if nested_base:
+                return nested_base
+            nested_service_guess = _archive_base_for_service(nested.get("service"))  # type: ignore[arg-type]
+            if nested_service_guess:
+                return nested_service_guess
+    return KEMONO_BASE
+
+
+def _creator_icon_candidates(service: str, user_id: str, *, preferred_base_url: str | None = None) -> list[str]:
+    ordered: list[str] = []
+
+    def add(base: str | None) -> None:
+        normalized_base = _normalize_archive_base(base)
+        if not normalized_base:
+            return
+        candidate = creator_icon_url(service, user_id, base_url=normalized_base)
+        if candidate not in ordered:
+            ordered.append(candidate)
+
+    add(preferred_base_url)
+    add(_archive_base_for_service(service))
+    add(KEMONO_BASE)
+    add(COOMER_BASE)
+    if not ordered:
+        ordered.append(creator_icon_url(service, user_id, base_url=KEMONO_BASE))
+    return ordered
 
 
 @dataclass(frozen=True)
@@ -31,18 +137,24 @@ class KemonoPostRef:
     service: str
     post_id: str
     user_id: str | None = None
+    host: str = "kemono.cr"
+
+    @property
+    def base_url(self) -> str:
+        normalized_host = _normalize_archive_host(self.host) or "kemono.cr"
+        return f"https://{normalized_host}"
 
     @property
     def canonical_url(self) -> str:
         if self.user_id:
-            return f"{KEMONO_BASE}/{self.service}/user/{self.user_id}/post/{self.post_id}"
-        return f"{KEMONO_BASE}/{self.service}/post/{self.post_id}"
+            return f"{self.base_url}/{self.service}/user/{self.user_id}/post/{self.post_id}"
+        return f"{self.base_url}/{self.service}/post/{self.post_id}"
 
     def api_url(self, fallback_user_id: str | None = None) -> str:
         user_id = self.user_id or fallback_user_id
         if not user_id:
             raise ValueError("A user_id is required to build the Kemono API URL for this post.")
-        return f"{KEMONO_BASE}/api/v1/{self.service}/user/{user_id}/post/{self.post_id}"
+        return f"{self.base_url}/api/v1/{self.service}/user/{user_id}/post/{self.post_id}"
 
 
 @dataclass(frozen=True)
@@ -60,23 +172,24 @@ def parse_kemono_post_url(raw_url: str) -> KemonoPostRef:
         url = f"https://{url}"
 
     parsed = urlparse(url)
-    host = parsed.netloc.lower()
-    if host not in KEMONO_HOSTS:
-        raise ValueError("Only kemono.cr post links are supported.")
+    host = _normalize_archive_host(parsed.netloc)
+    if host not in SUPPORTED_ARCHIVE_HOSTS:
+        raise ValueError("Only supported archive post links are supported.")
 
     parts = [p for p in parsed.path.split("/") if p]
     if len(parts) >= 5 and parts[1] == "user" and parts[3] == "post":
-        return KemonoPostRef(service=parts[0], user_id=parts[2], post_id=parts[4])
+        return KemonoPostRef(service=parts[0], user_id=parts[2], post_id=parts[4], host=host)
     if len(parts) >= 3 and parts[1] == "post":
-        return KemonoPostRef(service=parts[0], post_id=parts[2], user_id=None)
-    raise ValueError("Unsupported Kemono URL shape. Use /{service}/user/{id}/post/{id} or /{service}/post/{id}.")
+        return KemonoPostRef(service=parts[0], post_id=parts[2], user_id=None, host=host)
+    raise ValueError("Unsupported archive URL shape. Use /{service}/user/{id}/post/{id} or /{service}/post/{id}.")
 
 
 def fetch_post_json(post_ref: KemonoPostRef, fallback_user_id: str | None = None) -> dict[str, Any]:
+    headers = _api_headers_for_base(post_ref.base_url)
     response = requests.get(
         post_ref.api_url(fallback_user_id=fallback_user_id),
         timeout=25,
-        headers=KEMONO_API_HEADERS,
+        headers=headers,
     )
     response.raise_for_status()
     try:
@@ -85,6 +198,7 @@ def fetch_post_json(post_ref: KemonoPostRef, fallback_user_id: str | None = None
         payload = json.loads(response.text)
     if not isinstance(payload, dict):
         raise ValueError("Unexpected API response. Expected JSON object.")
+    payload.setdefault("__archive_base__", post_ref.base_url)
     return payload
 
 
@@ -96,8 +210,9 @@ def normalize_post_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
     normalized = dict(post)
     merged_attachments: list[dict[str, Any]] = []
-    _extend_unique_attachment_dicts(merged_attachments, post.get("attachments"))
-    _extend_unique_attachment_dicts(merged_attachments, payload.get("attachments"))
+    archive_base = _payload_archive_base(payload)
+    _extend_unique_attachment_dicts(merged_attachments, post.get("attachments"), base_url=archive_base)
+    _extend_unique_attachment_dicts(merged_attachments, payload.get("attachments"), base_url=archive_base)
     if merged_attachments:
         normalized["attachments"] = merged_attachments
 
@@ -108,24 +223,32 @@ def normalize_post_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
-def to_absolute_kemono_url(path_or_url: str) -> str:
+def to_absolute_kemono_url(path_or_url: str, *, base_url: str | None = None) -> str:
+    resolved_base = _normalize_archive_base(base_url) or KEMONO_BASE
     if path_or_url.startswith("http://") or path_or_url.startswith("https://"):
         return path_or_url
+    if path_or_url.startswith("//"):
+        return f"https:{path_or_url}"
     if path_or_url.startswith("/"):
-        return f"{KEMONO_BASE}{path_or_url}"
-    return f"{KEMONO_BASE}/{path_or_url.lstrip('/')}"
+        return f"{resolved_base}{path_or_url}"
+    return f"{resolved_base}/{path_or_url.lstrip('/')}"
 
 
 def extract_attachments(post_payload: dict[str, Any]) -> list[AttachmentCandidate]:
     candidates: list[AttachmentCandidate] = []
     seen: set[str] = set()
+    archive_base = _payload_archive_base(post_payload)
     sources = [post_payload]
     nested_post = post_payload.get("post")
     if isinstance(nested_post, dict):
         sources.append(nested_post)
     declared_non_inline_names = _collect_declared_media_names(sources, post_payload)
     content = _first_content(sources)
-    unnamed_attachment_aliases = _build_unnamed_attachment_aliases(sources, content)
+    unnamed_attachment_aliases = _build_unnamed_attachment_aliases(
+        sources,
+        content,
+        archive_base=archive_base,
+    )
 
     for source in sources:
         file_item = source.get("file")
@@ -137,6 +260,7 @@ def extract_attachments(post_payload: dict[str, Any]) -> list[AttachmentCandidat
                 default_name="main-file",
                 kind="thumbnail",
                 name_aliases=unnamed_attachment_aliases,
+                archive_base=archive_base,
             )
 
         shared_file = source.get("shared_file")
@@ -148,6 +272,7 @@ def extract_attachments(post_payload: dict[str, Any]) -> list[AttachmentCandidat
                 default_name="shared-file",
                 kind="shared_file",
                 name_aliases=unnamed_attachment_aliases,
+                archive_base=archive_base,
             )
 
         attachments = source.get("attachments")
@@ -161,6 +286,7 @@ def extract_attachments(post_payload: dict[str, Any]) -> list[AttachmentCandidat
                         default_name="attachment",
                         kind="attachment",
                         name_aliases=unnamed_attachment_aliases,
+                        archive_base=archive_base,
                     )
 
     videos = post_payload.get("videos")
@@ -173,12 +299,13 @@ def extract_attachments(post_payload: dict[str, Any]) -> list[AttachmentCandidat
                     item,
                     default_name="video",
                     kind="video",
+                    archive_base=archive_base,
                 )
             elif isinstance(item, str) and item.strip():
                 _append_url_attachment(
                     candidates,
                     seen,
-                    to_absolute_kemono_url(item.strip()),
+                    to_absolute_kemono_url(item.strip(), base_url=archive_base),
                     name=Path(urlparse(item.strip()).path).name or "video",
                     kind="video",
                 )
@@ -186,16 +313,17 @@ def extract_attachments(post_payload: dict[str, Any]) -> list[AttachmentCandidat
     for source in sources:
         embed = source.get("embed")
         if isinstance(embed, dict):
-            _append_embed_attachments(candidates, seen, embed)
+            _append_embed_attachments(candidates, seen, embed, archive_base=archive_base)
 
     inline_name_keys: set[str] = set()
     if content:
-        inline_name_keys = _collect_inline_name_keys(content)
+        inline_name_keys = _collect_inline_name_keys(content, archive_base=archive_base)
         _append_inline_content_attachments(
             candidates,
             seen,
             content,
             reserved_names=declared_non_inline_names,
+            archive_base=archive_base,
         )
     deduped = _dedupe_non_inline_by_name(candidates)
     return _relabel_inline_kinds(deduped, inline_name_keys)
@@ -209,8 +337,9 @@ def sanitize_filename(filename: str) -> str:
 def download_attachment(remote_url: str, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     parsed = urlparse(remote_url)
+    archive_base = _base_url_from_host(parsed.netloc) or KEMONO_BASE
     source_origin = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else ""
-    allow_insecure_retry = bool(parsed.netloc and not parsed.netloc.lower().endswith("kemono.cr"))
+    allow_insecure_retry = bool(parsed.netloc and not _is_supported_archive_host(parsed.netloc))
     base_headers = {
         "Accept": "*/*",
         "User-Agent": KEMONO_API_HEADERS["User-Agent"],
@@ -218,8 +347,8 @@ def download_attachment(remote_url: str, destination: Path) -> None:
     header_profiles = [
         {
             **base_headers,
-            "Referer": KEMONO_BASE + "/",
-            "Origin": KEMONO_BASE,
+            "Referer": archive_base + "/",
+            "Origin": archive_base,
         },
         dict(base_headers),
     ]
@@ -292,7 +421,7 @@ def _should_try_curl_fallback(remote_url: str, error: Exception | None) -> bool:
         return False
     parsed = urlparse(remote_url)
     host = parsed.netloc.lower().strip()
-    if not host or host.endswith("kemono.cr"):
+    if not host or _is_supported_archive_host(host):
         return False
     if not isinstance(error, requests.exceptions.HTTPError):
         return False
@@ -328,32 +457,47 @@ def _download_attachment_with_curl(remote_url: str, destination: Path) -> None:
         raise
 
 
-def creator_icon_url(service: str, user_id: str) -> str:
-    return f"https://img.kemono.cr/icons/{service}/{user_id}"
-
-
-def download_creator_icon(service: str, user_id: str, icons_root: Path) -> tuple[str, Path | None]:
-    remote_url = creator_icon_url(service, user_id)
-    response = requests.get(
-        remote_url,
-        timeout=25,
-        headers={
-            "Accept": "image/*,*/*;q=0.8",
-            "User-Agent": KEMONO_API_HEADERS["User-Agent"],
-            "Referer": KEMONO_BASE + "/",
-            "Origin": KEMONO_BASE,
-        },
+def creator_icon_url(service: str, user_id: str, *, base_url: str | None = None) -> str:
+    resolved_base = (
+        _normalize_archive_base(base_url)
+        or _archive_base_for_service(service)
+        or KEMONO_BASE
     )
-    if response.status_code != 200 or not response.content:
-        return remote_url, None
+    host = urlparse(resolved_base).netloc
+    return f"https://img.{host}/icons/{service}/{user_id}"
 
-    extension = _image_extension_from_content_type(response.headers.get("content-type"))
-    destination = icons_root / f"{service}_{user_id}{extension}"
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_bytes(response.content)
-    if destination.stat().st_size <= 0:
-        return remote_url, None
-    return remote_url, destination
+
+def download_creator_icon(
+    service: str,
+    user_id: str,
+    icons_root: Path,
+    *,
+    base_url: str | None = None,
+) -> tuple[str, Path | None]:
+    candidates = _creator_icon_candidates(service, user_id, preferred_base_url=base_url)
+    for remote_url in candidates:
+        base_for_headers = _base_url_from_host(urlparse(remote_url).netloc) or KEMONO_BASE
+        response = requests.get(
+            remote_url,
+            timeout=25,
+            headers={
+                "Accept": "image/*,*/*;q=0.8",
+                "User-Agent": KEMONO_API_HEADERS["User-Agent"],
+                "Referer": base_for_headers + "/",
+                "Origin": base_for_headers,
+            },
+        )
+        if response.status_code != 200 or not response.content:
+            continue
+
+        extension = _image_extension_from_content_type(response.headers.get("content-type"))
+        destination = icons_root / f"{service}_{user_id}{extension}"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(response.content)
+        if destination.stat().st_size <= 0:
+            continue
+        return remote_url, destination
+    return candidates[0], None
 
 
 def _append_attachment(
@@ -363,12 +507,13 @@ def _append_attachment(
     default_name: str,
     kind: str,
     name_aliases: dict[str, str] | None = None,
+    archive_base: str | None = None,
 ) -> None:
     raw_path = item.get("path") or item.get("url")
     if not isinstance(raw_path, str) or not raw_path.strip():
         return
 
-    absolute_url = _resolve_attachment_url(item, raw_path)
+    absolute_url = _resolve_attachment_url(item, raw_path, archive_base=archive_base)
     if absolute_url in seen:
         return
 
@@ -390,6 +535,7 @@ def _append_inline_content_attachments(
     content: str,
     *,
     reserved_names: set[str] | None = None,
+    archive_base: str | None = None,
 ) -> None:
     soup = BeautifulSoup(content, "html.parser")
     existing_non_inline_names = {
@@ -413,7 +559,7 @@ def _append_inline_content_attachments(
             raw_url = node.get(attr)
             if not isinstance(raw_url, str) or not raw_url.strip():
                 continue
-            absolute_url = to_absolute_kemono_url(raw_url.strip())
+            absolute_url = to_absolute_kemono_url(raw_url.strip(), base_url=archive_base)
             if not _should_keep_inline_url(tag_name, absolute_url):
                 continue
             inferred_name = _infer_inline_name(node, absolute_url) or f"inline-{inline_counter}"
@@ -431,7 +577,7 @@ def _append_inline_content_attachments(
             )
 
 
-def _collect_inline_name_keys(content: str) -> set[str]:
+def _collect_inline_name_keys(content: str, *, archive_base: str | None = None) -> set[str]:
     soup = BeautifulSoup(content, "html.parser")
     name_keys: set[str] = set()
     url_attrs = (
@@ -447,7 +593,7 @@ def _collect_inline_name_keys(content: str) -> set[str]:
             raw_url = node.get(attr)
             if not isinstance(raw_url, str) or not raw_url.strip():
                 continue
-            absolute_url = to_absolute_kemono_url(raw_url.strip())
+            absolute_url = to_absolute_kemono_url(raw_url.strip(), base_url=archive_base)
             if not _should_keep_inline_url(tag_name, absolute_url):
                 continue
 
@@ -481,6 +627,8 @@ def _append_embed_attachments(
     out: list[AttachmentCandidate],
     seen: set[str],
     embed: dict[str, Any],
+    *,
+    archive_base: str | None = None,
 ) -> None:
     preferred_label = _first_embed_label(embed)
     for key in ("url", "src", "thumbnail", "thumbnail_url", "image"):
@@ -491,6 +639,7 @@ def _append_embed_attachments(
                 seen,
                 value.strip(),
                 preferred_label=preferred_label,
+                archive_base=archive_base,
             )
 
     raw_html = embed.get("html")
@@ -513,6 +662,7 @@ def _append_embed_attachments(
                     seen,
                     raw_url.strip(),
                     preferred_label=preferred_label,
+                    archive_base=archive_base,
                 )
 
 
@@ -522,8 +672,9 @@ def _append_embed_url_attachment(
     raw_url: str,
     *,
     preferred_label: str | None,
+    archive_base: str | None = None,
 ) -> None:
-    absolute = to_absolute_kemono_url(raw_url)
+    absolute = to_absolute_kemono_url(raw_url, base_url=archive_base)
     parsed = urlparse(absolute)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         return
@@ -575,7 +726,12 @@ def _first_content(sources: list[dict[str, Any]]) -> str | None:
     return None
 
 
-def _build_unnamed_attachment_aliases(sources: list[dict[str, Any]], content: str | None) -> dict[str, str]:
+def _build_unnamed_attachment_aliases(
+    sources: list[dict[str, Any]],
+    content: str | None,
+    *,
+    archive_base: str | None = None,
+) -> dict[str, str]:
     if not content:
         return {}
 
@@ -594,7 +750,7 @@ def _build_unnamed_attachment_aliases(sources: list[dict[str, Any]], content: st
             raw_url = node.get(attr)
             if not isinstance(raw_url, str) or not raw_url.strip():
                 continue
-            absolute_url = to_absolute_kemono_url(raw_url.strip())
+            absolute_url = to_absolute_kemono_url(raw_url.strip(), base_url=archive_base)
             if not _should_keep_inline_url(tag_name, absolute_url):
                 continue
             filename = Path(urlparse(absolute_url).path).name
@@ -623,7 +779,7 @@ def _build_unnamed_attachment_aliases(sources: list[dict[str, Any]], content: st
             raw_path = item.get("path") or item.get("url")
             if not isinstance(raw_path, str) or not raw_path.strip():
                 continue
-            absolute_url = _resolve_attachment_url(item, raw_path)
+            absolute_url = _resolve_attachment_url(item, raw_path, archive_base=archive_base)
             if absolute_url in seen_attachment_urls:
                 continue
             seen_attachment_urls.add(absolute_url)
@@ -777,11 +933,16 @@ def _looks_like_archive_url(url: str) -> bool:
     return ext in {".zip", ".rar", ".7z", ".tar", ".gz", ".pdf"}
 
 
-def _extend_unique_attachment_dicts(target: list[dict[str, Any]], value: Any) -> None:
+def _extend_unique_attachment_dicts(
+    target: list[dict[str, Any]],
+    value: Any,
+    *,
+    base_url: str | None = None,
+) -> None:
     if not isinstance(value, list):
         return
     seen_urls = {
-        to_absolute_kemono_url(item.get("path") or item.get("url"))
+        to_absolute_kemono_url(item.get("path") or item.get("url"), base_url=base_url)
         for item in target
         if isinstance(item, dict) and isinstance(item.get("path") or item.get("url"), str)
     }
@@ -791,14 +952,14 @@ def _extend_unique_attachment_dicts(target: list[dict[str, Any]], value: Any) ->
         raw_path = item.get("path") or item.get("url")
         if not isinstance(raw_path, str) or not raw_path.strip():
             continue
-        absolute_url = to_absolute_kemono_url(raw_path)
+        absolute_url = to_absolute_kemono_url(raw_path, base_url=base_url)
         if absolute_url in seen_urls:
             continue
         target.append(item)
         seen_urls.add(absolute_url)
 
 
-def _resolve_attachment_url(item: dict[str, Any], raw_path: str) -> str:
+def _resolve_attachment_url(item: dict[str, Any], raw_path: str, *, archive_base: str | None = None) -> str:
     if raw_path.startswith("http://") or raw_path.startswith("https://"):
         return raw_path
 
@@ -807,7 +968,7 @@ def _resolve_attachment_url(item: dict[str, Any], raw_path: str) -> str:
         if raw_path.startswith("/"):
             return f"{server.rstrip('/')}{raw_path}"
         return f"{server.rstrip('/')}/{raw_path.lstrip('/')}"
-    return to_absolute_kemono_url(raw_path)
+    return to_absolute_kemono_url(raw_path, base_url=archive_base)
 
 
 def _dedupe_non_inline_by_name(candidates: list[AttachmentCandidate]) -> list[AttachmentCandidate]:
