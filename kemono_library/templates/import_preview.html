@@ -24,31 +24,31 @@
             <div class="import-meta-grid">
               <div class="import-meta-field import-meta-span-full">
                 <label for="meta-title">Title</label>
-                <input id="meta-title" name="title" value="{{ payload.get('title') or '' }}" placeholder="Post title">
+                <input class="field" id="meta-title" name="title" value="{{ payload.get('title') or '' }}" placeholder="Post title">
               </div>
               <div class="import-meta-field import-meta-span-full">
                 <label for="meta-content">Content</label>
-                <textarea id="meta-content" name="content" rows="7" placeholder="Post content">{{ payload.get('content') or '' }}</textarea>
+                <textarea class="field" id="meta-content" name="content" rows="7" placeholder="Post content">{{ payload.get('content') or '' }}</textarea>
               </div>
               <div class="import-meta-field">
                 <label for="meta-published">Published</label>
-                <input id="meta-published" name="published_at" value="{{ payload.get('published') or '' }}" placeholder="2025-10-25T12:00:00">
+                <input class="field" id="meta-published" name="published_at" value="{{ payload.get('published') or '' }}" placeholder="2025-10-25T12:00:00">
               </div>
               <div class="import-meta-field">
                 <label for="meta-edited">Edited</label>
-                <input id="meta-edited" name="edited_at" value="{{ payload.get('edited') or '' }}" placeholder="2025-10-25T12:00:00">
+                <input class="field" id="meta-edited" name="edited_at" value="{{ payload.get('edited') or '' }}" placeholder="2025-10-25T12:00:00">
               </div>
               <div class="import-meta-field">
                 <label for="meta-next">Next post id</label>
-                <input id="meta-next" name="next_external_post_id" value="{{ payload.get('next') or '' }}" placeholder="Optional">
+                <input class="field" id="meta-next" name="next_external_post_id" value="{{ payload.get('next') or '' }}" placeholder="Optional">
               </div>
               <div class="import-meta-field">
                 <label for="meta-prev">Previous post id</label>
-                <input id="meta-prev" name="prev_external_post_id" value="{{ payload.get('prev') or '' }}" placeholder="Optional">
+                <input class="field" id="meta-prev" name="prev_external_post_id" value="{{ payload.get('prev') or '' }}" placeholder="Optional">
               </div>
               <div class="import-meta-field import-meta-span-full">
                 <label for="meta-tags">Tags (comma separated)</label>
-                <input id="meta-tags" name="tags_text" value="{{ (payload.get('tags') or []) | join(', ') }}" placeholder="tag one, tag two">
+                <input class="field" id="meta-tags" name="tags_text" value="{{ (payload.get('tags') or []) | join(', ') }}" placeholder="tag one, tag two">
               </div>
             </div>
           </div>
@@ -94,9 +94,9 @@
         </div>
         <div class="import-target-picker" data-only-existing>
           <label for="target-post-search">Find target post</label>
-          <input id="target-post-search" type="search" placeholder="Search by post id or title">
+          <input class="field" id="target-post-search" type="search" placeholder="Search by post id or title">
           <label for="target-post-id">Target post</label>
-          <select id="target-post-id" name="target_post_id">
+          <select class="field" id="target-post-id" name="target_post_id">
             <option value="">Select post</option>
             {% for creator_post in creator_posts %}
               <option value="{{ creator_post['id'] }}" {% if default_target_post_id and default_target_post_id == creator_post['id'] %}selected{% endif %}>
@@ -131,11 +131,11 @@
       <div class="import-version-meta-grid">
         <div>
           <label for="version-label">Version label</label>
-          <input id="version-label" name="version_label" value="{{ default_version_label }}" placeholder="EN TL / JP / Manual">
+          <input class="field" id="version-label" name="version_label" value="{{ default_version_label }}" placeholder="EN TL / JP / Manual">
         </div>
         <div>
           <label for="version-language">Language (optional)</label>
-          <input id="version-language" name="version_language" value="{{ default_version_language }}" placeholder="en / ja / ko">
+          <input class="field" id="version-language" name="version_language" value="{{ default_version_language }}" placeholder="en / ja / ko">
         </div>
       </div>
     </article>
@@ -162,7 +162,7 @@
     </header>
     {% if attachments %}
       <div class="import-toolbar">
-        <input id="file-search" type="search" placeholder="Filter files by name or URL">
+        <input class="field" id="file-search" type="search" placeholder="Filter files by name or URL">
         <div class="import-toolbar-buttons">
           <button type="button" class="btn btn--ghost" data-select-action="all">Select all</button>
           <button type="button" class="btn btn--ghost" data-select-action="visible">Select visible</button>
@@ -259,5 +259,6 @@
 <script id="target-attachment-index" type="application/json">{{ target_attachment_index|tojson }}</script>
 <script src="{{ url_for('static', filename='import_preview.js') }}"></script>
 {% endblock %}
+
 
 

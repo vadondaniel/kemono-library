@@ -73,7 +73,7 @@
                   <label class="sr-only" for="post-view-mode-select">View mode</label>
                   <select
                     id="post-view-mode-select"
-                    class="post-view-mode-select"
+                    class="post-view-mode-select field"
                     data-post-view-mode-select
                     aria-label="View mode"
                   >
@@ -121,7 +121,7 @@
                   </label>
                   <label class="post-content-settings-field">
                     <span>Font family</span>
-                    <select data-post-content-font-family>
+                    <select class="field" data-post-content-font-family>
                       <option value="default">Default</option>
                       <option value="sans">Sans</option>
                       <option value="serif">Serif</option>
@@ -130,7 +130,7 @@
                   </label>
                   <label class="post-content-settings-field">
                     <span>Text align</span>
-                    <select data-post-content-text-align>
+                    <select class="field" data-post-content-text-align>
                       <option value="start">Natural</option>
                       <option value="left">Left</option>
                       <option value="justify">Justify</option>
@@ -163,5 +163,6 @@
   <script src="{{ url_for('static', filename='theme.js') }}"></script>
 </body>
 </html>
+
 
 

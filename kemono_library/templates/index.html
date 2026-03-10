@@ -11,7 +11,7 @@
       <div class="series-create-popover home-tool-popover">
         <form method="post" action="{{ url_for('create_creator') }}" class="form series-create-form">
           <label for="creator-name-home">Creator name</label>
-          <input id="creator-name-home" name="name" required placeholder="Example Artist">
+          <input class="field" id="creator-name-home" name="name" required placeholder="Example Artist">
           <div class="series-edit-actions">
             <button type="submit">Create</button>
           </div>
@@ -23,7 +23,7 @@
       <div class="series-create-popover home-tool-popover">
         <form method="get" action="{{ url_for('import_form') }}" class="form series-create-form">
           <label for="quick-url-home">Post URL</label>
-          <input id="quick-url-home" name="url" placeholder="https://kemono.cr/fanbox/user/.../post/...">
+          <input class="field" id="quick-url-home" name="url" placeholder="https://kemono.cr/fanbox/user/.../post/...">
           <div class="series-edit-actions">
             <button type="submit">Open Import</button>
           </div>
@@ -94,5 +94,6 @@
   </article>
 </section>
 {% endblock %}
+
 
 

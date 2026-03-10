@@ -22,10 +22,10 @@
   <section id="import-tab-single" class="import-form-tab-panel" role="tabpanel" data-import-tab-panel="single">
     <form method="post" action="{{ url_for('import_preview') }}" class="form import-form-grid">
       <label for="post-url">Kemono post URL</label>
-      <input id="post-url" name="post_url" required value="{{ prefill_url }}" placeholder="https://kemono.cr/fanbox/user/70479526/post/10791194">
+      <input class="field" id="post-url" name="post_url" required value="{{ prefill_url }}" placeholder="https://kemono.cr/fanbox/user/70479526/post/10791194">
 
       <label for="creator-id">Creator</label>
-      <select id="creator-id" name="creator_id" required>
+      <select class="field" id="creator-id" name="creator_id" required>
         <option value="">Select creator</option>
         {% for creator in creators %}
           <option value="{{ creator['id'] }}" {% if selected_creator and selected_creator == creator['id'] %}selected{% endif %}>
@@ -35,7 +35,7 @@
       </select>
 
       <label for="series-id">Series (optional)</label>
-      <select id="series-id" name="series_id">
+      <select class="field" id="series-id" name="series_id">
         <option value="">No series</option>
         {% for series in series_list %}
           <option value="{{ series['id'] }}" {% if selected_series and selected_series == series['id'] %}selected{% endif %}>{{ series['name'] }}</option>
@@ -58,7 +58,7 @@
   <section id="import-tab-quick" class="import-form-tab-panel" role="tabpanel" data-import-tab-panel="quick">
     <form method="post" action="{{ url_for('import_quick') }}" class="form import-form-grid quick-import-form" data-quick-import-form>
       <label for="quick-creator-id">Creator</label>
-      <select id="quick-creator-id" name="creator_id" required>
+      <select class="field" id="quick-creator-id" name="creator_id" required>
         <option value="">Select creator</option>
         {% for creator in creators %}
           <option value="{{ creator['id'] }}" {% if selected_creator and selected_creator == creator['id'] %}selected{% endif %}>
@@ -68,7 +68,7 @@
       </select>
 
       <label for="quick-series-id">Series (optional)</label>
-      <select id="quick-series-id" name="series_id">
+      <select class="field" id="quick-series-id" name="series_id">
         <option value="">No series</option>
         {% for series in series_list %}
           <option value="{{ series['id'] }}" {% if selected_series and selected_series == series['id'] %}selected{% endif %}>{{ series['name'] }}</option>
@@ -78,7 +78,7 @@
       <div class="quick-import-entry-shell">
         <label for="quick-link-input">Add post links</label>
         <div class="quick-import-entry-row">
-          <input
+          <input class="field"
             id="quick-link-input"
             type="text"
             autocomplete="off"
@@ -97,7 +97,7 @@
           id="quick-post-urls"
           name="post_urls"
           rows="4"
-          class="quick-import-raw-input"
+          class="quick-import-raw-input field"
           data-quick-hidden-urls
         >{{ prefill_quick_urls or '' }}</textarea>
       </details>
@@ -118,3 +118,4 @@
 </section>
 <script src="{{ url_for('static', filename='import_form.js') }}"></script>
 {% endblock %}
+

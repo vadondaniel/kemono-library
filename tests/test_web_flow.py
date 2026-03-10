@@ -2952,7 +2952,10 @@ def test_edit_page_prettifies_html_content(tmp_path):
     response = client.get(f"/posts/{post_id}/edit")
 
     assert response.status_code == 200
-    assert b"<textarea id=\"content\" name=\"content\" rows=\"18\">" in response.data
+    assert b"<textarea" in response.data
+    assert b'id="content"' in response.data
+    assert b'name="content"' in response.data
+    assert b'rows="18"' in response.data
     assert b"&lt;p&gt;" in response.data
     assert b"&lt;strong&gt;" in response.data
     assert b"Hello" in response.data

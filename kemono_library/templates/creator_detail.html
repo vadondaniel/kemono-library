@@ -89,29 +89,29 @@
             <div class="series-edit-popover">
               <form method="post" action="{{ url_for('update_series', creator_id=creator['id'], series_id=selected_series['id']) }}" class="form series-edit-form">
                 <label for="series-name">Folder name</label>
-                <input id="series-name" name="name" required value="{{ selected_series['name'] }}">
+                <input class="field" id="series-name" name="name" required value="{{ selected_series['name'] }}">
                 <label for="series-description">Description</label>
-                <textarea id="series-description" name="description" rows="4" placeholder="Optional description">{{ selected_series['description'] or '' }}</textarea>
+                <textarea class="field" id="series-description" name="description" rows="4" placeholder="Optional description">{{ selected_series['description'] or '' }}</textarea>
                 <label for="series-tags">Tags</label>
-                <input id="series-tags" name="tags_text" value="{{ selected_series['tags_text'] or '' }}" placeholder="tag one, tag two">
+                <input class="field" id="series-tags" name="tags_text" value="{{ selected_series['tags_text'] or '' }}" placeholder="tag one, tag two">
                 <div class="series-edit-settings-row">
                   <div>
                     <label for="series-default-sort">Default sort</label>
-                    <select id="series-default-sort" name="default_sort_by">
+                    <select class="field" id="series-default-sort" name="default_sort_by">
                       <option value="published" {% if (selected_series['default_sort_by'] or 'published') == 'published' %}selected{% endif %}>Publish date</option>
                       <option value="title" {% if selected_series['default_sort_by'] == 'title' %}selected{% endif %}>Alphabetical</option>
                     </select>
                   </div>
                   <div>
                     <label for="series-default-direction">Default order</label>
-                    <select id="series-default-direction" name="default_sort_direction">
+                    <select class="field" id="series-default-direction" name="default_sort_direction">
                       <option value="desc" {% if (selected_series['default_sort_direction'] or 'desc') == 'desc' %}selected{% endif %}>Descending</option>
                       <option value="asc" {% if selected_series['default_sort_direction'] == 'asc' %}selected{% endif %}>Ascending</option>
                     </select>
                   </div>
                 </div>
                 <label for="series-cover-post">Folder thumbnail source</label>
-                <select id="series-cover-post" name="cover_post_id">
+                <select class="field" id="series-cover-post" name="cover_post_id">
                   <option value="">Automatic (latest post)</option>
                   {% for option in series_thumbnail_options %}
                     <option value="{{ option['id'] }}" {% if selected_series['cover_post_id'] and selected_series['cover_post_id'] == option['id'] %}selected{% endif %}>
@@ -153,11 +153,11 @@
             <div class="series-create-popover">
               <form method="post" action="{{ url_for('create_series', creator_id=creator['id']) }}" class="form series-create-form">
                 <label for="series-name">Series name</label>
-                <input id="series-name" name="name" required placeholder="Main Story Arc">
+                <input class="field" id="series-name" name="name" required placeholder="Main Story Arc">
                 <label for="series-description">Description</label>
-                <textarea id="series-description" name="description" rows="4" placeholder="Optional description"></textarea>
+                <textarea class="field" id="series-description" name="description" rows="4" placeholder="Optional description"></textarea>
                 <label for="series-tags">Tags</label>
-                <input id="series-tags" name="tags_text" placeholder="tag one, tag two">
+                <input class="field" id="series-tags" name="tags_text" placeholder="tag one, tag two">
                 <div class="series-edit-actions">
                   <button type="submit">Create</button>
                 </div>
@@ -227,7 +227,7 @@
           <input type="hidden" name="sort" value="{{ sort_by }}">
           <input type="hidden" name="direction" value="{{ sort_direction }}">
           <div class="creator-post-search-field">
-            <input
+            <input class="field"
               type="search"
               name="q"
               value="{{ post_search_text }}"
@@ -367,5 +367,6 @@
   </article>
 </section>
 {% endblock %}
+
 
 

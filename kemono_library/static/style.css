@@ -472,9 +472,7 @@ label {
   font-weight: 600;
 }
 
-input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]),
-select,
-textarea {
+.field {
   width: 100%;
   min-height: var(--field-height);
   padding: var(--field-padding-y) var(--field-padding-x);
@@ -486,32 +484,32 @@ textarea {
   transition: border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
 }
 
-input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]):focus,
-select:focus,
-textarea:focus {
+.field:focus {
   outline: none;
   border-color: var(--field-border-focus);
   background: var(--field-bg-focus);
   box-shadow: var(--field-focus-ring), var(--field-shadow-inset);
 }
 
-textarea {
+textarea.field {
   resize: vertical;
 }
 
-input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"])::placeholder,
-textarea::placeholder {
+.field::placeholder {
   color: var(--field-placeholder);
 }
 
-input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]):disabled,
-select:disabled,
-textarea:disabled {
+.field:disabled {
   color: var(--muted);
   background: color-mix(in srgb, var(--card-solid) 89%, transparent);
   border-color: color-mix(in srgb, var(--border) 90%, transparent);
   cursor: not-allowed;
   box-shadow: none;
+}
+
+.field--lg {
+  min-height: calc(var(--field-height) + 0.45rem);
+  border-radius: var(--field-radius-lg);
 }
 
 input[type="checkbox"],
@@ -1026,7 +1024,7 @@ small {
   gap: 0.5rem;
 }
 
-.quick-import-entry-row input {
+.quick-import-entry-row .field {
   flex: 1 1 auto;
 }
 
@@ -1975,10 +1973,7 @@ small {
   text-transform: uppercase;
 }
 
-.attachment-manager-filter-field input,
-.attachment-manager-filter-field select {
-  min-height: calc(var(--field-height) + 0.45rem);
-  border-radius: var(--field-radius-lg);
+.attachment-manager-filter-field .field {
   background: color-mix(in srgb, var(--card-solid) 97%, transparent);
 }
 
@@ -2579,7 +2574,7 @@ small {
   flex: 1 1 auto;
 }
 
-.creator-post-search-field input[type="search"] {
+.creator-post-search-field .field[type="search"] {
   width: 100%;
   min-width: 0;
   padding-right: 2rem;
