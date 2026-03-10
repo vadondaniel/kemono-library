@@ -2300,8 +2300,11 @@ def test_post_detail_renders_content_view_settings_controls(tmp_path):
     assert classic_soup.select_one("[data-theme-toggle-radio][value='auto']") is not None
     assert classic_soup.select_one("[data-theme-toggle-radio][value='light']") is not None
     assert classic_soup.select_one("[data-theme-toggle-radio][value='dark']") is not None
-    assert classic_soup.select_one("[data-post-content-settings-reset]") is None
-    assert classic_soup.select_one("[data-post-content-font-size]") is None
+    assert classic_soup.select_one("[data-post-content-font-size]") is not None
+    assert classic_soup.select_one("[data-post-content-line-height]") is not None
+    assert classic_soup.select_one("[data-post-content-font-family]") is not None
+    assert classic_soup.select_one("[data-post-content-text-align]") is not None
+    assert classic_soup.select_one("[data-post-content-settings-reset]") is not None
 
     response = app.test_client().get(f"/posts/{post_id}?view=reader")
     assert response.status_code == 200

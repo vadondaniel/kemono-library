@@ -42,7 +42,8 @@
       <a class="brand" href="{{ url_for('index') }}">Kemono Library</a>
     {% endif %}
     {% set show_post_display_controls = post_view_mode_switcher is defined and post_view_mode_switcher is not none %}
-    {% set show_reader_display_controls = show_post_display_controls and post_view_mode_switcher['current_mode'] == 'reader' %}
+    {% set show_content_display_controls = show_post_display_controls %}
+    {% set show_reader_nav_controls = show_post_display_controls and post_view_mode_switcher['current_mode'] == 'reader' %}
     <div class="header-actions">
       <details class="post-content-settings-popover{% if not show_post_display_controls %} is-theme-only{% endif %}" data-post-content-settings>
           <summary class="btn btn-link btn--ghost">{% if show_post_display_controls %}Display{% else %}Theme{% endif %}</summary>
@@ -99,10 +100,10 @@
                 </div>
               </fieldset>
             </div>
-            {% if show_reader_display_controls %}
+            {% if show_content_display_controls %}
               <section class="post-settings-reader">
                 <div class="post-content-settings-head">
-                  <h2>Reader Display</h2>
+                  <h2>Content Display</h2>
                   <button type="button" class="btn btn-link btn--ghost post-content-settings-reset" data-post-content-settings-reset>Reset</button>
                 </div>
                 <div class="post-content-settings-grid">
@@ -139,7 +140,7 @@
             {% endif %}
           </div>
       </details>
-      {% if show_reader_display_controls %}
+      {% if show_reader_nav_controls %}
         <button type="button" class="btn btn-link btn--ghost post-reader-nav-header-button" data-post-reader-nav-open>Navigator</button>
       {% endif %}
     </div>
