@@ -31,7 +31,7 @@
       </div>
       <div class="creator-hero-copy">
         <h1 class="creator-title">{{ creator['name'] }}</h1>
-        <div class="creator-meta-row">
+        <div class="creator-meta-row layout-row layout-row--wrap layout-row--sm">
           {% if creator['service'] and creator['external_user_id'] %}
             <a
               class="chip chip-link creator-meta-pill creator-meta-pill-link"
@@ -54,7 +54,7 @@
           {% endif %}
         </div>
       </div>
-      <div class="creator-hero-actions">
+      <div class="creator-hero-actions layout-row layout-row--wrap layout-row--end">
         <a class="btn btn-link btn--ghost" href="{{ url_for('edit_creator', creator_id=creator['id']) }}">Edit</a>
       </div>
     </div>
@@ -83,7 +83,7 @@
     {% if selected_series %}
       <div class="series-meta-head">
         <h2 class="series-meta-title">{{ selected_series['name'] }}</h2>
-        <div class="series-meta-actions">
+        <div class="series-meta-actions layout-row layout-row--wrap layout-row--end">
           <details class="series-edit-disclosure">
             <summary class="btn btn-link btn--ghost series-edit-toggle">Edit</summary>
             <div class="series-edit-popover">
@@ -147,7 +147,7 @@
           <h2>All Posts</h2>
           <small>{{ series_list|length }} series</small>
         </div>
-        <div class="section-head-actions">
+        <div class="section-head-actions layout-row layout-row--wrap layout-row--sm-plus">
           <details class="series-create-disclosure">
             <summary class="btn btn-link btn--ghost series-create-toggle">New</summary>
             <div class="series-create-popover">
