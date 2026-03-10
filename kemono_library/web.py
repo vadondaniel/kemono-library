@@ -2903,6 +2903,11 @@ def _build_local_media_maps(
     local_media_map_priority: dict[str, int] = {}
     local_media_by_name_priority: dict[str, int] = {}
     local_media_by_path_key_priority: dict[str, int] = {}
+    local_media_by_attachment_name_key: dict[str, str] = {}
+    local_media_by_attachment_name_key_priority: dict[str, int] = {}
+    local_media_by_attachment_stem_key: dict[str, str] = {}
+    local_media_by_attachment_stem_key_priority: dict[str, int] = {}
+    local_media_by_attachment_stem_key_counts: dict[str, int] = {}
 
     for attachment in attachments:
         local_path = attachment["local_path"]
@@ -2951,6 +2956,61 @@ def _build_local_media_maps(
                 path_key,
                 local_url,
                 kind_priority,
+            )
+        attachment_name_key = _attachment_collapse_key(attachment["name"])
+        if attachment_name_key:
+            _assign_preferred(
+                local_media_by_attachment_name_key,
+                local_media_by_attachment_name_key_priority,
+                attachment_name_key,
+                local_url,
+                kind_priority,
+            )
+        attachment_stem_key = _attachment_stem_key(attachment["name"])
+        if attachment_stem_key:
+            local_media_by_attachment_stem_key_counts[attachment_stem_key] = (
+                local_media_by_attachment_stem_key_counts.get(attachment_stem_key, 0) + 1
+            )
+            _assign_preferred(
+                local_media_by_attachment_stem_key,
+                local_media_by_attachment_stem_key_priority,
+                attachment_stem_key,
+                local_url,
+                kind_priority,
+            )
+
+    for attachment in attachments:
+        local_path = _optional_str(attachment["local_path"])
+        if local_path:
+            continue
+        kind = str(attachment["kind"] or "")
+        if kind not in {"inline_only", "inline_media"}:
+            continue
+        attachment_name_key = _attachment_collapse_key(attachment["name"])
+        if not attachment_name_key:
+            continue
+        local_url = local_media_by_attachment_name_key.get(attachment_name_key)
+        alias_priority = local_media_by_attachment_name_key_priority.get(attachment_name_key, 0)
+        if not local_url:
+            attachment_stem_key = _attachment_stem_key(attachment["name"])
+            if (
+                attachment_stem_key
+                and local_media_by_attachment_stem_key_counts.get(attachment_stem_key, 0) == 1
+            ):
+                local_url = local_media_by_attachment_stem_key.get(attachment_stem_key)
+                alias_priority = local_media_by_attachment_stem_key_priority.get(attachment_stem_key, 0)
+        if not local_url:
+            continue
+        remote_url = _optional_str(attachment["remote_url"])
+        if not remote_url:
+            continue
+        for alias_key in _remote_filename_alias_keys(remote_url):
+            _assign_preferred(
+                local_media_by_name,
+                local_media_by_name_priority,
+                alias_key,
+                local_url,
+                alias_priority,
             )
 
     metadata = _safe_load_metadata(post["metadata_json"])
@@ -3240,7 +3300,39 @@ def _dedupe_post_detail_attachments(rows: list[dict[str, Any]]) -> list[dict[str
         winner = by_key.get(key)
         if winner is not None:
             deduped.append(winner)
-    return deduped
+    local_name_keys = {
+        _attachment_collapse_key(row.get("name"))
+        for row in deduped
+        if bool(row.get("local_available"))
+    }
+    local_stem_key_counts: dict[str, int] = {}
+    for row in deduped:
+        if not bool(row.get("local_available")):
+            continue
+        stem_key = _attachment_stem_key(row.get("name"))
+        if stem_key:
+            local_stem_key_counts[stem_key] = local_stem_key_counts.get(stem_key, 0) + 1
+    local_name_keys.discard("")
+    if not local_name_keys and not local_stem_key_counts:
+        return deduped
+
+    filtered: list[dict[str, Any]] = []
+    for row in deduped:
+        if bool(row.get("local_available")):
+            filtered.append(row)
+            continue
+        kind = str(row.get("kind") or "")
+        if kind not in {"inline_only", "inline_media"}:
+            filtered.append(row)
+            continue
+        name_key = _attachment_collapse_key(row.get("name"))
+        if name_key and name_key in local_name_keys:
+            continue
+        stem_key = _attachment_stem_key(row.get("name"))
+        if stem_key and local_stem_key_counts.get(stem_key, 0) == 1:
+            continue
+        filtered.append(row)
+    return filtered
 
 
 def _post_detail_attachment_key(row: dict[str, Any]) -> str:
@@ -4009,6 +4101,14 @@ def _attachment_collapse_key(name: Any) -> str:
         return ""
     normalized = sanitize_filename(name).strip().lower()
     return normalized
+
+
+def _attachment_stem_key(name: Any) -> str:
+    collapse_key = _attachment_collapse_key(name)
+    if not collapse_key:
+        return ""
+    stem = Path(collapse_key).stem.strip().lower()
+    return stem
 
 
 def _remove_local_attachment_file(files_base: Path, local_path: str) -> None:

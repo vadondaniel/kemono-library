@@ -1625,6 +1625,68 @@ def test_post_detail_prefers_attachment_over_inline_same_name(tmp_path):
     assert b'src="' + expected + b'"' in detail.data
 
 
+def test_post_detail_rewrites_inline_only_alias_to_local_and_hides_duplicate_saved_file(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Inline Alias Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="70479526",
+        external_post_id="1001",
+        title="Inline Alias Case",
+        content=(
+            '<p><a href="https://downloads.fanbox.cc/images/post/10791194/'
+            'QRcFc9aLl1C80MnOd4yOFKIF.jpeg" rel="noopener noreferrer"></a></p>'
+        ),
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/70479526/post/1001",
+    )
+    db.replace_attachments(
+        post_id,
+        [
+            {
+                "name": "1.jpg",
+                "remote_url": "https://kemono.cr/79/14/79144a60c6a0cc563340b925d02d14b890b8e0460754d314b8b233d04fcb3e2f.jpg",
+                "local_path": f"post_{post_id}/1.jpg",
+                "kind": "attachment",
+            },
+            {
+                "name": "1.jpeg",
+                "remote_url": "https://downloads.fanbox.cc/images/post/10791194/QRcFc9aLl1C80MnOd4yOFKIF.jpeg",
+                "local_path": None,
+                "kind": "inline_only",
+            },
+        ],
+    )
+
+    files_root = Path(app.config["FILES_DIR"]) / f"post_{post_id}"
+    files_root.mkdir(parents=True, exist_ok=True)
+    (files_root / "1.jpg").write_bytes(b"img")
+
+    response = app.test_client().get(f"/posts/{post_id}")
+    assert response.status_code == 200
+
+    local_href = f"/files/post_{post_id}/1.jpg".encode()
+    assert b'href="' + local_href + b'"' in response.data
+    assert b'src="' + local_href + b'"' in response.data
+    assert b"QRcFc9aLl1C80MnOd4yOFKIF.jpeg" not in response.data
+
+    soup = BeautifulSoup(response.data, "html.parser")
+    same_links = soup.select('.post-file-list a[title="1.jpg"]')
+    assert len(same_links) == 1
+    assert same_links[0].get("href") == f"/files/post_{post_id}/1.jpg"
+
+
 def test_post_detail_falls_back_to_attachment_remote_when_local_missing(tmp_path):
     app = create_app(
         {
