@@ -75,7 +75,12 @@
     {% if recent_posts %}
       <div class="home-recent-list">
         {% for post in recent_posts %}
-          <a class="home-recent-item" href="{{ url_for('post_detail', post_id=post['id']) }}">
+          <a
+            class="home-recent-item"
+            href="{{ url_for('post_detail', post_id=post['id']) }}"
+            data-post-detail-link
+            data-post-creator-id="{{ post['creator_id']|default('') }}"
+          >
             <strong>{{ post['title'] }}</strong>
             <small>
               {{ post['creator_name'] }}{% if post['series_name'] %} / {{ post['series_name'] }}{% endif %}

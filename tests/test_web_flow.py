@@ -1770,6 +1770,46 @@ def test_homepage_links_to_attachment_manager(tmp_path):
     assert b"Attachments" in response.data
 
 
+def test_post_links_expose_creator_for_preferred_view_injection(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Link Pref Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="pref-user",
+        external_post_id="7711",
+        title="Link Pref Post",
+        content="<p>body</p>",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/pref-user/post/7711",
+    )
+
+    home = app.test_client().get("/")
+    assert home.status_code == 200
+    home_soup = BeautifulSoup(home.data, "html.parser")
+    recent_link = home_soup.select_one("a.home-recent-item[data-post-detail-link]")
+    assert recent_link is not None
+    assert recent_link.get("href") == f"/posts/{post_id}"
+    assert recent_link.get("data-post-creator-id") == str(creator_id)
+
+    creator_page = app.test_client().get(f"/creators/{creator_id}")
+    assert creator_page.status_code == 200
+    creator_soup = BeautifulSoup(creator_page.data, "html.parser")
+    creator_links = creator_soup.select("a[data-post-detail-link][data-post-creator-id]")
+    assert creator_links
+    assert any(link.get("data-post-creator-id") == str(creator_id) for link in creator_links)
+
+
 def test_attachment_manager_lists_grouped_inventory_with_sizes(tmp_path):
     app = create_app(
         {

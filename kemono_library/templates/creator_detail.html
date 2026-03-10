@@ -222,7 +222,12 @@
       <div class="creator-post-list">
         {% for post in posts %}
           <article class="creator-post-card">
-            <a class="creator-post-thumb" href="{{ url_for('post_detail', post_id=post['id']) }}">
+            <a
+              class="creator-post-thumb"
+              href="{{ url_for('post_detail', post_id=post['id']) }}"
+              data-post-detail-link
+              data-post-creator-id="{{ creator['id'] }}"
+            >
               {% if post['published_at'] %}
                 <time class="creator-post-published" datetime="{{ post['published_at'] }}">{{ post['published_at']|format_datetime }}</time>
               {% endif %}
@@ -235,7 +240,7 @@
               {% endif %}
             </a>
             <div class="creator-post-body">
-              <h3><a href="{{ url_for('post_detail', post_id=post['id']) }}">{{ post['title'] }}</a></h3>
+              <h3><a href="{{ url_for('post_detail', post_id=post['id']) }}" data-post-detail-link data-post-creator-id="{{ creator['id'] }}">{{ post['title'] }}</a></h3>
               <p class="creator-post-meta">
                 {% if not selected_series %}
                   <span class="creator-post-badge">

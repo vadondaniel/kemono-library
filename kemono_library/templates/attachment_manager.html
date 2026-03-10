@@ -113,7 +113,7 @@
                   <details class="attachment-tree-node attachment-tree-post" data-attachment-group="post" data-file-count="{{ post['file_count'] }}" data-size-bytes="{{ post['size_bytes'] }}" data-missing-count="{{ post['missing_count'] }}" data-published-display="{% if post['published_at'] %}{{ post['published_at']|format_datetime }}{% endif %}">
                     <summary class="attachment-tree-summary">
                       <div>
-                        <strong><a href="{{ url_for('post_detail', post_id=post['post_id']) }}">{{ post['title'] }}</a></strong>
+                        <strong><a href="{{ url_for('post_detail', post_id=post['post_id']) }}" data-post-detail-link data-post-creator-id="{{ creator['id'] }}">{{ post['title'] }}</a></strong>
                         <small data-attachment-group-summary>{{ post['file_count'] }} files, {{ post['size_bytes']|format_bytes }}, {{ post['missing_count'] }} missing{% if post['published_at'] %}, {{ post['published_at']|format_datetime }}{% endif %}</small>
                       </div>
                       {% if post['missing_count'] > 0 %}
@@ -174,7 +174,7 @@
                               {% if file['local_available'] and file['local_path'] %}
                                 <a class="button-link button-ghost" href="{{ url_for('serve_file', relative_path=file['local_path']) }}" target="_blank" rel="noopener" data-attachment-open-local>Open local</a>
                               {% endif %}
-                              <a class="button-link button-ghost" href="{{ url_for('post_detail', post_id=file['post_id']) }}">Open post</a>
+                              <a class="button-link button-ghost" href="{{ url_for('post_detail', post_id=file['post_id']) }}" data-post-detail-link data-post-creator-id="{{ creator['id'] }}">Open post</a>
                               {% if not file['local_available'] %}
                                 <form method="post" action="{{ url_for('retry_missing_attachments') }}" class="inline-form" data-attachment-retry-form data-attachment-retry-inline data-retry-start-url="{{ url_for('start_retry_missing_attachments') }}" data-retry-message="Retrying {{ file['name'] }}...">
                                   <input type="hidden" name="scope" value="attachment">

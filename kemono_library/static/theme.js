@@ -124,3 +124,80 @@
     }
   });
 })();
+
+(() => {
+  const isKnownMode = (value) => value === "classic" || value === "reader";
+  const postLinkSelector = "a[data-post-detail-link]";
+
+  const readPreferredPostMode = (creatorId) => {
+    const normalizedCreatorId = typeof creatorId === "string" ? creatorId.trim() : "";
+    if (!normalizedCreatorId) {
+      return null;
+    }
+    const key = `kemono-post-view-mode:creator:${normalizedCreatorId}`;
+    try {
+      const value = window.localStorage.getItem(key);
+      return isKnownMode(value) ? value : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const withPreferredView = (href, creatorId) => {
+    if (typeof href !== "string" || !href.trim()) {
+      return href;
+    }
+    const preferredMode = readPreferredPostMode(creatorId);
+    if (preferredMode !== "reader") {
+      return href;
+    }
+    try {
+      const url = new URL(href, window.location.href);
+      if (!/^\/posts\/\d+/.test(url.pathname)) {
+        return href;
+      }
+      if (url.searchParams.has("view")) {
+        return href;
+      }
+      url.searchParams.set("view", "reader");
+      return url.origin === window.location.origin ? `${url.pathname}${url.search}${url.hash}` : url.toString();
+    } catch {
+      return href;
+    }
+  };
+
+  const rewritePostLinks = () => {
+    const links = Array.from(document.querySelectorAll(postLinkSelector));
+    links.forEach((node) => {
+      if (!(node instanceof HTMLAnchorElement)) {
+        return;
+      }
+      const creatorId = node.dataset.postCreatorId || "";
+      const rewritten = withPreferredView(node.getAttribute("href") || "", creatorId);
+      if (rewritten && rewritten !== node.getAttribute("href")) {
+        node.setAttribute("href", rewritten);
+      }
+    });
+  };
+
+  rewritePostLinks();
+
+  document.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+    const link = target.closest(postLinkSelector);
+    if (!(link instanceof HTMLAnchorElement)) {
+      return;
+    }
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+      return;
+    }
+    const creatorId = link.dataset.postCreatorId || "";
+    const rewritten = withPreferredView(link.getAttribute("href") || "", creatorId);
+    if (rewritten && rewritten !== link.getAttribute("href")) {
+      link.setAttribute("href", rewritten);
+    }
+  });
+})();
