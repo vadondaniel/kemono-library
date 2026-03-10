@@ -4906,6 +4906,7 @@ def _import_post_into_library(
 
             planned_entries: list[dict[str, Any]] = []
             pending_downloads: dict[Path, tuple[str, Any]] = {}
+            entries_by_destination: dict[Path, list[dict[str, Any]]] = {}
             for candidate in selected_attachments:
                 filename = sanitize_filename(candidate.name)
                 path_key = _remote_path_key(candidate.remote_url)
@@ -4924,15 +4925,26 @@ def _import_post_into_library(
                 )
                 if needs_download and destination is not None:
                     pending_downloads.setdefault(destination, (candidate.remote_url, candidate.name))
-                planned_entries.append(
-                    {
-                        "candidate": candidate,
-                        "destination": destination,
-                        "needs_download": needs_download,
-                    }
-                )
+                entry = {
+                    "candidate": candidate,
+                    "destination": destination,
+                    "needs_download": needs_download,
+                    "progressed": False,
+                }
+                if needs_download and destination is not None:
+                    entries_by_destination.setdefault(destination, []).append(entry)
+                planned_entries.append(entry)
 
             download_success_by_destination: dict[Path, bool] = {}
+            total = len(planned_entries)
+            completed_for_progress = 0
+            if progress_callback:
+                for entry in planned_entries:
+                    if bool(entry["needs_download"]):
+                        continue
+                    completed_for_progress += 1
+                    entry["progressed"] = True
+                    progress_callback(completed_for_progress, total, entry["candidate"].name)
             if pending_downloads:
                 max_workers = max(1, min(IMPORT_DOWNLOAD_CONCURRENCY, len(pending_downloads)))
                 with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -4956,10 +4968,16 @@ def _import_post_into_library(
                         download_success_by_destination[destination] = succeeded
                         if succeeded:
                             created_files.add(destination)
+                        if progress_callback:
+                            for entry in entries_by_destination.get(destination, []):
+                                if bool(entry["progressed"]):
+                                    continue
+                                completed_for_progress += 1
+                                entry["progressed"] = True
+                                progress_callback(completed_for_progress, total, entry["candidate"].name)
 
             saved: list[dict[str, Any]] = []
-            total = len(planned_entries)
-            for idx, entry in enumerate(planned_entries, start=1):
+            for entry in planned_entries:
                 candidate = entry["candidate"]
                 destination = entry["destination"]
                 needs_download = bool(entry["needs_download"])
@@ -4994,8 +5012,10 @@ def _import_post_into_library(
                         "kind": candidate.kind,
                     }
                 )
-                if progress_callback:
-                    progress_callback(idx, total, candidate.name)
+                if progress_callback and not bool(entry["progressed"]):
+                    completed_for_progress += 1
+                    entry["progressed"] = True
+                    progress_callback(completed_for_progress, total, candidate.name)
 
             thumbnail_local_path = _find_thumbnail_local_path(
                 saved,

@@ -690,6 +690,9 @@ def test_import_start_reports_live_progress_until_complete(tmp_path, monkeypatch
             "attachments": [
                 {"name": "a.jpg", "path": "/aa/bb/a.jpg"},
                 {"name": "b.jpg", "path": "/aa/bb/b.jpg"},
+                {"name": "c.jpg", "path": "/aa/bb/c.jpg"},
+                {"name": "d.jpg", "path": "/aa/bb/d.jpg"},
+                {"name": "e.jpg", "path": "/aa/bb/e.jpg"},
             ],
         },
         "attachments": [],
@@ -699,7 +702,7 @@ def test_import_start_reports_live_progress_until_complete(tmp_path, monkeypatch
         return payload
 
     def fake_download(remote_url, destination):  # noqa: ARG001
-        time.sleep(0.01)
+        time.sleep(0.04)
         Path(destination).parent.mkdir(parents=True, exist_ok=True)
         Path(destination).write_bytes(b"ok")
 
@@ -726,7 +729,7 @@ def test_import_start_reports_live_progress_until_complete(tmp_path, monkeypatch
             "post_id": "200",
             "import_target_mode": "new",
             "overwrite_matching_version": "0",
-            "selected_attachment": ["0", "1"],
+            "selected_attachment": ["0", "1", "2", "3", "4"],
         },
     )
     assert start.status_code == 200
@@ -736,11 +739,17 @@ def test_import_start_reports_live_progress_until_complete(tmp_path, monkeypatch
     assert isinstance(status_url, str)
 
     final_status: dict | None = None
-    for _ in range(150):
+    saw_partial_progress = False
+    for _ in range(250):
         status_response = client.get(status_url)
         assert status_response.status_code == 200
         status_payload = status_response.get_json()
         assert isinstance(status_payload, dict)
+        if status_payload.get("status") == "running":
+            total = int(status_payload.get("total") or 0)
+            completed = int(status_payload.get("completed") or 0)
+            if total == 5 and 0 < completed < total:
+                saw_partial_progress = True
         if status_payload.get("status") == "completed":
             final_status = status_payload
             break
@@ -750,8 +759,9 @@ def test_import_start_reports_live_progress_until_complete(tmp_path, monkeypatch
 
     assert final_status is not None
     assert final_status["redirect_url"] == "/posts/1"
-    assert final_status["total"] == 2
-    assert final_status["completed"] == 2
+    assert saw_partial_progress is True
+    assert final_status["total"] == 5
+    assert final_status["completed"] == 5
 
 
 def test_import_downloads_use_three_worker_concurrency(tmp_path, monkeypatch):
