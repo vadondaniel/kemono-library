@@ -82,4 +82,26 @@
         target.submit();
       });
   });
+
+  document.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+    const link = target.closest("a[data-nav-replace-href]");
+    if (!(link instanceof HTMLAnchorElement)) {
+      return;
+    }
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+      return;
+    }
+    if (link.target && link.target !== "_self") {
+      return;
+    }
+    if (!link.href || link.hasAttribute("download")) {
+      return;
+    }
+    event.preventDefault();
+    window.location.replace(link.href);
+  });
 })();

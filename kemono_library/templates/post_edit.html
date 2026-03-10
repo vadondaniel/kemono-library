@@ -270,7 +270,11 @@
   {% endif %}
 </section>
 <div class="post-edit-floating-actions" aria-label="Post edit quick actions">
-  <a class="btn btn-link btn--ghost" href="{{ url_for('post_detail', post_id=post['id'], version_id=active_version['id']) }}">Back to post</a>
+  <a
+    class="btn btn-link btn--ghost"
+    href="{{ url_for('post_detail', post_id=post['id']) if active_version['is_default'] else url_for('post_detail', post_id=post['id'], version_id=active_version['id']) }}"
+    data-nav-replace-href
+  >Back to post</a>
   <button type="submit" form="post-edit-main-form">Save Changes</button>
 </div>
 <div class="post-edit-lightbox" data-post-edit-lightbox hidden>
@@ -291,5 +295,4 @@
 </div>
 </div>
 <script src="{{ url_for('static', filename='post_edit.js') }}"></script>
-<script src="{{ url_for('static', filename='transient_navigation.js') }}"></script>
 {% endblock %}

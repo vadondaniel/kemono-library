@@ -2324,7 +2324,12 @@ def create_app(test_config: dict | None = None) -> Flask:
                 flash(f"Failed to update post: {exc}", "error")
                 return _redirect_with_ajax(url_for("edit_post", post_id=post_id, version_id=active_version_id))
             flash("Post updated.", "success")
-            return _redirect_with_ajax(url_for("post_detail", post_id=post_id, version_id=active_version_id))
+            detail_url = (
+                url_for("post_detail", post_id=post_id)
+                if bool(active_version["is_default"])
+                else url_for("post_detail", post_id=post_id, version_id=active_version_id)
+            )
+            return _redirect_with_ajax(detail_url)
 
         tracked_attachment_rows = [item for item in attachment_rows if item["tracked"]]
         source_attachment_rows = [item for item in attachment_rows if not item["tracked"]]

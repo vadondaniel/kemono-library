@@ -134,6 +134,7 @@ def test_import_and_resolve_flow(tmp_path, monkeypatch):
     assert b"/links/resolve?service=fanbox&amp;post=101" in detail.data
     assert b"Published:" in detail.data
     assert b"2025-10-25T12:00:00" in detail.data
+    assert b"data-nav-replace-href" in detail.data
     assert _page_title(detail) == _expected_page_title("Post 100", "Creator A")
 
     unresolved = client.get("/links/resolve?service=fanbox&post=100&user=70479526")
@@ -3495,6 +3496,7 @@ def test_edit_page_prettifies_html_content(tmp_path):
     assert b"&lt;strong&gt;" in response.data
     assert b"Hello" in response.data
     assert b'data-nav-replace-redirect' in response.data
+    assert b'data-nav-replace-href' in response.data
     assert b"/static/transient_navigation.js" in response.data
 
 
@@ -3599,7 +3601,7 @@ def test_edit_post_ajax_submit_returns_redirect_json(tmp_path):
     assert response.status_code == 200
     payload = response.get_json()
     assert payload is not None
-    assert payload["redirect_url"].endswith(f"/posts/{post_id}?version_id={version_id}")
+    assert payload["redirect_url"].endswith(f"/posts/{post_id}")
 
 
 def test_edit_post_thumbnail_selector_keeps_current_when_name_match_is_ambiguous(tmp_path):
@@ -4504,6 +4506,10 @@ def test_creator_edit_flow_updates_metadata(tmp_path):
     assert updated["name"] == "Creator After"
     assert updated["description"] == "Creator description"
     assert updated["tags_text"] == "tag-a, tag-b"
+
+    creator_page = client.get(f"/creators/{creator_id}")
+    assert creator_page.status_code == 200
+    assert b'data-nav-replace-href' in creator_page.data
 
 
 def test_creator_edit_ajax_submit_returns_redirect_json(tmp_path):

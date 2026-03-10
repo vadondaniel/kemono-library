@@ -55,7 +55,7 @@
         </div>
       </div>
       <div class="creator-hero-actions layout-row layout-row--wrap layout-row--end">
-        <a class="btn btn-link btn--ghost" href="{{ url_for('edit_creator', creator_id=creator['id']) }}">Edit</a>
+        <a class="btn btn-link btn--ghost" href="{{ url_for('edit_creator', creator_id=creator['id']) }}" data-nav-replace-href>Edit</a>
       </div>
     </div>
     {% if creator['description'] or creator['tags_text'] %}
