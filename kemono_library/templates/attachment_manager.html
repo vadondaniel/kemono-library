@@ -139,6 +139,10 @@
                                 data-lightbox-title="{{ file['name'] }}"
                               >
                                 <img data-attachment-preview-image data-preview-src="{{ file['preview_url'] }}" alt="{{ file['name'] }}" loading="lazy">
+                                <span class="attachment-file-preview-placeholder" data-attachment-preview-placeholder hidden>
+                                  <span class="attachment-file-preview-placeholder-icon" aria-hidden="true"></span>
+                                  <span>Image unavailable</span>
+                                </span>
                               </button>
                             {% else %}
                               <span class="attachment-file-preview-fallback">File</span>

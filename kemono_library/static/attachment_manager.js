@@ -762,11 +762,50 @@
     image.src = previewSrc;
   }
 
+  function setPreviewBrokenState(image, isBroken) {
+    if (!(image instanceof HTMLImageElement)) {
+      return;
+    }
+    const trigger = image.closest(".attachment-file-preview-trigger");
+    if (!(trigger instanceof HTMLElement)) {
+      return;
+    }
+    const placeholder = trigger.querySelector("[data-attachment-preview-placeholder]");
+    trigger.classList.toggle("is-broken", Boolean(isBroken));
+    if (placeholder instanceof HTMLElement) {
+      placeholder.hidden = !isBroken;
+    }
+  }
+
+  function bindPreviewImageState(image) {
+    if (!(image instanceof HTMLImageElement)) {
+      return;
+    }
+    if (image.dataset.previewStateBound === "1") {
+      return;
+    }
+    image.dataset.previewStateBound = "1";
+    image.addEventListener("error", () => {
+      setPreviewBrokenState(image, true);
+    });
+    image.addEventListener("load", () => {
+      setPreviewBrokenState(image, false);
+    });
+    if (image.complete && image.naturalWidth <= 0) {
+      setPreviewBrokenState(image, true);
+    }
+  }
+
   function setupPreviewLoading() {
     const previewImages = Array.from(document.querySelectorAll("[data-attachment-preview-image]"));
     if (!previewImages.length) {
       return;
     }
+    previewImages.forEach((image) => {
+      if (image instanceof HTMLImageElement) {
+        bindPreviewImageState(image);
+      }
+    });
 
     if ("IntersectionObserver" in window) {
       if (!(previewObserver instanceof IntersectionObserver)) {
