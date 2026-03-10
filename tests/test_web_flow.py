@@ -429,6 +429,88 @@ def test_import_start_reports_live_progress_until_complete(tmp_path, monkeypatch
     assert final_status["completed"] == 2
 
 
+def test_import_downloads_use_three_worker_concurrency(tmp_path, monkeypatch):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Concurrent Import Creator")
+
+    payload = {
+        "post": {
+            "title": "Concurrency",
+            "content": "",
+            "user": "70479526",
+            "attachments": [
+                {"name": f"{idx}.jpg", "path": f"/aa/bb/{idx}.jpg"}
+                for idx in range(8)
+            ],
+        },
+        "attachments": [],
+    }
+
+    active_downloads = 0
+    max_active_downloads = 0
+    guard = threading.Lock()
+
+    def fake_fetch(ref, fallback_user_id=None):  # noqa: ARG001
+        return payload
+
+    def fake_download(remote_url, destination):  # noqa: ARG001
+        nonlocal active_downloads, max_active_downloads
+        with guard:
+            active_downloads += 1
+            max_active_downloads = max(max_active_downloads, active_downloads)
+        try:
+            time.sleep(0.03)
+            Path(destination).parent.mkdir(parents=True, exist_ok=True)
+            Path(destination).write_bytes(b"ok")
+        finally:
+            with guard:
+                active_downloads -= 1
+
+    def fake_icon_download(service, user_id, icons_root):  # noqa: ARG001
+        return (f"https://img.kemono.cr/icons/{service}/{user_id}", None)
+
+    monkeypatch.setattr("kemono_library.web.fetch_post_json", fake_fetch)
+    monkeypatch.setattr("kemono_library.web.download_attachment", fake_download)
+    monkeypatch.setattr("kemono_library.web.download_creator_icon", fake_icon_download)
+
+    _import_post_into_library(
+        db,
+        files_base=Path(app.config["FILES_DIR"]),
+        icons_base=Path(app.config["ICONS_DIR"]),
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        user_id="70479526",
+        post_id="901",
+        import_target_mode="new",
+        target_post_id=None,
+        overwrite_matching_version=True,
+        set_as_default=True,
+        version_label=None,
+        version_language=None,
+        requested_title=None,
+        requested_content=None,
+        requested_published_at=None,
+        requested_edited_at=None,
+        requested_next_external_post_id=None,
+        requested_prev_external_post_id=None,
+        tags_text=None,
+        field_presence={},
+        selected_attachment_indices={str(idx) for idx in range(8)},
+    )
+
+    assert 2 <= max_active_downloads <= 3
+
+
 def test_import_start_queues_later_jobs_until_running_import_finishes(tmp_path, monkeypatch):
     app = create_app(
         {

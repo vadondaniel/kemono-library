@@ -10,6 +10,7 @@ import stat
 import threading
 import uuid
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
@@ -23,6 +24,7 @@ from markupsafe import Markup
 from .db import LibraryDB
 
 LibraryDBLike = Any
+IMPORT_DOWNLOAD_CONCURRENCY = 3
 from .kemono import (
     KemonoPostRef,
     creator_icon_url,
@@ -3861,9 +3863,9 @@ def _import_post_into_library(
                 existing_rows,
             )
 
-            saved: list[dict[str, Any]] = []
-            total = len(selected_attachments)
-            for idx, candidate in enumerate(selected_attachments, start=1):
+            planned_entries: list[dict[str, Any]] = []
+            pending_downloads: dict[Path, tuple[str, Any]] = {}
+            for candidate in selected_attachments:
                 filename = sanitize_filename(candidate.name)
                 path_key = _remote_path_key(candidate.remote_url)
                 destination = (
@@ -3872,18 +3874,56 @@ def _import_post_into_library(
                     or existing_by_name.get(filename)
                     or (download_root / filename)
                 )
-                if not skip_attachment_downloads:
-                    needs_download = not _is_valid_file(destination)
-                    if needs_download:
-                        used_remote_url = _download_with_fallback_remote_url(
-                            candidate.remote_url,
+                needs_download = (
+                    (not skip_attachment_downloads)
+                    and destination is not None
+                    and not _is_valid_file(destination)
+                )
+                if needs_download and destination is not None:
+                    pending_downloads.setdefault(destination, (candidate.remote_url, candidate.name))
+                planned_entries.append(
+                    {
+                        "candidate": candidate,
+                        "destination": destination,
+                        "needs_download": needs_download,
+                    }
+                )
+
+            download_success_by_destination: dict[Path, bool] = {}
+            if pending_downloads:
+                max_workers = max(1, min(IMPORT_DOWNLOAD_CONCURRENCY, len(pending_downloads)))
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    future_to_destination = {
+                        executor.submit(
+                            _download_with_fallback_remote_url,
+                            remote_url,
                             destination,
-                            candidate.name,
-                        )
-                        if used_remote_url and destination is not None and _is_valid_file(destination):
+                            attachment_name,
+                        ): destination
+                        for destination, (remote_url, attachment_name) in pending_downloads.items()
+                    }
+                    for future in as_completed(future_to_destination):
+                        destination = future_to_destination[future]
+                        used_remote_url = None
+                        try:
+                            used_remote_url = future.result()
+                        except Exception:  # noqa: BLE001
+                            used_remote_url = None
+                        succeeded = bool(used_remote_url and _is_valid_file(destination))
+                        download_success_by_destination[destination] = succeeded
+                        if succeeded:
                             created_files.add(destination)
-                        if not used_remote_url:
-                            destination = None
+
+            saved: list[dict[str, Any]] = []
+            total = len(planned_entries)
+            for idx, entry in enumerate(planned_entries, start=1):
+                candidate = entry["candidate"]
+                destination = entry["destination"]
+                needs_download = bool(entry["needs_download"])
+                if needs_download and (
+                    destination is None or not download_success_by_destination.get(destination, False)
+                ):
+                    destination = None
                 if destination and _is_valid_file(destination):
                     local_path = destination.relative_to(files_base).as_posix()
                 else:
