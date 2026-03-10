@@ -96,6 +96,15 @@
   --field-focus-ring: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
   --field-placeholder: color-mix(in srgb, var(--muted) 86%, var(--text));
   --label-color: color-mix(in srgb, var(--text) 90%, var(--muted));
+  --type-line-heading: 1.18;
+  --type-line-body: 1.52;
+  --type-size-h1: clamp(1.64rem, 1.38rem + 0.86vw, 2.04rem);
+  --type-size-h2: clamp(1.28rem, 1.14rem + 0.48vw, 1.54rem);
+  --type-size-h3: 1.05rem;
+  --type-size-h4: 0.94rem;
+  --type-size-body: 0.98rem;
+  --type-size-small: 0.82rem;
+  --type-size-kicker: 0.78rem;
 
   /* Layer scale */
   --z-local: 1;
@@ -196,7 +205,61 @@ h2,
 h3,
 h4 {
   font-family: var(--font-head);
-  margin-top: 0;
+  margin: 0 0 0.45rem;
+  line-height: var(--type-line-heading);
+  color: var(--text-strong);
+}
+
+h1 {
+  font-size: var(--type-size-h1);
+}
+
+h2 {
+  font-size: var(--type-size-h2);
+}
+
+h3 {
+  font-size: var(--type-size-h3);
+}
+
+h4 {
+  font-size: var(--type-size-h4);
+}
+
+p {
+  margin: 0 0 0.72rem;
+  font-size: var(--type-size-body);
+  line-height: var(--type-line-body);
+}
+
+p:last-child {
+  margin-bottom: 0;
+}
+
+:where(small) {
+  color: var(--muted);
+  font-size: var(--type-size-small);
+  line-height: 1.35;
+}
+
+.text-kicker {
+  margin: 0;
+  font-size: var(--type-size-kicker);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.text-subtle {
+  color: var(--muted);
+}
+
+.text-lead {
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1.55;
+  max-width: 62ch;
 }
 
 .site-header {
@@ -713,10 +776,6 @@ button:disabled,
   white-space: nowrap;
 }
 
-small {
-  color: var(--muted);
-}
-
 .flash-stack {
   display: grid;
   gap: 0.5rem;
@@ -1172,15 +1231,6 @@ small {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 1rem;
   align-items: flex-start;
-}
-
-.import-preview-kicker {
-  margin: 0;
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted);
 }
 
 .import-preview-title {
@@ -2818,15 +2868,6 @@ small {
   grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
   gap: 1rem;
   align-items: start;
-}
-
-.post-edit-kicker {
-  margin: 0;
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted);
 }
 
 .post-edit-title-wrap h1 {

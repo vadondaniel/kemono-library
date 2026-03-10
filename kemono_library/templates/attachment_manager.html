@@ -4,7 +4,7 @@
   <div>
     <small>Attachments</small>
     <h1>Inventory</h1>
-    <p>Browse saved files across the whole archive, inspect missing downloads, and retry them in batches.</p>
+    <p class="text-lead">Browse saved files across the whole archive, inspect missing downloads, and retry them in batches.</p>
   </div>
   {% if attachment_summary['missing_count'] > 0 %}
     <form method="post" action="{{ url_for('retry_missing_attachments') }}" class="inline-form" data-attachment-retry-form data-attachment-retry-all-form data-retry-start-url="{{ url_for('start_retry_missing_attachments') }}" data-retry-message="Retrying all missing attachments...">
