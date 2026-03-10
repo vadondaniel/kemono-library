@@ -93,7 +93,7 @@
       emptyState.hidden = false;
       stage.classList.add("is-empty");
       setAxisMode("none");
-      setFocus(50, 50);
+      updateReadout();
       return;
     }
 
@@ -108,7 +108,7 @@
   function updateAxisFromImage() {
     if (previewImage.hidden) {
       setAxisMode("none");
-      setFocus(50, 50);
+      updateReadout();
       return;
     }
 
@@ -119,7 +119,7 @@
     const imageHeight = previewImage.naturalHeight;
     if (stageWidth <= 0 || stageHeight <= 0 || imageWidth <= 0 || imageHeight <= 0) {
       setAxisMode("none");
-      setFocus(50, 50);
+      updateReadout();
       return;
     }
 

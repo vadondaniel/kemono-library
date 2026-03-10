@@ -3016,6 +3016,65 @@ def test_edit_post_saves_thumbnail_focus_and_applies_to_creator_grid(tmp_path):
     assert "object-position: 22.5% 77.5%" in html
 
 
+def test_edit_post_thumbnail_selector_keeps_current_when_name_match_is_ambiguous(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Ambiguous Thumb Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="thumb-user",
+        external_post_id="thumb-post",
+        title="Ambiguous Thumb Post",
+        content="<p>Body</p>",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/thumb-user/post/thumb-post",
+        thumbnail_name="cover.jpg",
+        thumbnail_remote_url=None,
+        thumbnail_local_path=None,
+    )
+    version_row = db.get_post_version(post_id)
+    assert version_row is not None
+    version_id = int(version_row["id"])
+
+    db.replace_attachments(
+        post_id,
+        [
+            {
+                "name": "cover.jpg",
+                "remote_url": "https://n1.kemono.cr/a/one.jpg",
+                "local_path": None,
+                "kind": "attachment",
+            },
+            {
+                "name": "cover.jpg",
+                "remote_url": "https://n1.kemono.cr/b/two.jpg",
+                "local_path": None,
+                "kind": "attachment",
+            },
+        ],
+        version_id=version_id,
+    )
+
+    response = app.test_client().get(f"/posts/{post_id}/edit?version_id={version_id}")
+    assert response.status_code == 200
+
+    soup = BeautifulSoup(response.data.decode("utf-8"), "html.parser")
+    selector = soup.find("select", {"id": "thumbnail_attachment_id"})
+    assert selector is not None
+    selected_values = [option.get("value") for option in selector.find_all("option", selected=True)]
+    assert selected_values == ["__keep__"]
+
+
 def test_edit_post_rejects_series_owned_by_other_creator(tmp_path):
     app = create_app(
         {

@@ -1857,13 +1857,6 @@ def create_app(test_config: dict | None = None) -> Flask:
             if tracked_name_key:
                 tracked_name_keys.add(tracked_name_key)
             tracked_remote_name_aliases.update(_remote_filename_alias_keys(remote_url))
-            if selected_thumbnail_choice is None:
-                if thumbnail_remote_url and row_data["remote_url"] == thumbnail_remote_url:
-                    selected_thumbnail_choice = row_data["choice_value"]
-                elif thumbnail_local_path and row_data["local_path"] == thumbnail_local_path:
-                    selected_thumbnail_choice = row_data["choice_value"]
-                elif thumbnail_name and row_data["name"] == thumbnail_name:
-                    selected_thumbnail_choice = row_data["choice_value"]
 
         source_candidates = extract_attachments(active_metadata)
         source_candidate_index = 0
@@ -1922,8 +1915,13 @@ def create_app(test_config: dict | None = None) -> Flask:
             }
             source_candidate_index += 1
             attachment_rows.append(row_data)
-            if selected_thumbnail_choice is None and thumbnail_remote_url and remote_url == thumbnail_remote_url:
-                selected_thumbnail_choice = row_data["choice_value"]
+
+        selected_thumbnail_choice = _resolve_thumbnail_choice_from_attachments(
+            attachment_rows,
+            thumbnail_remote_url=thumbnail_remote_url,
+            thumbnail_local_path=thumbnail_local_path,
+            thumbnail_name=thumbnail_name,
+        )
 
         if thumbnail_local_path and _is_valid_file(files_base / thumbnail_local_path):
             thumbnail_preview_url = url_for("serve_file", relative_path=thumbnail_local_path)
@@ -2942,6 +2940,61 @@ def _parse_thumbnail_focus_inputs(
         _clamp_thumbnail_focus(raw_x, fallback=fallback_x),
         _clamp_thumbnail_focus(raw_y, fallback=fallback_y),
     )
+
+
+def _resolve_thumbnail_choice_from_attachments(
+    attachment_rows: list[dict[str, Any]],
+    *,
+    thumbnail_remote_url: str | None,
+    thumbnail_local_path: str | None,
+    thumbnail_name: str | None,
+) -> str | None:
+    image_rows = [row for row in attachment_rows if bool(row.get("is_image"))]
+    if not image_rows:
+        return None
+
+    def _unique_choice(matches: list[str]) -> str | None:
+        deduped = list(dict.fromkeys(matches))
+        if len(deduped) != 1:
+            return None
+        return deduped[0]
+
+    if thumbnail_remote_url:
+        choice = _unique_choice(
+            [
+                str(row["choice_value"])
+                for row in image_rows
+                if _optional_str(row.get("remote_url")) == thumbnail_remote_url
+            ]
+        )
+        if choice:
+            return choice
+
+    if thumbnail_local_path:
+        choice = _unique_choice(
+            [
+                str(row["choice_value"])
+                for row in image_rows
+                if _optional_str(row.get("local_path")) == thumbnail_local_path
+            ]
+        )
+        if choice:
+            return choice
+
+    if thumbnail_name:
+        name_key = _attachment_collapse_key(thumbnail_name)
+        if name_key:
+            choice = _unique_choice(
+                [
+                    str(row["choice_value"])
+                    for row in image_rows
+                    if _attachment_collapse_key(row.get("name")) == name_key
+                ]
+            )
+            if choice:
+                return choice
+
+    return None
 
 
 def _dedupe_post_detail_attachments(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
