@@ -44,13 +44,7 @@
   function normalizeToAxis(x, y) {
     const nextX = clamp(x);
     const nextY = clamp(y);
-    if (activeAxis === "x") {
-      return { x: nextX, y: 50 };
-    }
-    if (activeAxis === "y") {
-      return { x: 50, y: nextY };
-    }
-    return { x: 50, y: 50 };
+    return { x: nextX, y: nextY };
   }
 
   function updateReadout() {
@@ -270,7 +264,7 @@
   if (previewImage.complete) {
     updateAxisFromImage();
   } else {
-    setFocus(focusX, focusY);
+    renderFocus();
   }
 })();
 
