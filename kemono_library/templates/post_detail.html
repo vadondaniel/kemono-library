@@ -181,6 +181,50 @@
       {{ rendered_content | safe }}
     </section>
 
+    {% if embed_cards %}
+      <section class="panel post-embed-list-shell">
+        <h2>Embeds</h2>
+        <div class="post-embed-list">
+          {% for embed in embed_cards %}
+            <article class="post-embed-card">
+              <header class="post-embed-card-head layout-row layout-row--between layout-row--sm-plus">
+                <div>
+                  {% if embed['url'] %}
+                    <a class="post-embed-title text-link" href="{{ embed['url'] }}" target="_blank" rel="noopener noreferrer">{{ embed['title'] }}</a>
+                  {% else %}
+                    <strong class="post-embed-title">{{ embed['title'] }}</strong>
+                  {% endif %}
+                  {% if embed['description'] %}
+                    <p class="text-subtle post-embed-description">{{ embed['description'] }}</p>
+                  {% endif %}
+                </div>
+                <span class="chip chip--tight">{{ embed['provider_label'] }}</span>
+              </header>
+              {% if embed['thumbnail_url'] and not embed['iframe_src'] %}
+                <a class="post-embed-thumb-link" href="{{ embed['thumbnail_url'] }}" target="_blank" rel="noopener noreferrer">
+                  <img class="post-embed-thumb" src="{{ embed['thumbnail_url'] }}" alt="{{ embed['title'] }}" loading="lazy" referrerpolicy="no-referrer">
+                </a>
+              {% endif %}
+              {% if embed['iframe_src'] %}
+                <div class="post-embed-frame" {% if embed['iframe_ratio'] %}style="--post-embed-aspect: {{ embed['iframe_ratio'] }};"{% endif %}>
+                  <iframe
+                    src="{{ embed['iframe_src'] }}"
+                    title="{{ embed['title'] }}"
+                    loading="lazy"
+                    referrerpolicy="no-referrer"
+                    allowfullscreen
+                  ></iframe>
+                </div>
+              {% endif %}
+              {% if embed['url'] %}
+                <a class="btn btn-link btn--ghost post-embed-open" href="{{ embed['url'] }}" target="_blank" rel="noopener noreferrer">Open embed source</a>
+              {% endif %}
+            </article>
+          {% endfor %}
+        </div>
+      </section>
+    {% endif %}
+
     {% if view_mode == 'reader' %}
         {% set image_files = attachments|selectattr('is_image')|list if attachments else [] %}
         <details class="panel post-file-launcher" data-post-file-launcher>

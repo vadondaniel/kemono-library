@@ -1882,6 +1882,102 @@ def test_embed_link_attachment_is_reference_only_not_missing_or_retryable(tmp_pa
     assert "0 missing" in html
 
 
+def test_import_preview_renders_embed_card_with_allowlisted_iframe(tmp_path, monkeypatch):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    payload = {
+        "post": {
+            "title": "Video Embed Post",
+            "content": "<p>Has rich embed</p>",
+            "user": "70479526",
+            "embed": {
+                "subject": "Preview Trailer",
+                "description": "Watch this trailer.",
+                "url": "https://www.youtube.com/watch?v=abc123",
+                "thumbnail_url": "https://img.youtube.com/vi/abc123/hqdefault.jpg",
+                "html": '<iframe src="https://www.youtube.com/embed/abc123" width="560" height="315"></iframe>',
+            },
+            "attachments": [],
+        },
+        "attachments": [],
+    }
+
+    def fake_fetch(ref, fallback_user_id=None):  # noqa: ARG001
+        return payload
+
+    monkeypatch.setattr("kemono_library.web.fetch_post_json", fake_fetch)
+
+    client = app.test_client()
+    creator_response = client.post("/creators", data={"name": "Embed Preview Creator"}, follow_redirects=False)
+    assert creator_response.status_code == 302
+
+    preview = client.post(
+        "/import/preview",
+        data={
+            "post_url": "https://kemono.cr/fanbox/user/70479526/post/777",
+            "creator_id": "1",
+            "series_id": "",
+        },
+    )
+    assert preview.status_code == 200
+    soup = BeautifulSoup(preview.data, "html.parser")
+    embed_section = soup.select_one(".import-preview-embeds")
+    assert embed_section is not None
+    assert "Preview Trailer" in embed_section.get_text(" ", strip=True)
+    iframe = embed_section.select_one("iframe")
+    assert iframe is not None
+    assert iframe.get("src") == "https://www.youtube.com/embed/abc123"
+
+
+def test_post_detail_embed_card_blocks_non_allowlisted_iframe(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Embed Safety Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="70479526",
+        external_post_id="3001",
+        title="Blocked iframe example",
+        content="<p>Testing embeds</p>",
+        metadata={
+            "post": {
+                "embed": {
+                    "subject": "Unknown player",
+                    "description": "Should not render iframe inline.",
+                    "url": "https://evil.example/watch/123",
+                    "html": '<iframe src="https://evil.example/embed/123" width="640" height="360"></iframe>',
+                }
+            }
+        },
+        source_url="https://kemono.cr/fanbox/user/70479526/post/3001",
+    )
+
+    detail = app.test_client().get(f"/posts/{post_id}")
+    assert detail.status_code == 200
+    html = detail.get_data(as_text=True)
+    assert "Unknown player" in html
+    assert "Open embed source" in html
+    assert "evil.example" in html
+    assert "<iframe" not in html
+
+
 def test_post_detail_dedupes_saved_files_that_point_to_same_local_file(tmp_path):
     app = create_app(
         {

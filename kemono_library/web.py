@@ -1234,6 +1234,7 @@ def create_app(test_config: dict | None = None) -> Flask:
 
         preview_ref = KemonoPostRef(service=post_ref.service, user_id=str(resolved_user_id), post_id=post_ref.post_id)
         attachments = extract_attachments(raw_payload)
+        embed_cards = _extract_embed_cards(raw_payload)
         creator_posts = db.list_posts_for_creator(
             creator_id,
             sort_by="published",
@@ -1283,6 +1284,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             force_target_post_version=force_target_post_version,
             force_overwrite_matching_version=force_overwrite_matching_version,
             target_attachment_index=target_attachment_index,
+            embed_cards=embed_cards,
             title=_build_page_title(import_preview_title, "Import Preview"),
         )
 
@@ -1686,6 +1688,8 @@ def create_app(test_config: dict | None = None) -> Flask:
             local_media_by_path_key=local_media_by_path_key,
         )
         remote_media_by_name = _build_remote_media_by_name(active_version, attachments)
+        active_metadata = _safe_load_metadata(active_version["metadata_json"])
+        embed_cards = _extract_embed_cards(active_metadata)
         files_base = Path(app.config["FILES_DIR"])
         attachment_rows = []
         for row in attachments:
@@ -1815,6 +1819,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             navigator_title=navigator_context["title"],
             navigator_series_url=navigator_context["series_scope_url"],
             navigator_all_url=navigator_context["all_scope_url"],
+            embed_cards=embed_cards,
             main_class="is-post-reader-layout" if view_mode == "reader" else None,
             body_class="is-post-reader-page" if view_mode == "reader" else None,
             title=_build_page_title(post_title, creator_name),
@@ -3246,6 +3251,227 @@ def _safe_load_metadata(raw_metadata: str | None) -> dict[str, Any]:
     except json.JSONDecodeError:
         return {}
     return loaded if isinstance(loaded, dict) else {}
+
+
+_EMBED_IFRAME_ALLOWED_HOSTS = {
+    "youtube.com",
+    "youtube-nocookie.com",
+    "player.vimeo.com",
+    "vimeo.com",
+    "www.dlsite.com",
+    "dlsite.com",
+    "player.twitch.tv",
+    "open.spotify.com",
+    "w.soundcloud.com",
+}
+_FRAME_EMBED_PLACEHOLDERS = {"(frame embed)", "frame embed"}
+
+
+def _extract_embed_cards(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    if not isinstance(payload, dict):
+        return []
+    cards: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    sources: list[dict[str, Any]] = [payload]
+    nested_post = payload.get("post")
+    if isinstance(nested_post, dict):
+        sources.append(nested_post)
+
+    for source in sources:
+        embed_values: list[dict[str, Any]] = []
+        for key in ("embed", "embeds"):
+            value = source.get(key)
+            if isinstance(value, dict):
+                embed_values.append(value)
+            elif isinstance(value, list):
+                embed_values.extend(item for item in value if isinstance(item, dict))
+        for embed in embed_values:
+            card = _build_embed_card(embed)
+            if not card:
+                continue
+            identity = (
+                str(card.get("url") or ""),
+                str(card.get("iframe_src") or ""),
+                str(card.get("title") or "").strip().lower(),
+            )
+            if identity in seen:
+                continue
+            seen.add(identity)
+            cards.append(card)
+    return cards
+
+
+def _build_embed_card(embed: dict[str, Any]) -> dict[str, Any] | None:
+    url = _normalize_embed_url(embed.get("url"))
+    title = _optional_str(embed.get("subject")) or _optional_str(embed.get("title"))
+    description = _normalize_embed_text(embed.get("description"))
+    provider_name = _optional_str(embed.get("provider_name")) or _optional_str(embed.get("provider"))
+    thumbnail_url = (
+        _normalize_embed_url(embed.get("thumbnail_url"))
+        or _normalize_embed_url(embed.get("thumbnail"))
+        or _normalize_embed_url(embed.get("image"))
+        or _normalize_embed_url(embed.get("image_url"))
+    )
+    iframe_src: str | None = None
+    iframe_ratio: str | None = None
+
+    raw_html = _optional_str(embed.get("html"))
+    if raw_html:
+        soup = BeautifulSoup(raw_html, "html.parser")
+        if not title:
+            heading = soup.find(["h1", "h2", "h3", "h4"])
+            if heading is not None:
+                title = _normalize_embed_text(heading.get_text(" ", strip=True))
+        if not title:
+            link_with_text = next(
+                (
+                    node
+                    for node in soup.find_all("a", href=True)
+                    if _normalize_embed_text(node.get_text(" ", strip=True))
+                ),
+                None,
+            )
+            if link_with_text is not None:
+                title = _normalize_embed_text(link_with_text.get_text(" ", strip=True))
+
+        if not url:
+            first_link = soup.find("a", href=True)
+            if first_link is not None:
+                url = _normalize_embed_url(first_link.get("href"))
+
+        if not description:
+            description = _normalize_embed_text(soup.get_text(" ", strip=True))
+
+        iframe_node = soup.find("iframe", src=True)
+        if iframe_node is not None:
+            iframe_candidate = _normalize_embed_url(iframe_node.get("src"))
+            if iframe_candidate and _is_allowed_embed_iframe_url(iframe_candidate):
+                iframe_src = iframe_candidate
+                iframe_ratio = _iframe_ratio_from_node(iframe_node)
+            if not url and iframe_candidate:
+                url = iframe_candidate
+
+        if not thumbnail_url:
+            image_node = soup.find("img", src=True)
+            if image_node is not None:
+                thumbnail_url = _normalize_embed_url(image_node.get("src"))
+
+    if not title:
+        title = _normalize_embed_text(embed.get("author_name"))
+    if not title:
+        parsed = urlparse(url or "")
+        path_name = _optional_str(Path(parsed.path).name)
+        if path_name:
+            title = path_name
+    if not title:
+        title = provider_name or "Embedded content"
+
+    provider_label = _embed_provider_label(url=url, iframe_src=iframe_src, provider_name=provider_name)
+    open_url = url or iframe_src
+    if not open_url and not thumbnail_url:
+        return None
+
+    return {
+        "title": title,
+        "description": description,
+        "url": open_url,
+        "thumbnail_url": thumbnail_url,
+        "iframe_src": iframe_src,
+        "iframe_ratio": iframe_ratio,
+        "provider_label": provider_label,
+    }
+
+
+def _normalize_embed_text(value: Any) -> str | None:
+    text = _optional_str(value)
+    if not text:
+        return None
+    if "<" in text and ">" in text:
+        text = _optional_str(BeautifulSoup(text, "html.parser").get_text(" ", strip=True))
+    if not text:
+        return None
+    collapsed = re.sub(r"\s+", " ", text).strip()
+    if not collapsed:
+        return None
+    if collapsed.lower() in _FRAME_EMBED_PLACEHOLDERS:
+        return None
+    return collapsed
+
+
+def _normalize_embed_url(value: Any) -> str | None:
+    url = _optional_str(value)
+    if not url:
+        return None
+    if url.startswith("//"):
+        url = f"https:{url}"
+    elif url.startswith("/"):
+        url = to_absolute_kemono_url(url)
+    elif not re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", url):
+        if url.startswith("www."):
+            url = f"https://{url}"
+        else:
+            return None
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        return None
+    if not parsed.netloc:
+        return None
+    return url
+
+
+def _is_allowed_embed_iframe_url(url: str) -> bool:
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        return False
+    host = parsed.netloc.lower().split(":", 1)[0]
+    if not host:
+        return False
+    for allowed in _EMBED_IFRAME_ALLOWED_HOSTS:
+        allowed_host = allowed.lower()
+        if host == allowed_host or host.endswith(f".{allowed_host}"):
+            return True
+    return False
+
+
+def _iframe_ratio_from_node(node: Any) -> str | None:
+    width = _coerce_positive_int(node.get("width"))
+    height = _coerce_positive_int(node.get("height"))
+    if width and height:
+        return f"{width} / {height}"
+    return None
+
+
+def _coerce_positive_int(value: Any) -> int | None:
+    if isinstance(value, int):
+        return value if value > 0 else None
+    if isinstance(value, str):
+        text = value.strip()
+        if text.isdigit():
+            parsed = int(text)
+            return parsed if parsed > 0 else None
+    return None
+
+
+def _embed_provider_label(*, url: str | None, iframe_src: str | None, provider_name: str | None) -> str:
+    parsed_host = ""
+    for candidate in (url, iframe_src):
+        if not candidate:
+            continue
+        parsed = urlparse(candidate)
+        host = parsed.netloc.lower().split(":", 1)[0]
+        if not host:
+            continue
+        parsed_host = host[4:] if host.startswith("www.") else host
+        break
+    if provider_name and parsed_host:
+        provider_normalized = provider_name.strip()
+        if provider_normalized and provider_normalized.lower() not in parsed_host:
+            return f"{provider_normalized} ({parsed_host})"
+    if provider_name:
+        provider_normalized = provider_name.strip()
+        if provider_normalized:
+            return provider_normalized
+    return parsed_host or "External embed"
 
 
 _THUMBNAIL_FOCUS_KEY = "_local_thumbnail_focus"
