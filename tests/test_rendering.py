@@ -202,3 +202,18 @@ def test_render_groups_fanbox_promo_insert_block():
         '/links/resolve?service=fanbox&amp;post=10230546&amp;from_post=1&amp;user=70479526&amp;assumed_from_context=1'
         in rendered
     )
+
+
+def test_render_relabels_frame_embed_placeholder_link_text():
+    content = (
+        '<div><a href="https://www.dlsite.com/home/work/=/product_id/RJ01425844.html" '
+        'rel="noopener noreferrer"><h3>(frame embed)</h3></a></div>'
+    )
+    rendered = render_post_content(
+        content,
+        current_service="fanbox",
+        current_user_id="70479526",
+        current_post_id=1,
+    )
+    assert "Embedded link: www.dlsite.com / RJ01425844.html" in rendered
+    assert "(frame embed)" not in rendered

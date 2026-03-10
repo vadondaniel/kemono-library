@@ -275,6 +275,39 @@ def test_extract_attachments_collects_videos_and_embed_media():
     assert urls["https://cdn.example/thumb.jpg"] == "embed_media"
 
 
+def test_extract_attachments_includes_embed_link_from_post_embed_url():
+    payload = {
+        "embed": {
+            "url": "https://inkyleafpatreononly.blogspot.com/2024/08/foxy-fairy-tale.html",
+            "subject": "Foxy Fairy-Tale",
+        }
+    }
+    items = extract_attachments(payload)
+    assert len(items) == 1
+    assert items[0].remote_url == "https://inkyleafpatreononly.blogspot.com/2024/08/foxy-fairy-tale.html"
+    assert items[0].kind == "embed_link"
+    assert items[0].name == "Foxy Fairy-Tale"
+
+
+def test_extract_attachments_collects_embed_urls_from_embed_html_block():
+    payload = {
+        "post": {
+            "embed": {
+                "title": "Frame Embed",
+                "html": (
+                    '<iframe src="https://www.dlsite.com/home/work/=/product_id/RJ01425844.html"></iframe>'
+                    '<img src="https://cdn.example/embed-thumb.jpg">'
+                ),
+            }
+        }
+    }
+    items = extract_attachments(payload)
+    by_url = {item.remote_url: item for item in items}
+    assert by_url["https://www.dlsite.com/home/work/=/product_id/RJ01425844.html"].kind == "embed_link"
+    assert by_url["https://www.dlsite.com/home/work/=/product_id/RJ01425844.html"].name == "Frame Embed"
+    assert by_url["https://cdn.example/embed-thumb.jpg"].kind == "embed_media"
+
+
 def test_extract_attachments_includes_inline_img_without_extension():
     inline_url = (
         "https://lh7-rt.googleusercontent.com/docsz/"

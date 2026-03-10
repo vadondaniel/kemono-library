@@ -183,20 +183,10 @@ def extract_attachments(post_payload: dict[str, Any]) -> list[AttachmentCandidat
                     kind="video",
                 )
 
-    embed = nested_post.get("embed") if isinstance(nested_post, dict) else None
-    if isinstance(embed, dict):
-        for key in ("url", "src", "thumbnail", "thumbnail_url", "image"):
-            value = embed.get(key)
-            if isinstance(value, str) and value.strip():
-                absolute = to_absolute_kemono_url(value.strip())
-                if _looks_like_downloadable_url(absolute):
-                    _append_url_attachment(
-                        candidates,
-                        seen,
-                        absolute,
-                        name=Path(urlparse(absolute).path).name or "embed-media",
-                        kind="embed_media",
-                    )
+    for source in sources:
+        embed = source.get("embed")
+        if isinstance(embed, dict):
+            _append_embed_attachments(candidates, seen, embed)
 
     inline_name_keys: set[str] = set()
     if content:
@@ -485,6 +475,96 @@ def _append_url_attachment(
         return
     seen.add(absolute_url)
     out.append(AttachmentCandidate(name=name, remote_url=absolute_url, kind=kind))
+
+
+def _append_embed_attachments(
+    out: list[AttachmentCandidate],
+    seen: set[str],
+    embed: dict[str, Any],
+) -> None:
+    preferred_label = _first_embed_label(embed)
+    for key in ("url", "src", "thumbnail", "thumbnail_url", "image"):
+        value = embed.get(key)
+        if isinstance(value, str) and value.strip():
+            _append_embed_url_attachment(
+                out,
+                seen,
+                value.strip(),
+                preferred_label=preferred_label,
+            )
+
+    raw_html = embed.get("html")
+    if isinstance(raw_html, str) and raw_html.strip():
+        soup = BeautifulSoup(raw_html, "html.parser")
+        for tag_name, attr in (
+            ("iframe", "src"),
+            ("img", "src"),
+            ("source", "src"),
+            ("video", "src"),
+            ("audio", "src"),
+            ("a", "href"),
+        ):
+            for node in soup.find_all(tag_name):
+                raw_url = node.get(attr)
+                if not isinstance(raw_url, str) or not raw_url.strip():
+                    continue
+                _append_embed_url_attachment(
+                    out,
+                    seen,
+                    raw_url.strip(),
+                    preferred_label=preferred_label,
+                )
+
+
+def _append_embed_url_attachment(
+    out: list[AttachmentCandidate],
+    seen: set[str],
+    raw_url: str,
+    *,
+    preferred_label: str | None,
+) -> None:
+    absolute = to_absolute_kemono_url(raw_url)
+    parsed = urlparse(absolute)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return
+
+    if _looks_like_downloadable_url(absolute):
+        _append_url_attachment(
+            out,
+            seen,
+            absolute,
+            name=Path(parsed.path).name or "embed-media",
+            kind="embed_media",
+        )
+        return
+
+    _append_url_attachment(
+        out,
+        seen,
+        absolute,
+        name=_embed_link_display_name(absolute, preferred_label=preferred_label),
+        kind="embed_link",
+    )
+
+
+def _first_embed_label(embed: dict[str, Any]) -> str | None:
+    for key in ("title", "subject", "name", "provider_name"):
+        value = embed.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _embed_link_display_name(url: str, *, preferred_label: str | None) -> str:
+    if isinstance(preferred_label, str) and preferred_label.strip():
+        return preferred_label.strip()
+    parsed = urlparse(url)
+    path_name = Path(parsed.path).name
+    if path_name:
+        return path_name
+    if parsed.netloc:
+        return parsed.netloc
+    return "embed-link"
 
 
 def _first_content(sources: list[dict[str, Any]]) -> str | None:
@@ -819,6 +899,8 @@ def _should_preserve_anchor_suffix(url_suffix: str) -> bool:
 
 
 def _candidate_name_key(candidate: AttachmentCandidate) -> str:
+    if candidate.kind == "embed_link":
+        return f"url:{candidate.remote_url.lower()}"
     normalized = sanitize_filename(candidate.name).lower()
     if normalized:
         return f"name:{normalized}"
@@ -835,6 +917,7 @@ def _candidate_priority(candidate: AttachmentCandidate) -> int:
         "shared_file": 50,
         "video": 45,
         "embed_media": 40,
+        "embed_link": 35,
         "inline_media": 10,
         "inline_only": 10,
     }
@@ -905,11 +988,10 @@ def _collect_declared_media_names(
             if isinstance(item, dict):
                 add_name(item.get("name"))
 
-    nested_post = root_payload.get("post")
-    if isinstance(nested_post, dict):
-        embed = nested_post.get("embed")
+    for source in sources:
+        embed = source.get("embed")
         if isinstance(embed, dict):
-            for key in ("name", "title"):
+            for key in ("name", "title", "subject"):
                 add_name(embed.get(key))
 
     return names

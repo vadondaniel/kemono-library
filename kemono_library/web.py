@@ -196,6 +196,8 @@ def create_app(test_config: dict | None = None) -> Flask:
         for row in source_rows:
             local_path = _optional_str(row["local_path"])
             local_available, _ = local_file_status.get(local_path or "", (False, None))
+            if str(row["kind"]) == "embed_link":
+                local_available = True
             inventory_row = {
                 "id": int(row["id"]),
                 "post_id": int(row["post_id"]),
@@ -572,6 +574,8 @@ def create_app(test_config: dict | None = None) -> Flask:
         for row in source_rows:
             local_path = _optional_str(row["local_path"])
             local_available, file_size = local_file_status.get(local_path or "", (False, None))
+            if str(row["kind"]) == "embed_link":
+                local_available = True
             attachment_name = str(row["name"])
             _, name_ext = _split_filename_for_display(attachment_name)
             remote_url = str(row["remote_url"])
@@ -656,6 +660,8 @@ def create_app(test_config: dict | None = None) -> Flask:
         for row in source_rows:
             local_path = _optional_str(row["local_path"])
             local_available, file_size = local_file_status.get(local_path or "", (False, None))
+            if str(row["kind"]) == "embed_link":
+                local_available = True
             creator_id = int(row["creator_id"])
             creator_name = str(row["creator_name"]).strip() if row["creator_name"] else f"Creator {creator_id}"
             inventory_rows.append(
@@ -1686,6 +1692,8 @@ def create_app(test_config: dict | None = None) -> Flask:
             local_path = row["local_path"]
             local_abs = files_base / local_path if isinstance(local_path, str) and local_path.strip() else None
             local_available = _is_valid_file(local_abs)
+            if str(row["kind"]) == "embed_link":
+                local_available = True
             remote_url = str(row["remote_url"])
             remote_url_display = _preferred_remote_url_for_access(
                 remote_url,
@@ -1881,6 +1889,9 @@ def create_app(test_config: dict | None = None) -> Flask:
         )
         if attachment is None:
             return ("Attachment not found", 404)
+        if str(attachment["kind"]) == "embed_link":
+            flash("External embed links are reference-only and cannot be downloaded.", "success")
+            return redirect(detail_url)
 
         result = _retry_attachment_row(
             db,
@@ -2035,6 +2046,8 @@ def create_app(test_config: dict | None = None) -> Flask:
             local_path = _optional_str(row["local_path"])
             remote_url = str(row["remote_url"])
             local_available = _is_valid_file(files_base / local_path) if local_path else False
+            if str(row["kind"]) == "embed_link":
+                local_available = True
             remote_url_display = _preferred_remote_url_for_access(remote_url, row["name"])
             is_image = _is_likely_image_attachment(
                 remote_url=remote_url,
@@ -2183,6 +2196,8 @@ def create_app(test_config: dict | None = None) -> Flask:
                 tracked = bool(item["tracked"])
                 local_path = _optional_str(item["local_path"])
                 local_available = bool(local_path and _is_valid_file(files_base / local_path))
+                if str(item["kind"]) == "embed_link":
+                    local_available = True
                 keep_in_version: bool
                 if tracked:
                     keep_values = request.form.getlist(f"attachment_keep_{form_key}")
@@ -3632,10 +3647,13 @@ def _build_target_attachment_index(
             name = row["name"]
             remote_url = row["remote_url"]
             local_path = row["local_path"]
+            kind = str(row["kind"] or "")
 
             has_local = False
             if isinstance(local_path, str) and local_path.strip():
                 has_local = _is_valid_file(files_base / local_path)
+            if kind == "embed_link":
+                has_local = True
 
             raw_keys: list[str] = []
             if isinstance(name, str) and name.strip():
@@ -3665,6 +3683,7 @@ def _media_kind_priority(kind: Any) -> int:
         "shared_file": 40,
         "video": 35,
         "embed_media": 30,
+        "embed_link": 25,
         "thumbnail": 20,
         "inline_only": 10,
     }
@@ -4064,6 +4083,8 @@ def _is_likely_image_attachment(
     kind_text = str(kind).strip().lower() if kind is not None else ""
     if kind_text == "thumbnail":
         return True
+    if kind_text == "embed_link":
+        return False
 
     ext_candidates = {
         _extract_extension(remote_url),
@@ -4555,6 +4576,8 @@ def _import_post_into_library(
                     or (download_root / filename)
                 )
                 needs_download = (
+                    candidate.kind != "embed_link"
+                    and
                     (not skip_attachment_downloads)
                     and destination is not None
                     and not _is_valid_file(destination)

@@ -195,7 +195,7 @@
         form="post-edit-main-form"
       >
       <div class="post-edit-attachment-actions">
-      {% if file['local_available'] %}
+      {% if file['local_available'] and file['local_path'] %}
         {% if not file['is_image'] %}
           <a class="btn btn-link btn--ghost" href="{{ url_for('serve_file', relative_path=file['local_path']) }}" target="_blank" rel="noopener">Open local</a>
         {% endif %}

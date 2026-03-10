@@ -302,6 +302,84 @@ def test_import_reuses_existing_extensionless_image_and_still_corrects_extension
     assert (Path(app.config["FILES_DIR"]) / f"post_{post_id}" / "loop_image.gif").is_file()
 
 
+def test_import_includes_embed_links_without_attempting_download(tmp_path, monkeypatch):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    payload = {
+        "post": {
+            "title": "Embed Link Post",
+            "content": "<p>Has external embed.</p>",
+            "user": "3085566",
+            "embed": {
+                "url": "https://inkyleafpatreononly.blogspot.com/2024/08/foxy-fairy-tale.html",
+                "subject": "Foxy Fairy-Tale",
+            },
+            "attachments": [],
+        },
+        "attachments": [],
+    }
+    download_calls: list[str] = []
+
+    def fake_fetch(ref, fallback_user_id=None):  # noqa: ARG001
+        return payload
+
+    def fake_download(remote_url, destination):  # noqa: ARG001
+        download_calls.append(str(remote_url))
+        Path(destination).parent.mkdir(parents=True, exist_ok=True)
+        Path(destination).write_bytes(b"ok")
+
+    def fake_icon_download(service, user_id, icons_root):  # noqa: ARG001
+        return (f"https://img.kemono.cr/icons/{service}/{user_id}", None)
+
+    monkeypatch.setattr("kemono_library.web.fetch_post_json", fake_fetch)
+    monkeypatch.setattr("kemono_library.web.download_attachment", fake_download)
+    monkeypatch.setattr("kemono_library.web.download_creator_icon", fake_icon_download)
+
+    client = app.test_client()
+    creator_response = client.post("/creators", data={"name": "Embed Creator"}, follow_redirects=False)
+    assert creator_response.status_code == 302
+
+    preview = client.post(
+        "/import/preview",
+        data={
+            "post_url": "https://kemono.cr/patreon/user/3085566/post/111110523",
+            "creator_id": "1",
+            "series_id": "",
+        },
+    )
+    assert preview.status_code == 200
+    assert b"Foxy Fairy-Tale" in preview.data
+
+    commit = client.post(
+        "/import/commit",
+        data={
+            "creator_id": "1",
+            "series_id": "",
+            "service": "patreon",
+            "user_id": "3085566",
+            "post_id": "111110523",
+            "selected_attachment": "0",
+        },
+        follow_redirects=False,
+    )
+    assert commit.status_code == 302
+    assert commit.headers["Location"].endswith("/posts/1")
+    assert download_calls == []
+
+    attachments = app.db.list_attachments(1)  # type: ignore[attr-defined]
+    assert len(attachments) == 1
+    assert attachments[0]["kind"] == "embed_link"
+    assert attachments[0]["local_path"] is None
+    assert attachments[0]["remote_url"] == "https://inkyleafpatreononly.blogspot.com/2024/08/foxy-fairy-tale.html"
+
+
 def test_import_form_renders_tabbed_quick_import_ui(tmp_path):
     app = create_app(
         {
@@ -1755,6 +1833,53 @@ def test_post_detail_falls_back_to_attachment_remote_when_local_missing(tmp_path
     assert b'src="' + expected + b'"' in detail.data
     assert b"download missing" not in detail.data
     assert b"retry" in detail.data
+
+
+def test_embed_link_attachment_is_reference_only_not_missing_or_retryable(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Embed Link Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="patreon",
+        external_user_id="3085566",
+        external_post_id="111110523",
+        title="Embed Link Post",
+        content="<p>embed link</p>",
+        metadata={},
+        source_url="https://kemono.cr/patreon/user/3085566/post/111110523",
+    )
+    db.replace_attachments(
+        post_id,
+        [
+            {
+                "name": "Foxy Fairy-Tale",
+                "remote_url": "https://inkyleafpatreononly.blogspot.com/2024/08/foxy-fairy-tale.html",
+                "local_path": None,
+                "kind": "embed_link",
+            }
+        ],
+    )
+
+    detail = app.test_client().get(f"/posts/{post_id}")
+    assert detail.status_code == 200
+    assert b"Foxy Fairy-Tale" in detail.data
+    assert b"retry" not in detail.data.lower()
+
+    inventory = app.test_client().get("/attachments")
+    assert inventory.status_code == 200
+    html = inventory.get_data(as_text=True)
+    assert "Foxy Fairy-Tale" in html
+    assert "0 missing" in html
 
 
 def test_post_detail_dedupes_saved_files_that_point_to_same_local_file(tmp_path):

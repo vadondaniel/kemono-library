@@ -119,6 +119,7 @@ def _rewrite_kemono_links(
     soup = BeautifulSoup(html_content, "html.parser")
     for link in soup.find_all("a"):
         _normalize_fanbox_linkified_anchor(link)
+        _normalize_frame_embed_anchor(link)
         href = link.get("href")
         if not href:
             continue
@@ -182,6 +183,28 @@ def _normalize_fanbox_linkified_anchor(link: object) -> None:
     link.clear()
     link.append(NavigableString(normalized_href))
     link.insert_after(NavigableString(trailing_text))
+
+
+def _normalize_frame_embed_anchor(link: object) -> None:
+    href = getattr(link, "get", lambda *_args, **_kwargs: None)("href")
+    if not isinstance(href, str) or not href:
+        return
+    parsed = urlparse(href)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return
+    text = getattr(link, "get_text", lambda *_args, **_kwargs: "")(" ", strip=True)
+    if not isinstance(text, str):
+        return
+    normalized_text = text.strip().lower()
+    if normalized_text not in {"(frame embed)", "frame embed"}:
+        return
+
+    display = parsed.netloc
+    path_name = Path(parsed.path).name
+    if path_name:
+        display = f"{parsed.netloc} / {path_name}"
+    link.clear()
+    link.append(NavigableString(f"Embedded link: {display}"))
 
 
 def _split_fanbox_post_path(path: str) -> tuple[str | None, str]:

@@ -226,7 +226,7 @@
                     data-middle-ellipsis
                     title="{{ file['name'] }}"
                   >{{ file['name'] }}</a>
-                {% elif file['local_available'] %}
+                {% elif file['local_available'] and file['local_path'] %}
                   <a
                     class="post-file-link"
                     href="{{ url_for('serve_file', relative_path=file['local_path']) }}"
