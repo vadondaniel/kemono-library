@@ -34,7 +34,7 @@
         <div class="creator-meta-row">
           {% if creator['service'] and creator['external_user_id'] %}
             <a
-              class="creator-meta-pill creator-meta-pill-link"
+              class="chip chip-link creator-meta-pill creator-meta-pill-link"
               href="https://kemono.cr/{{ creator['service'] }}/user/{{ creator['external_user_id'] }}"
               target="_blank"
               rel="noopener noreferrer nofollow"
@@ -42,7 +42,7 @@
               {{ creator['service']|upper }} · User {{ creator['external_user_id'] }}
             </a>
           {% else %}
-            <span class="creator-meta-pill">
+            <span class="chip creator-meta-pill">
               {% if creator['service'] %}
                 {{ creator['service']|upper }} · No external user
               {% elif creator['external_user_id'] %}
@@ -68,7 +68,7 @@
             {% for tag in creator['tags_text'].split(',') %}
               {% set normalized_tag = tag.strip() %}
               {% if normalized_tag %}
-                <span class="creator-profile-tag">{{ normalized_tag }}</span>
+                <span class="chip chip--accent creator-profile-tag">{{ normalized_tag }}</span>
               {% endif %}
             {% endfor %}
           </div>
@@ -136,7 +136,7 @@
           {% for tag in selected_series['tags_text'].split(',') %}
             {% set normalized_tag = tag.strip() %}
             {% if normalized_tag %}
-              <span class="series-tag">{{ normalized_tag }}</span>
+              <span class="chip chip--accent series-tag">{{ normalized_tag }}</span>
             {% endif %}
           {% endfor %}
       </div>
@@ -296,23 +296,23 @@
                 <div class="creator-sort-group post-view-mode-switch post-settings-switch">
                   <span class="post-view-mode-label">Filter</span>
                   <div class="post-view-mode-chip-row">
-                    <a class="post-view-mode-chip {% if active_folder == 'all' %}is-active{% endif %}" href="{{ filter_all_url }}">All posts</a>
-                    <a class="post-view-mode-chip {% if active_folder == 'unsorted' %}is-active{% endif %}" href="{{ filter_unsorted_url }}">Unsorted</a>
+                    <a class="chip chip-link chip--control post-view-mode-chip {% if active_folder == 'all' %}is-active{% endif %}" href="{{ filter_all_url }}">All posts</a>
+                    <a class="chip chip-link chip--control post-view-mode-chip {% if active_folder == 'unsorted' %}is-active{% endif %}" href="{{ filter_unsorted_url }}">Unsorted</a>
                   </div>
                 </div>
               {% endif %}
               <div class="creator-sort-group post-view-mode-switch post-settings-switch">
                 <span class="post-view-mode-label">Sort</span>
                 <div class="post-view-mode-chip-row">
-                  <a class="post-view-mode-chip {% if sort_by == 'published' %}is-active{% endif %}" href="{{ sort_published_url }}">Publish date</a>
-                  <a class="post-view-mode-chip {% if sort_by == 'title' %}is-active{% endif %}" href="{{ sort_title_url }}">Alphabetical</a>
+                  <a class="chip chip-link chip--control post-view-mode-chip {% if sort_by == 'published' %}is-active{% endif %}" href="{{ sort_published_url }}">Publish date</a>
+                  <a class="chip chip-link chip--control post-view-mode-chip {% if sort_by == 'title' %}is-active{% endif %}" href="{{ sort_title_url }}">Alphabetical</a>
                 </div>
               </div>
               <div class="creator-sort-group post-view-mode-switch post-settings-switch">
                 <span class="post-view-mode-label">Order</span>
                 <div class="post-view-mode-chip-row">
-                  <a class="post-view-mode-chip {% if sort_direction == 'desc' %}is-active{% endif %}" href="{{ direction_desc_url }}">Descending</a>
-                  <a class="post-view-mode-chip {% if sort_direction == 'asc' %}is-active{% endif %}" href="{{ direction_asc_url }}">Ascending</a>
+                  <a class="chip chip-link chip--control post-view-mode-chip {% if sort_direction == 'desc' %}is-active{% endif %}" href="{{ direction_desc_url }}">Descending</a>
+                  <a class="chip chip-link chip--control post-view-mode-chip {% if sort_direction == 'asc' %}is-active{% endif %}" href="{{ direction_asc_url }}">Ascending</a>
                 </div>
               </div>
             </div>
@@ -352,7 +352,7 @@
               <h3><a href="{{ url_for('post_detail', post_id=post['id']) }}" data-post-detail-link data-post-creator-id="{{ creator['id'] }}">{{ post['title'] }}</a></h3>
               <p class="creator-post-meta">
                 {% if not selected_series %}
-                  <span class="creator-post-badge">
+                  <span class="chip chip--accent creator-post-badge">
                     {% if post['series_name'] %}{{ post['series_name'] }}{% else %}Unsorted{% endif %}
                   </span>
                 {% endif %}

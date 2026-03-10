@@ -64,6 +64,25 @@
   --button-chip-bg-hover: color-mix(in srgb, var(--accent-soft) 34%, transparent);
   --button-chip-bg-active: color-mix(in srgb, var(--accent-soft) 58%, transparent);
   --button-focus-ring: 0 0 0 2px color-mix(in srgb, var(--accent) 24%, transparent);
+  --chip-radius: 999px;
+  --chip-padding-y: 0.18rem;
+  --chip-padding-x: 0.54rem;
+  --chip-gap: 0.3rem;
+  --chip-border: color-mix(in srgb, var(--border) 80%, transparent);
+  --chip-bg: color-mix(in srgb, var(--card-solid) 92%, transparent);
+  --chip-text: var(--muted);
+  --chip-font-size: 0.79rem;
+  --chip-font-weight: 600;
+  --chip-hover-border: color-mix(in srgb, var(--accent) 42%, var(--border));
+  --chip-hover-bg: color-mix(in srgb, var(--accent-soft) 42%, var(--card-solid));
+  --chip-hover-text: var(--accent-strong);
+  --chip-active-border: color-mix(in srgb, var(--accent) 56%, var(--border));
+  --chip-active-bg: color-mix(in srgb, var(--accent-soft) 62%, transparent);
+  --chip-accent-border: color-mix(in srgb, var(--accent) 44%, var(--border));
+  --chip-accent-bg: color-mix(in srgb, var(--accent-soft) 54%, transparent);
+  --chip-danger-border: color-mix(in srgb, var(--critical-accent) 55%, var(--border));
+  --chip-danger-bg: color-mix(in srgb, var(--critical-accent) 14%, var(--card-solid));
+  --chip-danger-text: var(--critical-text);
   --field-height: 2.35rem;
   --field-padding-y: 0.5rem;
   --field-padding-x: 0.68rem;
@@ -319,31 +338,82 @@ h4 {
   gap: 0.22rem;
 }
 
-.post-view-mode-chip {
+.chip {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  border: 1px solid var(--button-chip-border);
-  padding: 0.2rem 0.55rem;
-  font-size: 0.78rem;
-  font-weight: 650;
-  text-decoration: none;
-  color: var(--muted);
-  background: var(--button-chip-bg);
+  gap: var(--chip-gap);
+  border: 1px solid var(--chip-border);
+  border-radius: var(--chip-radius);
+  padding: var(--chip-padding-y) var(--chip-padding-x);
+  font-size: var(--chip-font-size);
+  font-weight: var(--chip-font-weight);
+  line-height: 1.2;
+  color: var(--chip-text);
+  background: var(--chip-bg);
   transition: var(--button-transition);
 }
 
-.post-view-mode-chip:hover {
-  border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
-  color: var(--accent-strong);
+.chip-link {
+  text-decoration: none;
+}
+
+.chip-link:hover {
+  border-color: var(--chip-hover-border);
+  color: var(--chip-hover-text);
+  background: var(--chip-hover-bg);
+}
+
+.chip-link:focus-visible {
+  outline: none;
+  box-shadow: var(--button-focus-ring);
+}
+
+.chip.is-active,
+.chip--active {
+  border-color: var(--chip-active-border);
+  background: var(--chip-active-bg);
+  color: var(--chip-hover-text);
+}
+
+.chip--control {
+  font-size: 0.78rem;
+  font-weight: 650;
+  border-color: var(--button-chip-border);
+  background: var(--button-chip-bg);
+}
+
+.chip-link.chip--control:hover {
+  border-color: var(--chip-hover-border);
+  color: var(--chip-hover-text);
   background: var(--button-chip-bg-hover);
 }
 
-.post-view-mode-chip.is-active {
-  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
-  color: var(--accent-strong);
+.chip--control.is-active,
+.chip--control.chip--active {
+  border-color: var(--chip-active-border);
+  color: var(--chip-hover-text);
   background: var(--button-chip-bg-active);
+}
+
+.chip--accent {
+  border-color: var(--chip-accent-border);
+  background: var(--chip-accent-bg);
+  color: var(--chip-hover-text);
+}
+
+.chip--tight {
+  padding: 0.14rem 0.45rem;
+  font-size: 0.75rem;
+}
+
+.chip--danger {
+  border-color: var(--chip-danger-border);
+  background: var(--chip-danger-bg);
+  color: var(--chip-danger-text);
+}
+
+.post-view-mode-chip {
+  justify-content: center;
 }
 
 .post-view-mode-select {
@@ -2043,16 +2113,14 @@ small {
 }
 
 .attachment-file-badge {
-  border: 1px solid var(--border);
-  border-radius: 999px;
   padding: 0.14rem 0.45rem;
   font-size: 0.75rem;
-  background: color-mix(in srgb, var(--card-solid) 88%, transparent);
 }
 
 .attachment-file-badge.is-missing {
-  border-color: color-mix(in srgb, var(--critical-accent) 55%, var(--border));
-  color: var(--critical-text);
+  border-color: var(--chip-danger-border);
+  background: var(--chip-danger-bg);
+  color: var(--chip-danger-text);
 }
 
 .attachment-file-stats {
@@ -2162,23 +2230,12 @@ small {
 }
 
 .creator-meta-pill {
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--card-solid) 88%, transparent);
-  padding: 0.2rem 0.58rem;
   font-size: 0.78rem;
   letter-spacing: 0.01em;
-  color: var(--muted);
 }
 
 .creator-meta-pill-link {
-  text-decoration: none;
-}
-
-.creator-meta-pill-link:hover {
-  color: var(--accent-strong);
-  border-color: color-mix(in srgb, var(--accent) 44%, var(--border));
-  background: color-mix(in srgb, var(--accent-soft) 42%, var(--card-solid));
+  color: inherit;
 }
 
 .creator-hero-actions {
@@ -2223,13 +2280,7 @@ small {
 }
 
 .creator-profile-tag {
-  display: inline-flex;
-  align-items: center;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 0.2rem 0.56rem;
   font-size: 0.82rem;
-  background: color-mix(in srgb, var(--accent-soft) 52%, transparent);
 }
 
 .section-head {
@@ -2420,12 +2471,6 @@ small {
 }
 
 .series-tag {
-  display: inline-flex;
-  align-items: center;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 0.18rem 0.52rem;
-  background: color-mix(in srgb, var(--accent-soft) 46%, transparent);
   font-size: 0.82rem;
 }
 
@@ -2733,7 +2778,7 @@ small {
   font-size: 0.74rem;
   font-weight: 600;
   color: var(--text-inverse);
-  background: color-mix(in srgb, var(--media-chip-bg) 74%, transparent);
+  background: color-mix(in srgb, var(--media-chip-bg) 40%, transparent);
   backdrop-filter: blur(3px);
   pointer-events: none;
 }
@@ -2747,11 +2792,8 @@ small {
 }
 
 .creator-post-badge {
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 0.16rem 0.52rem;
+  padding: 0.17rem 0.54rem;
   font-size: 0.77rem;
-  background: color-mix(in srgb, var(--accent-soft) 52%, transparent);
 }
 
 .creator-post-date {
@@ -2804,18 +2846,11 @@ small {
 }
 
 .post-edit-chip {
-  display: inline-flex;
-  align-items: center;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 0.2rem 0.56rem;
   font-size: 0.8rem;
-  background: color-mix(in srgb, var(--card-solid) 92%, transparent);
 }
 
 .post-edit-chip-link {
-  text-decoration: none;
-  color: var(--accent);
+  color: inherit;
 }
 
 .post-edit-head-tools {
@@ -3182,22 +3217,13 @@ body.is-busy-overlay-open {
 
 .post-edit-attachment-kind {
   margin: 0;
-  padding: 0.12rem 0.42rem;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-  color: var(--muted);
+  padding: 0.13rem 0.44rem;
   font-size: 0.75rem;
   text-transform: lowercase;
 }
 
 .post-edit-attachment-source-badge {
-  display: inline-flex;
-  align-items: center;
   padding: 0.14rem 0.46rem;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-  background: color-mix(in srgb, var(--card-solid) 92%, transparent);
-  color: var(--muted);
   font-size: 0.75rem;
 }
 
@@ -3708,20 +3734,8 @@ body.is-post-reader-page .site-header {
 }
 
 .post-nav-scope-chip {
-  display: inline-flex;
-  align-items: center;
   justify-content: center;
-  padding: 0.2rem 0.55rem;
-  border-radius: 999px;
-  text-decoration: none;
   font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--muted);
-}
-
-.post-nav-scope-chip.is-active {
-  background: color-mix(in srgb, var(--accent-soft) 72%, transparent);
-  color: var(--accent-strong);
 }
 
 .post-nav-list {
@@ -3950,15 +3964,8 @@ body.is-post-reader-page .site-header {
 }
 
 .post-viewer-chip {
-  display: inline-flex;
-  align-items: center;
   gap: 0.3rem;
   margin: 0;
-  padding: 0.2rem 0.52rem;
-  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--card-solid) 90%, transparent);
-  color: var(--muted);
   font-size: 0.8rem;
 }
 
@@ -3967,8 +3974,7 @@ body.is-post-reader-page .site-header {
 }
 
 .post-viewer-chip-link {
-  text-decoration: none;
-  color: var(--accent);
+  color: inherit;
 }
 
 .post-viewer-head-actions {

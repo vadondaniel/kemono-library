@@ -63,7 +63,7 @@
                   <div class="post-view-mode-chip-row">
                     {% for option in post_view_mode_switcher['options'] %}
                       <a
-                        class="post-view-mode-chip {% if option['id'] == post_view_mode_switcher['current_mode'] %}is-active{% endif %}"
+                        class="chip chip-link chip--control post-view-mode-chip {% if option['id'] == post_view_mode_switcher['current_mode'] %}is-active{% endif %}"
                         href="{{ option['href'] }}"
                         data-post-view-mode-option
                         data-view-mode="{{ option['id'] }}"
@@ -89,15 +89,15 @@
                 <div class="post-view-mode-chip-row">
                   <label class="post-theme-mode-option">
                     <input type="radio" name="theme-toggle-radio" value="auto" data-theme-toggle-radio>
-                    <span class="post-view-mode-chip">Auto</span>
+                    <span class="chip chip--control post-view-mode-chip">Auto</span>
                   </label>
                   <label class="post-theme-mode-option">
                     <input type="radio" name="theme-toggle-radio" value="light" data-theme-toggle-radio>
-                    <span class="post-view-mode-chip">Light</span>
+                    <span class="chip chip--control post-view-mode-chip">Light</span>
                   </label>
                   <label class="post-theme-mode-option">
                     <input type="radio" name="theme-toggle-radio" value="dark" data-theme-toggle-radio>
-                    <span class="post-view-mode-chip">Dark</span>
+                    <span class="chip chip--control post-view-mode-chip">Dark</span>
                   </label>
                 </div>
               </fieldset>

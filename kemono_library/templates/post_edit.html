@@ -8,20 +8,20 @@
       <h1>{{ active_version['title'] }}</h1>
       <p class="post-edit-subtitle">Edit content, files, and thumbnail for this {% if versions|length > 1 %}version{% else %}post{% endif %}.</p>
       <div class="post-edit-chips">
-        <span class="post-edit-chip">Version: {{ active_version['label'] }}</span>
+        <span class="chip post-edit-chip">Version: {{ active_version['label'] }}</span>
         {% if active_version['language'] %}
-          <span class="post-edit-chip">Lang: {{ active_version['language'] }}</span>
+          <span class="chip post-edit-chip">Lang: {{ active_version['language'] }}</span>
         {% endif %}
         {% if active_version['derived_from_version_id'] %}
-          <a class="post-edit-chip post-edit-chip-link" href="{{ url_for('post_detail', post_id=post['id'], version_id=active_version['derived_from_version_id']) }}">Based on: {{ active_version['derived_from_label'] or 'Earlier version' }}{% if active_version['derived_from_language'] %} ({{ active_version['derived_from_language'] }}){% endif %}</a>
+          <a class="chip chip-link post-edit-chip post-edit-chip-link" href="{{ url_for('post_detail', post_id=post['id'], version_id=active_version['derived_from_version_id']) }}">Based on: {{ active_version['derived_from_label'] or 'Earlier version' }}{% if active_version['derived_from_language'] %} ({{ active_version['derived_from_language'] }}){% endif %}</a>
         {% endif %}
         {% if active_version['is_default'] %}
-          <span class="post-edit-chip">Default version</span>
+          <span class="chip post-edit-chip">Default version</span>
         {% endif %}
         {% if active_version['source_url'] %}
-          <a class="post-edit-chip post-edit-chip-link" href="{{ active_version['source_url'] }}" target="_blank" rel="noopener noreferrer">Source</a>
+          <a class="chip chip-link post-edit-chip post-edit-chip-link" href="{{ active_version['source_url'] }}" target="_blank" rel="noopener noreferrer">Source</a>
         {% else %}
-          <span class="post-edit-chip">Manual version</span>
+          <span class="chip post-edit-chip">Manual version</span>
         {% endif %}
       </div>
     </div>
@@ -176,11 +176,11 @@
     <div class="post-edit-attachment-body">
       <div class="post-edit-attachment-meta">
         {% if file['tracked'] %}
-          <span class="post-edit-attachment-source-badge">Tracked source file</span>
+          <span class="chip chip--tight post-edit-attachment-source-badge">Tracked source file</span>
         {% else %}
-          <span class="post-edit-attachment-source-badge">Source candidate</span>
+          <span class="chip chip--tight post-edit-attachment-source-badge">Source candidate</span>
         {% endif %}
-        <small class="post-edit-attachment-kind">{{ file['kind'] }}</small>
+        <small class="chip chip--tight post-edit-attachment-kind">{{ file['kind'] }}</small>
         {% if file['tracked'] and not file['local_available'] %}
           <small class="post-file-missing">download skipped/missing</small>
         {% elif not file['tracked'] %}

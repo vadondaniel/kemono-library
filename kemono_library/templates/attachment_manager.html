@@ -153,12 +153,12 @@
                               </small>
                             </div>
                             <div class="attachment-file-badges">
-                              <span class="attachment-file-badge">{{ file['kind'] }}</span>
-                              <span class="attachment-file-badge">{{ file['origin_kind'] }}</span>
+                              <span class="chip chip--tight attachment-file-badge">{{ file['kind'] }}</span>
+                              <span class="chip chip--tight attachment-file-badge">{{ file['origin_kind'] }}</span>
                               {% if file['local_available'] %}
-                                <span class="attachment-file-badge" data-attachment-state-badge>saved</span>
+                                <span class="chip chip--tight attachment-file-badge" data-attachment-state-badge>saved</span>
                               {% else %}
-                                <span class="attachment-file-badge is-missing" data-attachment-state-badge>missing</span>
+                                <span class="chip chip--tight chip--danger attachment-file-badge is-missing" data-attachment-state-badge>missing</span>
                               {% endif %}
                             </div>
                             <div class="attachment-file-stats">
