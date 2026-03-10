@@ -3860,6 +3860,67 @@ def test_edit_page_prettifies_html_content(tmp_path):
     assert b"/static/transient_navigation.js" in response.data
 
 
+def test_post_edit_version_actions_use_replace_navigation_attributes(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Replace Nav Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="replace-user",
+        external_post_id="replace-post",
+        title="Replace Me",
+        content="<p>Body</p>",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/replace-user/post/replace-post",
+    )
+    source_version = db.get_post_version(post_id)
+    assert source_version is not None
+    manual_id = db.clone_post_version(
+        post_id=post_id,
+        source_version_id=int(source_version["id"]),
+        label="Manual",
+        language="en",
+        set_default=False,
+    )
+
+    response = app.test_client().get(f"/posts/{post_id}/edit?version_id={manual_id}")
+    assert response.status_code == 200
+    soup = BeautifulSoup(response.data, "html.parser")
+
+    active_version_select = soup.select_one("select#active-version")
+    assert active_version_select is not None
+    assert "requestSubmit" in str(active_version_select.get("onchange") or "")
+    switch_form = active_version_select.find_parent("form")
+    assert switch_form is not None
+    assert switch_form.get("data-nav-replace-redirect") is not None
+
+    import_link = soup.find("a", string="Import new version")
+    assert import_link is not None
+    assert import_link.get("data-nav-replace-href") is not None
+
+    clone_form = soup.find("form", action=f"/posts/{post_id}/versions/clone")
+    assert clone_form is not None
+    assert clone_form.get("data-nav-replace-redirect") is not None
+
+    set_default_form = soup.find("form", action=f"/posts/{post_id}/versions/{manual_id}/set-default")
+    assert set_default_form is not None
+    assert set_default_form.get("data-nav-replace-redirect") is not None
+
+    delete_form = soup.find("form", action=f"/posts/{post_id}/versions/{manual_id}/delete")
+    assert delete_form is not None
+    assert delete_form.get("data-nav-replace-redirect") is not None
+
+
 def test_edit_post_saves_thumbnail_focus_and_applies_to_creator_grid(tmp_path):
     app = create_app(
         {

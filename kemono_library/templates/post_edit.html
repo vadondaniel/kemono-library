@@ -26,9 +26,9 @@
       </div>
     </div>
     <div class="post-edit-head-tools">
-      <form method="get" action="{{ url_for('edit_post', post_id=post['id']) }}" class="form post-edit-version-switch">
+      <form method="get" action="{{ url_for('edit_post', post_id=post['id']) }}" class="form post-edit-version-switch" data-nav-replace-redirect>
         <label class="field-label" for="active-version">Active version</label>
-        <select class="field" id="active-version" name="version_id" onchange="this.form.submit()">
+        <select class="field" id="active-version" name="version_id" onchange="if (this.form.requestSubmit) { this.form.requestSubmit(); } else { this.form.submit(); }">
           {% for version in versions %}
             <option value="{{ version['id'] }}" {% if version['id'] == active_version['id'] %}selected{% endif %}>
               {{ version['label'] }}{% if version['language'] %} ({{ version['language'] }}){% endif %}{% if version['is_default'] %} [default]{% endif %}
@@ -119,14 +119,16 @@
     <a
       class="btn btn-link btn--ghost"
       href="{{ url_for('import_form', creator_id=post['creator_id'], series_id=post['series_id'], import_target_mode='existing', target_post_id=post['id'], force_target_post_version='1', overwrite_matching_version='0', set_as_default='0', version_label='Imported version', version_language='') }}"
+      data-nav-replace-href
     >Import new version</a>
     {% if active_version['origin_kind'] == 'source' and active_version['source_url'] %}
       <a
         class="btn btn-link btn--ghost"
         href="{{ url_for('import_form', url=active_version['source_url'], creator_id=post['creator_id'], series_id=post['series_id'], import_target_mode='existing', target_post_id=post['id'], force_overwrite_matching_version='1', overwrite_matching_version='1', set_as_default='1' if active_version['is_default'] else '0', version_label=active_version['label'], version_language=active_version['language'] or '') }}"
+        data-nav-replace-href
       >Reimport and overwrite this version</a>
     {% endif %}
-    <form method="post" action="{{ url_for('clone_post_version', post_id=post['id']) }}" class="inline-form">
+    <form method="post" action="{{ url_for('clone_post_version', post_id=post['id']) }}" class="inline-form" data-nav-replace-redirect>
       <input type="hidden" name="source_version_id" value="{{ active_version['id'] }}">
       <input type="hidden" name="set_as_default" value="0">
       <input type="hidden" name="version_label" value="Manual translation">
@@ -134,12 +136,12 @@
       <button type="submit" class="btn btn--ghost">Clone as manual version</button>
     </form>
     {% if not active_version['is_default'] %}
-      <form method="post" action="{{ url_for('set_default_post_version', post_id=post['id'], version_id=active_version['id']) }}" class="inline-form">
+      <form method="post" action="{{ url_for('set_default_post_version', post_id=post['id'], version_id=active_version['id']) }}" class="inline-form" data-nav-replace-redirect>
         <button type="submit" class="btn btn--ghost">Set as default</button>
       </form>
     {% endif %}
     {% if versions|length > 1 %}
-      <form method="post" action="{{ url_for('delete_post_version', post_id=post['id'], version_id=active_version['id']) }}" class="inline-form" onsubmit="return confirm('Delete this version?');">
+      <form method="post" action="{{ url_for('delete_post_version', post_id=post['id'], version_id=active_version['id']) }}" class="inline-form" onsubmit="return confirm('Delete this version?');" data-nav-replace-redirect>
         <button type="submit" class="btn btn--ghost btn--danger-quiet">Delete version</button>
       </form>
     {% endif %}

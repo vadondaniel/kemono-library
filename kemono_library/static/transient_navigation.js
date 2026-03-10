@@ -54,6 +54,9 @@
   }
 
   document.addEventListener("submit", (event) => {
+    if (event.defaultPrevented) {
+      return;
+    }
     const target = event.target;
     if (!(target instanceof HTMLFormElement)) {
       return;
