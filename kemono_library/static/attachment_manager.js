@@ -156,6 +156,8 @@
     }
     retryErrorTooltip.hidden = true;
     retryErrorTooltip.replaceChildren();
+    retryErrorTooltip.removeAttribute("data-placement");
+    retryErrorTooltip.style.removeProperty("--retry-tooltip-arrow-top");
     retryErrorTooltip.style.left = "";
     retryErrorTooltip.style.top = "";
     retryErrorTooltip.style.visibility = "";
@@ -185,24 +187,55 @@
     return text || fallback;
   }
 
-  function setRetryErrorTooltipContent(rawError) {
+  function setRetryErrorTooltipContent(failure) {
     if (!(retryErrorTooltip instanceof HTMLElement)) {
       return;
     }
+    const normalized =
+      failure && typeof failure === "object"
+        ? failure
+        : {
+            name: "",
+            context: "",
+            error: typeof failure === "string" ? failure : "Retry failed.",
+          };
     const title = document.createElement("strong");
     title.className = "attachment-retry-error-tooltip-title";
-    title.textContent = "Download error";
+    title.textContent = "Error details";
+    const meta = document.createElement("div");
+    meta.className = "attachment-retry-error-tooltip-meta";
+    const contextText = typeof normalized.context === "string" ? normalized.context.trim() : "";
+    if (contextText) {
+      const context = document.createElement("span");
+      context.className = "attachment-retry-error-tooltip-context";
+      context.textContent = `Source: ${contextText}`;
+      context.title = contextText;
+      meta.appendChild(context);
+    }
     const body = document.createElement("span");
     body.className = "attachment-retry-error-tooltip-body";
-    body.textContent = rawError;
-    retryErrorTooltip.replaceChildren(title, body);
+    body.textContent =
+      typeof normalized.error === "string" && normalized.error.trim() ? normalized.error.trim() : "Retry failed.";
+    const children = [title];
+    if (meta.childElementCount > 0) {
+      children.push(meta);
+    }
+    children.push(body);
+    retryErrorTooltip.replaceChildren(...children);
   }
 
-  function showRetryErrorTooltip(target, errorText) {
+  function showRetryErrorTooltip(target, failure) {
     if (!(target instanceof HTMLElement)) {
       return;
     }
-    const text = typeof errorText === "string" ? errorText.trim() : "";
+    const text =
+      failure && typeof failure === "object"
+        ? typeof failure.error === "string"
+          ? failure.error.trim()
+          : ""
+        : typeof failure === "string"
+          ? failure.trim()
+          : "";
     if (!text) {
       hideRetryErrorTooltip();
       return;
@@ -210,7 +243,7 @@
 
     const tooltip = ensureRetryErrorTooltip();
     retryErrorTooltipTarget = target;
-    setRetryErrorTooltipContent(text);
+    setRetryErrorTooltipContent(failure);
     tooltip.hidden = false;
     tooltip.style.visibility = "hidden";
 
@@ -219,11 +252,14 @@
     const viewportPadding = 12;
     const offset = 10;
 
+    let placement = "right";
     let left = targetRect.right + offset;
     if (left + tooltipRect.width > window.innerWidth - viewportPadding) {
+      placement = "left";
       left = targetRect.left - tooltipRect.width - offset;
     }
     if (left < viewportPadding) {
+      placement = "right";
       left = targetRect.left;
     }
     if (left + tooltipRect.width > window.innerWidth - viewportPadding) {
@@ -231,7 +267,7 @@
     }
     left = Math.max(viewportPadding, Math.round(left));
 
-    let top = targetRect.top;
+    let top = targetRect.top + (targetRect.height - tooltipRect.height) / 2;
     if (top + tooltipRect.height > window.innerHeight - viewportPadding) {
       top = window.innerHeight - viewportPadding - tooltipRect.height;
     }
@@ -240,22 +276,32 @@
     }
     top = Math.max(viewportPadding, Math.round(top));
 
+    tooltip.dataset.placement = placement;
+    const arrowTop = Math.max(10, Math.min(tooltipRect.height - 10, targetRect.top + targetRect.height / 2 - top));
+    tooltip.style.setProperty("--retry-tooltip-arrow-top", `${Math.round(arrowTop)}px`);
     tooltip.style.left = `${left}px`;
     tooltip.style.top = `${top}px`;
     tooltip.style.visibility = "";
   }
 
-  function bindRetryFailureTooltip(item, errorText) {
+  function bindRetryFailureTooltip(item, failure) {
     if (!(item instanceof HTMLElement)) {
       return;
     }
-    const text = typeof errorText === "string" ? errorText.trim() : "";
+    const text =
+      failure && typeof failure === "object"
+        ? typeof failure.error === "string"
+          ? failure.error.trim()
+          : ""
+        : typeof failure === "string"
+          ? failure.trim()
+          : "";
     if (!text) {
       return;
     }
 
     item.addEventListener("mouseenter", () => {
-      showRetryErrorTooltip(item, text);
+      showRetryErrorTooltip(item, failure);
     });
     item.addEventListener("mouseleave", () => {
       if (retryErrorTooltipTarget === item) {
@@ -263,7 +309,7 @@
       }
     });
     item.addEventListener("focusin", () => {
-      showRetryErrorTooltip(item, text);
+      showRetryErrorTooltip(item, failure);
     });
     item.addEventListener("focusout", () => {
       if (retryErrorTooltipTarget === item) {
@@ -285,8 +331,17 @@
           : typeof entry.display_name === "string" && entry.display_name.trim()
             ? entry.display_name.trim()
             : `Attachment ${index + 1}`;
+      let context = "";
+      const displayName = typeof entry.display_name === "string" ? entry.display_name.trim() : "";
+      if (displayName) {
+        const segments = displayName.split(" / ").map((segment) => segment.trim()).filter(Boolean);
+      if (segments.length > 1 && name && segments[segments.length - 1].toLowerCase() === name.toLowerCase()) {
+        segments.pop();
+      }
+      context = segments.slice(0, 2).join(" / ");
+    }
       const error = normalizeRetryFailureError(entry.error, name);
-      failures.push({ name, error });
+      failures.push({ name, context, error });
     });
     if (failures.length) {
       return failures;
@@ -306,11 +361,12 @@
         const failureName = sample.slice(0, dividerIndex).trim() || `Attachment ${index + 1}`;
         failures.push({
           name: failureName,
+          context: "",
           error: normalizeRetryFailureError(sample.slice(dividerIndex + 2).trim(), failureName),
         });
         return;
       }
-      failures.push({ name: sample, error: normalizeRetryFailureError(sample, sample) });
+      failures.push({ name: sample, context: "", error: normalizeRetryFailureError(sample, sample) });
     });
     return failures;
   }
@@ -439,7 +495,7 @@
       label.dataset.fullText = entry.name.trim();
       label.textContent = entry.name.trim();
       item.appendChild(label);
-      bindRetryFailureTooltip(item, entry.error);
+      bindRetryFailureTooltip(item, entry);
       resultExamples.appendChild(item);
     });
     window.requestAnimationFrame(() => {
