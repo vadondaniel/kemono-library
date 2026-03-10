@@ -518,6 +518,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             local_available, file_size = local_file_status.get(local_path or "", (False, None))
             remote_url = str(row["remote_url"])
             remote_url_display = _preferred_remote_url_for_access(remote_url, row["name"])
+            remote_domain = _remote_domain_for_display(remote_url_display)
             is_image = _is_likely_image_attachment(
                 remote_url=remote_url,
                 name=row["name"],
@@ -561,6 +562,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                     "name": str(row["name"]),
                     "remote_url": remote_url,
                     "remote_url_display": remote_url_display,
+                    "remote_domain": remote_domain,
                     "local_path": local_path,
                     "local_available": local_available,
                     "file_size": file_size,
@@ -2599,6 +2601,14 @@ def _build_local_file_url(relative_path: str | None) -> str | None:
 
 def _preferred_remote_url_for_access(remote_url: str, attachment_name: Any) -> str:
     return _kemono_data_fallback_url(remote_url, attachment_name) or remote_url
+
+
+def _remote_domain_for_display(raw_url: str) -> str:
+    value = str(raw_url or "").strip()
+    if not value:
+        return "unknown source"
+    parsed = urlparse(value if "://" in value else f"//{value}")
+    return parsed.netloc or parsed.path or value
 
 
 def _kemono_data_fallback_url(remote_url: str, attachment_name: Any) -> str | None:

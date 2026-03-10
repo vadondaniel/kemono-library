@@ -169,7 +169,7 @@
                                 <span data-attachment-local-path>No local path yet</span>
                               {% endif %}
                             </div>
-                            <div class="attachment-file-url" data-middle-ellipsis title="{{ file['remote_url'] }}">{{ file['remote_url'] }}</div>
+                            <div class="attachment-file-url" title="{{ file['remote_url_display'] }}">{{ file['remote_domain'] }}</div>
                             <div class="attachment-file-actions" data-attachment-file-actions>
                               {% if file['local_available'] and file['local_path'] %}
                                 <a class="btn btn-link btn--ghost" href="{{ url_for('serve_file', relative_path=file['local_path']) }}" target="_blank" rel="noopener" data-attachment-open-local>Open local</a>
