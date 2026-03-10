@@ -2453,22 +2453,12 @@ button:disabled,
   text-decoration: underline;
 }
 
-.creator-profile-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-sm-plus);
-}
-
 .creator-profile-tag {
   font-size: 0.82rem;
 }
 
 .section-head {
   margin-bottom: 0.72rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: var(--space-lg);
 }
 
 .section-head h2 {
@@ -2633,9 +2623,6 @@ button:disabled,
 
 .series-tag-list {
   margin-top: 0.55rem;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-sm);
 }
 
 .series-tag {
@@ -2989,9 +2976,6 @@ button:disabled,
 
 .post-edit-chips {
   margin-top: 0.58rem;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-sm-plus);
 }
 
 .post-edit-chip {
@@ -4104,12 +4088,6 @@ body.is-post-reader-page .site-header {
 
 .post-viewer-title-select-shell .post-viewer-title {
   padding-right: var(--post-viewer-arrow-slot);
-}
-
-.post-viewer-chip-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-sm);
 }
 
 .post-viewer-chip {

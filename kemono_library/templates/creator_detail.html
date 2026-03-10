@@ -64,7 +64,7 @@
           <div class="creator-profile-description">{{ creator['description']|render_markdown }}</div>
         {% endif %}
         {% if creator['tags_text'] %}
-          <div class="creator-profile-tags">
+          <div class="creator-profile-tags layout-row layout-row--wrap layout-row--sm-plus">
             {% for tag in creator['tags_text'].split(',') %}
               {% set normalized_tag = tag.strip() %}
               {% if normalized_tag %}
@@ -132,7 +132,7 @@
         <p class="series-meta-description">{{ selected_series['description'] }}</p>
       {% endif %}
       {% if selected_series['tags_text'] %}
-        <div class="series-tag-list">
+        <div class="series-tag-list layout-row layout-row--wrap layout-row--sm">
           {% for tag in selected_series['tags_text'].split(',') %}
             {% set normalized_tag = tag.strip() %}
             {% if normalized_tag %}
@@ -142,7 +142,7 @@
       </div>
       {% endif %}
     {% else %}
-      <div class="section-head">
+      <div class="section-head layout-row layout-row--between layout-row--baseline layout-row--lg">
         <div>
           <h2>All Posts</h2>
           <small>{{ series_list|length }} series</small>

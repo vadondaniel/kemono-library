@@ -143,7 +143,7 @@
               <h1 class="post-viewer-title">{{ active_version['title'] }}</h1>
             {% endif %}
           </div>
-          <div class="post-viewer-chip-row">
+          <div class="post-viewer-chip-row layout-row layout-row--wrap layout-row--sm">
             {% if active_version['published_at'] %}
               <span class="chip post-viewer-chip"><strong>Published:</strong> <time datetime="{{ active_version['published_at'] }}">{{ active_version['published_at']|format_datetime }}</time></span>
             {% endif %}

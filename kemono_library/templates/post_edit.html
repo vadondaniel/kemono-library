@@ -7,7 +7,7 @@
       <p class="text-kicker">Edit Version</p>
       <h1>{{ active_version['title'] }}</h1>
       <p class="post-edit-subtitle">Edit content, files, and thumbnail for this {% if versions|length > 1 %}version{% else %}post{% endif %}.</p>
-      <div class="post-edit-chips">
+      <div class="post-edit-chips layout-row layout-row--wrap layout-row--sm-plus">
         <span class="chip post-edit-chip">Version: {{ active_version['label'] }}</span>
         {% if active_version['language'] %}
           <span class="chip post-edit-chip">Lang: {{ active_version['language'] }}</span>
