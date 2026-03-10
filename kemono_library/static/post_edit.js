@@ -287,6 +287,7 @@
 
   const imageTarget = lightbox.querySelector("[data-lightbox-image-target]");
   const captionTarget = lightbox.querySelector("[data-lightbox-caption]");
+  const openTabLink = lightbox.querySelector("[data-lightbox-open-tab]");
   const dialog = lightbox.querySelector(".post-edit-lightbox-dialog");
   const closeButtons = Array.from(lightbox.querySelectorAll("[data-lightbox-close]"));
   if (!(imageTarget instanceof HTMLImageElement)) {
@@ -294,10 +295,19 @@
   }
 
   function openLightbox(src, alt) {
-    imageTarget.src = src;
-    imageTarget.alt = alt || "";
+    const cleanSrc = typeof src === "string" ? src.trim() : "";
+    const cleanAlt = typeof alt === "string" ? alt : "";
+    if (!cleanSrc) {
+      return;
+    }
+
+    imageTarget.src = cleanSrc;
+    imageTarget.alt = cleanAlt || "";
     if (captionTarget instanceof HTMLElement) {
-      captionTarget.textContent = alt || "";
+      captionTarget.textContent = cleanAlt || "";
+    }
+    if (openTabLink instanceof HTMLAnchorElement) {
+      openTabLink.href = cleanSrc;
     }
     lightbox.hidden = false;
     document.body.classList.add("is-lightbox-open");
@@ -309,6 +319,9 @@
     imageTarget.alt = "";
     if (captionTarget instanceof HTMLElement) {
       captionTarget.textContent = "";
+    }
+    if (openTabLink instanceof HTMLAnchorElement) {
+      openTabLink.removeAttribute("href");
     }
     document.body.classList.remove("is-lightbox-open");
   }

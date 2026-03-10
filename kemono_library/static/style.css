@@ -30,6 +30,7 @@
   --media-chip-bg: #33281f;
   --overlay-scrim: rgba(19, 16, 12, 0.52);
   --overlay-scrim-soft: rgba(28, 22, 16, 0.56);
+  --lightbox-backdrop: rgba(18, 14, 10, 0.78);
   --surface-elevated-bg: color-mix(in srgb, var(--card-solid) 95%, black 5%);
   --surface-control-track-bg: color-mix(in srgb, var(--card-solid) 86%, black 14%);
   --accent-fill-soft: color-mix(in srgb, var(--accent) 64%, var(--text-inverse));
@@ -176,6 +177,7 @@ html[data-theme="dark"] {
   --media-chip-bg: #120f0c;
   --overlay-scrim: rgba(6, 5, 4, 0.72);
   --overlay-scrim-soft: rgba(19, 15, 11, 0.68);
+  --lightbox-backdrop: rgba(4, 3, 2, 0.82);
   --surface-elevated-bg: color-mix(in srgb, var(--card-solid) 95%, black 5%);
   --surface-control-track-bg: color-mix(in srgb, var(--card-solid) 86%, black 14%);
   --accent-fill-soft: color-mix(in srgb, var(--accent) 64%, var(--text-inverse));
@@ -3097,9 +3099,32 @@ button:disabled,
   border: 0;
   margin: 0;
   padding: 0;
-  background: var(--overlay-scrim);
+  background: var(--lightbox-backdrop);
   backdrop-filter: blur(2px);
   cursor: zoom-out;
+  box-shadow: none;
+  transition: background-color 160ms ease;
+  transform: none;
+  filter: none;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.post-edit-lightbox-backdrop:hover,
+.post-lightbox-backdrop:hover,
+.post-edit-lightbox-backdrop:active,
+.post-lightbox-backdrop:active {
+  border: 0;
+  background: var(--lightbox-backdrop);
+  box-shadow: none;
+  transform: none;
+  filter: none;
+}
+
+.post-edit-lightbox-backdrop:focus-visible,
+.post-lightbox-backdrop:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 24%, transparent);
 }
 
 .post-edit-lightbox-dialog,
@@ -3124,26 +3149,6 @@ button:disabled,
   border-radius: var(--radius-sm);
   border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
   background: color-mix(in srgb, var(--card-solid) 96%, transparent);
-}
-
-.post-edit-lightbox-close {
-  justify-self: end;
-  border: 1px solid var(--button-ghost-border);
-  border-radius: var(--radius-pill);
-  background: var(--button-ghost-bg);
-  color: var(--text);
-  min-height: 2rem;
-  padding: 0.28rem 0.78rem;
-  cursor: pointer;
-  font-weight: var(--button-font-weight);
-  box-shadow: none;
-  transition: var(--button-transition);
-}
-
-.post-edit-lightbox-close:hover {
-  border-color: color-mix(in srgb, var(--accent) 56%, var(--border));
-  background: var(--button-ghost-bg-hover);
-  color: var(--accent-strong);
 }
 
 .post-edit-lightbox-dialog figcaption,
