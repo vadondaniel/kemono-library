@@ -838,6 +838,15 @@ button:disabled,
   text-overflow: ellipsis;
 }
 
+[data-middle-ellipsis] {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .post-file-image-trigger {
   cursor: zoom-in;
 }
@@ -2247,6 +2256,16 @@ button:disabled,
   min-width: 0;
 }
 
+.attachment-file-meta {
+  min-width: 0;
+}
+
+.attachment-file-meta strong {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+}
+
 .attachment-file-meta small,
 .attachment-file-stats,
 .attachment-file-url {
@@ -2275,11 +2294,20 @@ button:disabled,
   flex-wrap: wrap;
   gap: 0.55rem 1rem;
   font-size: 0.86rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.attachment-file-stats [data-attachment-local-path] {
+  min-width: 0;
+  flex: 1 1 16rem;
+  max-width: 100%;
 }
 
 .attachment-file-url {
   font-size: 0.84rem;
-  overflow-wrap: anywhere;
+  width: 100%;
+  min-width: 0;
 }
 
 .attachment-file-actions {
@@ -3136,6 +3164,7 @@ button:disabled,
   max-width: min(1120px, calc(100vw - 2rem));
   max-height: calc(100vh - 2rem);
   display: grid;
+  justify-items: center;
   gap: var(--space-md);
 }
 
@@ -3157,7 +3186,13 @@ button:disabled,
   color: color-mix(in srgb, var(--card-solid) 88%, var(--text-inverse));
   font-size: 0.85rem;
   text-align: center;
-  word-break: break-word;
+  margin: 0;
+  max-width: min(100%, calc(100vw - 2rem));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: normal;
+  justify-self: center;
 }
 
 .post-lightbox-actions {

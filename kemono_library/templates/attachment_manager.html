@@ -146,7 +146,7 @@
                           </div>
                           <div class="attachment-file-body">
                             <div class="attachment-file-meta">
-                              <strong>{{ file['name'] }}</strong>
+                              <strong data-middle-ellipsis title="{{ file['name'] }}">{{ file['name'] }}</strong>
                               <small>
                                 {% if file['is_default_version'] %}Default{% else %}Version{% endif %}:
                                 {{ file['version_label'] }}{% if file['version_language'] %} ({{ file['version_language'] }}){% endif %}
@@ -164,16 +164,17 @@
                             <div class="attachment-file-stats">
                               <span data-attachment-file-size data-size-bytes="{{ file['file_size'] or 0 }}">{{ file['file_size']|format_bytes }}</span>
                               {% if file['local_path'] %}
-                                <span data-attachment-local-path>{{ file['local_path'] }}</span>
+                                <span data-attachment-local-path data-middle-ellipsis title="{{ file['local_path'] }}">{{ file['local_path'] }}</span>
                               {% else %}
                                 <span data-attachment-local-path>No local path yet</span>
                               {% endif %}
                             </div>
-                            <div class="attachment-file-url" title="{{ file['remote_url'] }}">{{ file['remote_url'] }}</div>
+                            <div class="attachment-file-url" data-middle-ellipsis title="{{ file['remote_url'] }}">{{ file['remote_url'] }}</div>
                             <div class="attachment-file-actions" data-attachment-file-actions>
                               {% if file['local_available'] and file['local_path'] %}
                                 <a class="btn btn-link btn--ghost" href="{{ url_for('serve_file', relative_path=file['local_path']) }}" target="_blank" rel="noopener" data-attachment-open-local>Open local</a>
                               {% endif %}
+                              <a class="btn btn-link btn--ghost" href="{{ file['remote_url_display'] }}" target="_blank" rel="noopener noreferrer">Open source</a>
                               <a class="btn btn-link btn--ghost" href="{{ url_for('post_detail', post_id=file['post_id']) }}" data-post-detail-link data-post-creator-id="{{ creator['id'] }}">Open post</a>
                               {% if not file['local_available'] %}
                                 <form method="post" action="{{ url_for('retry_missing_attachments') }}" class="inline-form" data-attachment-retry-form data-attachment-retry-inline data-retry-start-url="{{ url_for('start_retry_missing_attachments') }}" data-retry-message="Retrying {{ file['name'] }}...">
@@ -243,7 +244,7 @@
       <button type="button" class="post-lightbox-close btn btn-link btn--ghost" data-post-lightbox-close>Close</button>
     </div>
     <img src="" alt="" data-post-lightbox-image>
-    <figcaption data-post-lightbox-caption></figcaption>
+    <figcaption data-post-lightbox-caption data-middle-ellipsis></figcaption>
   </figure>
 </div>
 <script src="{{ url_for('static', filename='post_detail.js') }}"></script>

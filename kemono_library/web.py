@@ -517,6 +517,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             local_path = _optional_str(row["local_path"])
             local_available, file_size = local_file_status.get(local_path or "", (False, None))
             remote_url = str(row["remote_url"])
+            remote_url_display = _preferred_remote_url_for_access(remote_url, row["name"])
             is_image = _is_likely_image_attachment(
                 remote_url=remote_url,
                 name=row["name"],
@@ -526,7 +527,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             preview_url = (
                 url_for("serve_file", relative_path=local_path)
                 if local_available and local_path
-                else _preferred_remote_url_for_access(remote_url, row["name"])
+                else remote_url_display
             )
             post_title = str(row["post_title"]).strip() if row["post_title"] else f"Post {int(row['post_id'])}"
             creator_name = str(row["creator_name"]).strip() if row["creator_name"] else f"Creator {int(row['creator_id'])}"
@@ -559,6 +560,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                     "post_published_at": row["post_published_at"],
                     "name": str(row["name"]),
                     "remote_url": remote_url,
+                    "remote_url_display": remote_url_display,
                     "local_path": local_path,
                     "local_available": local_available,
                     "file_size": file_size,

@@ -288,6 +288,94 @@
     return;
   }
 
+  function measureTextWidth(element, value) {
+    if (!(element instanceof HTMLElement)) {
+      return value.length * 8;
+    }
+    const style = window.getComputedStyle(element);
+    const font = style.font && style.font !== "normal normal normal normal 16px / normal sans-serif"
+      ? style.font
+      : `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d");
+    if (!context) {
+      return value.length * 8;
+    }
+    context.font = font;
+    return context.measureText(value).width;
+  }
+
+  function middleEllipsizeToFit(element, value) {
+    const available = Math.max(0, Math.floor(element.clientWidth || element.getBoundingClientRect().width));
+    if (available <= 0 || !value) {
+      return value;
+    }
+    if (measureTextWidth(element, value) <= available) {
+      return value;
+    }
+
+    const dotIndex = value.lastIndexOf(".");
+    const likelyExtension =
+      dotIndex > 0 && dotIndex < value.length - 1 && value.length - dotIndex <= 9
+        ? value.slice(dotIndex)
+        : "";
+    const minRight = likelyExtension ? Math.max(8, likelyExtension.length + 5) : 8;
+
+    let low = 6;
+    let high = Math.max(6, value.length - 4);
+    let best = "";
+    while (low <= high) {
+      const keep = Math.floor((low + high) / 2);
+      let right = Math.max(minRight, Math.round(keep * 0.4));
+      right = Math.min(right, Math.max(4, value.length - 5));
+      let left = keep - right;
+      if (left < 3) {
+        left = 3;
+      }
+      if (left + right + 3 > value.length) {
+        right = Math.max(4, value.length - left - 3);
+      }
+      const candidate = `${value.slice(0, left)}...${value.slice(value.length - right)}`;
+      if (measureTextWidth(element, candidate) <= available) {
+        best = candidate;
+        low = keep + 1;
+      } else {
+        high = keep - 1;
+      }
+    }
+    if (best) {
+      return best;
+    }
+    return `${value.slice(0, 3)}...${value.slice(-Math.max(4, minRight))}`;
+  }
+
+  function applyMiddleEllipsis(element) {
+    if (!(element instanceof HTMLElement)) {
+      return;
+    }
+    const fullText = (element.dataset.fullText || element.textContent || "").trim();
+    if (!fullText) {
+      return;
+    }
+    element.dataset.fullText = fullText;
+    element.setAttribute("title", fullText);
+    element.textContent = middleEllipsizeToFit(element, fullText);
+  }
+
+  function syncLightboxCaptionWidth() {
+    if (!(captionTarget instanceof HTMLElement)) {
+      return;
+    }
+    const imageWidth = Math.floor(imageTarget.getBoundingClientRect().width);
+    if (imageWidth > 0) {
+      captionTarget.style.width = `${imageWidth}px`;
+      captionTarget.style.maxWidth = `${imageWidth}px`;
+      return;
+    }
+    captionTarget.style.removeProperty("width");
+    captionTarget.style.removeProperty("max-width");
+  }
+
   function openLightbox(src, alt) {
     const cleanSrc = typeof src === "string" ? src.trim() : "";
     const cleanAlt = typeof alt === "string" ? alt : "";
@@ -299,12 +387,19 @@
     imageTarget.alt = cleanAlt || "";
     if (captionTarget instanceof HTMLElement) {
       captionTarget.textContent = cleanAlt || "";
+      captionTarget.dataset.fullText = cleanAlt || "";
     }
     if (openTabLink instanceof HTMLAnchorElement) {
       openTabLink.href = cleanSrc;
     }
     lightbox.hidden = false;
     document.body.classList.add("is-lightbox-open");
+    if (captionTarget instanceof HTMLElement) {
+      window.requestAnimationFrame(() => {
+        syncLightboxCaptionWidth();
+        applyMiddleEllipsis(captionTarget);
+      });
+    }
   }
 
   function closeLightbox() {
@@ -313,6 +408,10 @@
     imageTarget.alt = "";
     if (captionTarget instanceof HTMLElement) {
       captionTarget.textContent = "";
+      delete captionTarget.dataset.fullText;
+      captionTarget.removeAttribute("title");
+      captionTarget.style.removeProperty("width");
+      captionTarget.style.removeProperty("max-width");
     }
     if (openTabLink instanceof HTMLAnchorElement) {
       openTabLink.removeAttribute("href");
@@ -356,5 +455,23 @@
       return;
     }
     closeLightbox();
+  });
+
+  imageTarget.addEventListener("load", () => {
+    if (lightbox.hidden) {
+      return;
+    }
+    syncLightboxCaptionWidth();
+    if (captionTarget instanceof HTMLElement) {
+      applyMiddleEllipsis(captionTarget);
+    }
+  });
+
+  window.addEventListener("resize", () => {
+    if (lightbox.hidden || !(captionTarget instanceof HTMLElement)) {
+      return;
+    }
+    syncLightboxCaptionWidth();
+    applyMiddleEllipsis(captionTarget);
   });
 })();

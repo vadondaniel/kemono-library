@@ -197,7 +197,9 @@
                   data-post-reader-source-image
                   data-reader-image-src="{{ image_src }}"
                   data-reader-image-title="{{ file['name'] }}"
-                >{{ file['name'] if file['name']|length <= 90 else file['name'][:87] ~ '...' }}</button>
+                  data-middle-ellipsis
+                  title="{{ file['name'] }}"
+                >{{ file['name'] }}</button>
               </li>
             {% endfor %}
           </ul>
@@ -220,22 +222,25 @@
                     data-post-file-image-trigger
                     data-lightbox-src="{{ image_src }}"
                     data-lightbox-title="{{ file['name'] }}"
+                    data-middle-ellipsis
                     title="{{ file['name'] }}"
-                  >{{ file['name'] if file['name']|length <= 90 else file['name'][:87] ~ '...' }}</a>
+                  >{{ file['name'] }}</a>
                 {% elif file['local_available'] %}
                   <a
                     class="post-file-link"
                     href="{{ url_for('serve_file', relative_path=file['local_path']) }}"
+                    data-middle-ellipsis
                     title="{{ file['name'] }}"
-                  >{{ file['name'] if file['name']|length <= 90 else file['name'][:87] ~ '...' }}</a>
+                  >{{ file['name'] }}</a>
                 {% else %}
                   <a
                     class="post-file-link"
                     href="{{ file['remote_url_display'] }}"
                     target="_blank"
                     rel="noopener noreferrer"
+                    data-middle-ellipsis
                     title="{{ file['name'] }}"
-                  >{{ file['name'] if file['name']|length <= 90 else file['name'][:87] ~ '...' }}</a>
+                  >{{ file['name'] }}</a>
                 {% endif %}
                 <small class="post-file-kind">{{ file['kind'] }}</small>
                 {% if not file['local_available'] %}
@@ -291,7 +296,7 @@
       <button type="button" class="post-lightbox-close btn btn-link btn--ghost" data-post-lightbox-close>Close</button>
     </div>
     <img src="" alt="" data-post-lightbox-image>
-    <figcaption data-post-lightbox-caption></figcaption>
+    <figcaption data-post-lightbox-caption data-middle-ellipsis></figcaption>
   </figure>
 </div>
 <script src="{{ url_for('static', filename='post_detail.js') }}"></script>
