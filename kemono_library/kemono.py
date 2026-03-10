@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import shutil
@@ -334,6 +335,13 @@ def sanitize_filename(filename: str) -> str:
     return cleaned or "file"
 
 
+def _download_temp_path(destination: Path, *, marker: str) -> Path:
+    # Keep temp filenames short and deterministic to avoid filesystem component limits.
+    marker_clean = sanitize_filename(marker).lower() or "tmp"
+    digest = hashlib.sha1(str(destination).encode("utf-8")).hexdigest()[:12]
+    return destination.with_name(f".{marker_clean}_{digest}.part")
+
+
 def download_attachment(remote_url: str, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     parsed = urlparse(remote_url)
@@ -361,7 +369,7 @@ def download_attachment(remote_url: str, destination: Path) -> None:
             }
         )
 
-    temp_destination = destination.with_name(f".{destination.name}.part")
+    temp_destination = _download_temp_path(destination, marker="http")
     last_error: Exception | None = None
 
     for headers in header_profiles:
@@ -434,7 +442,7 @@ def _download_attachment_with_curl(remote_url: str, destination: Path) -> None:
     curl_bin = shutil.which("curl") or shutil.which("curl.exe")
     if not curl_bin:
         raise RuntimeError("curl is not available for fallback download.")
-    temp_destination = destination.with_name(f".{destination.name}.curl.part")
+    temp_destination = _download_temp_path(destination, marker="curl")
     command = [
         curl_bin,
         "--fail",

@@ -1,4 +1,7 @@
+from pathlib import Path
+
 from kemono_library.kemono import (
+    _download_temp_path,
     KemonoPostRef,
     download_attachment,
     extract_attachments,
@@ -447,3 +450,12 @@ def test_download_attachment_uses_curl_fallback_after_external_403(tmp_path, mon
     destination = tmp_path / "file.jpg"
     download_attachment("https://cdn.donmai.us/sample/example.jpg", destination)
     assert destination.read_bytes() == b"curl-bytes"
+
+
+def test_download_temp_path_keeps_temp_filename_short_for_long_destination_name():
+    destination = Path("post_1") / f"{'a' * 240}.jpg"
+    temp_path = _download_temp_path(destination, marker="http")
+    assert temp_path.parent == destination.parent
+    assert temp_path.name.startswith(".http_")
+    assert temp_path.name.endswith(".part")
+    assert len(temp_path.name) < 40

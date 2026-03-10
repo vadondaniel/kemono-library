@@ -2564,6 +2564,57 @@ def _file_size_if_valid(path: Path | None) -> int | None:
     return size if size > 0 else None
 
 
+_WINDOWS_RESERVED_FILENAMES = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    "COM1",
+    "COM2",
+    "COM3",
+    "COM4",
+    "COM5",
+    "COM6",
+    "COM7",
+    "COM8",
+    "COM9",
+    "LPT1",
+    "LPT2",
+    "LPT3",
+    "LPT4",
+    "LPT5",
+    "LPT6",
+    "LPT7",
+    "LPT8",
+    "LPT9",
+}
+_MAX_ATTACHMENT_FILENAME_LENGTH = 180
+
+
+def _safe_attachment_disk_name(raw_name: Any, *, fallback: str = "attachment") -> str:
+    raw_text = str(raw_name or "").strip()
+    candidate = sanitize_filename(raw_text) if raw_text else ""
+    if not candidate:
+        candidate = sanitize_filename(fallback.strip()) or "attachment"
+    candidate = candidate.strip(" .") or "attachment"
+
+    suffix = Path(candidate).suffix
+    stem = Path(candidate).stem if suffix else candidate
+    if stem.upper() in _WINDOWS_RESERVED_FILENAMES:
+        stem = f"{stem}_"
+    suffix = suffix[:16] if suffix else ""
+    rebuilt = f"{stem}{suffix}" if suffix else stem
+
+    if len(rebuilt) <= _MAX_ATTACHMENT_FILENAME_LENGTH:
+        return rebuilt
+
+    digest = hashlib.sha1(rebuilt.encode("utf-8")).hexdigest()[:12]
+    budget = _MAX_ATTACHMENT_FILENAME_LENGTH - len(suffix) - len(digest) - 1
+    stem_budget = max(16, budget)
+    trimmed_stem = stem[:stem_budget] or "attachment"
+    return f"{trimmed_stem}_{digest}{suffix}"
+
+
 def _collect_local_file_status_by_path(files_base: Path, rows: list[Any]) -> dict[str, tuple[bool, int | None]]:
     local_paths: set[str] = set()
     for row in rows:
@@ -2616,7 +2667,7 @@ def _retry_attachment_row(
     if existing_local_path:
         destination = files_base / existing_local_path
     else:
-        destination = files_base / f"post_{post_id}" / sanitize_filename(str(attachment_name))
+        destination = files_base / f"post_{post_id}" / _safe_attachment_disk_name(attachment_name)
 
     try:
         used_remote_url = _download_with_fallback_remote_url(
@@ -2691,7 +2742,7 @@ def _retry_missing_attachment_rows(
         if existing_local_path:
             destination = files_base / existing_local_path
         else:
-            destination = files_base / f"post_{post_id}" / sanitize_filename(str(attachment_name))
+            destination = files_base / f"post_{post_id}" / _safe_attachment_disk_name(attachment_name)
         display_name = str(row.get("display_name") or attachment_name)
 
         lock = _lock_for_destination(destination)
@@ -4559,7 +4610,7 @@ def _rename_local_attachment_file(
     if not current.exists() or not current.is_file():
         return local_path
 
-    safe_name = sanitize_filename(desired_name.strip()) or sanitize_filename(fallback_name.strip()) or current.name
+    safe_name = _safe_attachment_disk_name(desired_name, fallback=fallback_name or current.name)
     suffix = Path(safe_name).suffix
     if not suffix:
         inherited_suffix = Path(current.name).suffix or Path(fallback_name).suffix
@@ -4909,12 +4960,13 @@ def _import_post_into_library(
             entries_by_destination: dict[Path, list[dict[str, Any]]] = {}
             for candidate in selected_attachments:
                 filename = sanitize_filename(candidate.name)
+                storage_filename = _safe_attachment_disk_name(candidate.name)
                 path_key = _remote_path_key(candidate.remote_url)
                 destination = (
                     existing_by_remote.get(candidate.remote_url)
                     or existing_by_path_key.get(path_key)
                     or existing_by_name.get(filename)
-                    or (download_root / filename)
+                    or (download_root / storage_filename)
                 )
                 needs_download = (
                     candidate.kind != "embed_link"

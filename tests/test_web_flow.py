@@ -202,6 +202,70 @@ def test_import_corrects_extensionless_image_name_from_downloaded_bytes(tmp_path
     assert saved_file.is_file()
 
 
+def test_import_bounds_very_long_attachment_name_for_local_path(tmp_path, monkeypatch):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    long_name = f"https_www.patreon.com_media-u_{'A' * 340}_301638009"
+    payload = {
+        "post": {
+            "title": "Long Name Import",
+            "content": "",
+            "user": "70479526",
+            "attachments": [{"name": long_name, "path": "/data/x/long-image.jpg"}],
+        },
+        "attachments": [],
+    }
+
+    def fake_fetch(ref, fallback_user_id=None):  # noqa: ARG001
+        return payload
+
+    def fake_download(remote_url, destination):  # noqa: ARG001
+        Path(destination).parent.mkdir(parents=True, exist_ok=True)
+        Path(destination).write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 32)
+
+    def fake_icon_download(service, user_id, icons_root):  # noqa: ARG001
+        return (f"https://img.kemono.cr/icons/{service}/{user_id}", None)
+
+    monkeypatch.setattr("kemono_library.web.fetch_post_json", fake_fetch)
+    monkeypatch.setattr("kemono_library.web.download_attachment", fake_download)
+    monkeypatch.setattr("kemono_library.web.download_creator_icon", fake_icon_download)
+
+    client = app.test_client()
+    creator_response = client.post("/creators", data={"name": "Creator Long"}, follow_redirects=False)
+    assert creator_response.status_code == 302
+
+    commit = client.post(
+        "/import/commit",
+        data={
+            "creator_id": "1",
+            "series_id": "",
+            "service": "fanbox",
+            "user_id": "70479526",
+            "post_id": "100",
+            "selected_attachment": "0",
+        },
+        follow_redirects=False,
+    )
+    assert commit.status_code == 302
+
+    attachments = app.db.list_attachments(1)  # type: ignore[attr-defined]
+    assert len(attachments) == 1
+    local_path = str(attachments[0]["local_path"])
+    filename = Path(local_path).name
+    assert len(filename) <= 180
+    assert filename
+    assert not filename.startswith(".")
+    saved_file = Path(app.config["FILES_DIR"]) / local_path
+    assert saved_file.is_file()
+
+
 def test_import_reuses_existing_extensionless_image_and_still_corrects_extension(tmp_path, monkeypatch):
     app = create_app(
         {
