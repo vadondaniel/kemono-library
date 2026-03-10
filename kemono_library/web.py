@@ -650,7 +650,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         inventory_rows: list[dict[str, Any]] = []
         for row in source_rows:
             local_path = _optional_str(row["local_path"])
-            local_available, _ = local_file_status.get(local_path or "", (False, None))
+            local_available, file_size = local_file_status.get(local_path or "", (False, None))
             creator_id = int(row["creator_id"])
             creator_name = str(row["creator_name"]).strip() if row["creator_name"] else f"Creator {creator_id}"
             inventory_rows.append(
@@ -662,6 +662,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                     "name": str(row["name"]),
                     "kind": str(row["kind"]),
                     "local_available": local_available,
+                    "file_size": file_size,
                     "creator_name": creator_name,
                 }
             )
@@ -675,7 +676,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         post_ids = {int(row["post_id"]) for row in inventory_rows}
         summary = {
             "file_count": len(inventory_rows),
-            "total_size": 0,
+            "total_size": sum(int(row["file_size"] or 0) for row in inventory_rows),
             "missing_count": sum(1 for row in inventory_rows if not row["local_available"]),
             "image_count": 0,
             "creator_count": len(creator_ids),

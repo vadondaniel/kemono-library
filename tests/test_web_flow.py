@@ -2625,6 +2625,9 @@ def test_attachment_manager_deferred_summary_suppresses_inline_alias_missing(tmp
     assert "1 missing" not in page_text
     assert "0 missing" in page_text
     assert "Retry All Missing" not in page_text
+    size_summary = soup.select_one("[data-attachment-summary-size]")
+    assert size_summary is not None
+    assert size_summary.get("data-size-bytes") == "3"
     skeleton = soup.select_one("[data-attachment-skeleton] .attachment-tree-summary small")
     assert skeleton is not None
     assert "1 files, 0 missing" in skeleton.get_text(" ", strip=True)
