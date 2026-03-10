@@ -44,9 +44,6 @@
     {% set show_post_display_controls = post_view_mode_switcher is defined and post_view_mode_switcher is not none %}
     {% set show_reader_display_controls = show_post_display_controls and post_view_mode_switcher['current_mode'] == 'reader' %}
     <div class="header-actions">
-      <nav>
-        <a href="{{ url_for('import_form') }}">Import Post</a>
-      </nav>
       <details class="post-content-settings-popover{% if not show_post_display_controls %} is-theme-only{% endif %}" data-post-content-settings>
           <summary class="btn btn-link btn--ghost">{% if show_post_display_controls %}Display{% else %}Theme{% endif %}</summary>
           <div class="post-content-settings-popover-panel">
