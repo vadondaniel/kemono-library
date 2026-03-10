@@ -2351,6 +2351,86 @@ def test_attachment_manager_lists_grouped_inventory_with_sizes(tmp_path):
     assert b"/static/attachment_manager.js" in response.data
 
 
+def test_attachment_manager_deferred_tree_loads_skeleton_and_fragment(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+            "ATTACHMENT_MANAGER_DEFER_TREE": True,
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    first_creator_id = db.create_creator("Z Creator First")
+    first_post_id = db.upsert_post(
+        creator_id=first_creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="defer-user",
+        external_post_id="9010",
+        title="Deferred Post A",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/defer-user/post/9010",
+    )
+    db.replace_attachments(
+        first_post_id,
+        [
+            {
+                "name": "deferred-a.jpg",
+                "remote_url": "https://n1.kemono.cr/path/deferred.jpg",
+                "local_path": f"post_{first_post_id}/deferred-a.jpg",
+                "kind": "attachment",
+            }
+        ],
+    )
+    second_creator_id = db.create_creator("A Creator Second")
+    second_post_id = db.upsert_post(
+        creator_id=second_creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="defer-user-2",
+        external_post_id="9011",
+        title="Deferred Post B",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/defer-user-2/post/9011",
+    )
+    db.replace_attachments(
+        second_post_id,
+        [
+            {
+                "name": "deferred-b.jpg",
+                "remote_url": "https://n1.kemono.cr/path/deferred-b.jpg",
+                "local_path": f"post_{second_post_id}/deferred-b.jpg",
+                "kind": "attachment",
+            }
+        ],
+    )
+
+    client = app.test_client()
+    page = client.get("/attachments")
+    assert page.status_code == 200
+    page_soup = BeautifulSoup(page.data, "html.parser")
+    assert page_soup.select_one("[data-attachment-tree-deferred]") is not None
+    assert "Loading full attachment inventory..." not in page.get_data(as_text=True)
+    assert "deferred-a.jpg" not in page.get_data(as_text=True)
+    skeleton_names = [node.get_text(strip=True) for node in page_soup.select("[data-attachment-skeleton] .attachment-tree-summary strong")]
+    assert skeleton_names == ["Z Creator First", "A Creator Second"]
+
+    tree = client.get("/attachments/tree")
+    assert tree.status_code == 200
+    tree_html = tree.get_data(as_text=True)
+    assert "deferred-a.jpg" in tree_html
+    assert "deferred-b.jpg" in tree_html
+    assert "data-attachment-card" in tree_html
+    tree_soup = BeautifulSoup(tree_html, "html.parser")
+    hydrated_names = [node.get_text(strip=True) for node in tree_soup.select(".attachment-tree-creator > .attachment-tree-summary strong")]
+    assert hydrated_names == ["Z Creator First", "A Creator Second"]
+
+
 def test_attachment_manager_only_auto_opens_when_one_creator(tmp_path):
     app = create_app(
         {

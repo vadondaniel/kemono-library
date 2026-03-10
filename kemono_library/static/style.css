@@ -2278,6 +2278,18 @@ button:disabled,
   margin-top: 0.9rem;
 }
 
+.attachment-manager-tree.is-hydrating {
+  gap: var(--space-2xl);
+}
+
+.attachment-manager-tree.is-loading {
+  opacity: 0.92;
+}
+
+.attachment-tree-node[data-attachment-skeleton] > .attachment-tree-summary {
+  cursor: default;
+}
+
 .attachment-tree-node {
   border-radius: var(--radius-xl);
 }

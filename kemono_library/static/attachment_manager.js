@@ -19,6 +19,7 @@
   const dockMessage = document.querySelector("[data-attachment-retry-dock-message]");
   const dockMeta = document.querySelector("[data-attachment-retry-dock-meta]");
   const dockRestore = document.querySelector("[data-attachment-retry-restore]");
+  const attachmentTreeRoot = document.querySelector("[data-attachment-tree-root]");
   const filterForm = document.querySelector("[data-attachment-filter-form]");
   const filterSearch = document.querySelector("[data-attachment-filter-search]");
   if (!(overlay instanceof HTMLElement)) {
@@ -852,6 +853,42 @@
     });
   }
 
+  async function hydrateDeferredAttachmentTree() {
+    if (!(attachmentTreeRoot instanceof HTMLElement)) {
+      return;
+    }
+    if (!attachmentTreeRoot.hasAttribute("data-attachment-tree-deferred")) {
+      return;
+    }
+    const treeUrl = attachmentTreeRoot.dataset.attachmentTreeUrl || "";
+    if (!treeUrl.trim()) {
+      return;
+    }
+
+    attachmentTreeRoot.classList.add("is-loading");
+    try {
+      const response = await fetch(treeUrl, {
+        method: "GET",
+        headers: { Accept: "text/html", "X-Requested-With": "XMLHttpRequest" },
+        cache: "no-store",
+      });
+      const html = await response.text();
+      if (!response.ok) {
+        throw new Error("Could not load the attachment tree.");
+      }
+      attachmentTreeRoot.innerHTML = html;
+      attachmentTreeRoot.classList.remove("is-hydrating");
+      attachmentTreeRoot.removeAttribute("data-attachment-tree-deferred");
+      attachmentTreeRoot.removeAttribute("data-attachment-tree-url");
+      setupPreviewLoading();
+    } catch (_error) {
+      attachmentTreeRoot.innerHTML =
+        '<article class="panel"><p class="creator-empty">Could not load attachment tree. Reload to retry.</p></article>';
+    } finally {
+      attachmentTreeRoot.classList.remove("is-loading");
+    }
+  }
+
   async function pollJob(statusUrl) {
     while (true) {
       const response = await fetch(statusUrl, {
@@ -983,4 +1020,7 @@
   });
 
   setupPreviewLoading();
+  window.requestAnimationFrame(() => {
+    hydrateDeferredAttachmentTree();
+  });
 })();

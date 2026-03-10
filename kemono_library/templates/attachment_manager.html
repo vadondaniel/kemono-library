@@ -71,143 +71,24 @@
   </form>
 </section>
 
-<section class="attachment-manager-tree">
-  {% if attachment_tree %}
-    {% for creator in attachment_tree %}
-      <details class="panel attachment-tree-node attachment-tree-creator" data-attachment-group="creator" data-file-count="{{ creator['file_count'] }}" data-size-bytes="{{ creator['size_bytes'] }}" data-missing-count="{{ creator['missing_count'] }}" {% if attachment_tree|length == 1 %}open{% endif %}>
+<section class="attachment-manager-tree{% if attachment_tree_deferred %} is-hydrating{% endif %}" data-attachment-tree-root{% if attachment_tree_deferred %} data-attachment-tree-deferred data-attachment-tree-url="{{ attachment_tree_url }}"{% endif %}>
+  {% if attachment_tree_deferred %}
+    {% for creator in attachment_creator_summaries %}
+      <details class="panel attachment-tree-node attachment-tree-creator" data-attachment-skeleton>
         <summary class="attachment-tree-summary">
           <div>
             <strong>{{ creator['name'] }}</strong>
-            <small data-attachment-group-summary>{{ creator['file_count'] }} files, {{ creator['size_bytes']|format_bytes }}, {{ creator['missing_count'] }} missing</small>
+            <small>{{ creator['file_count'] }} files, {{ creator['missing_count'] }} missing</small>
           </div>
-          {% if creator['missing_count'] > 0 %}
-            <form method="post" action="{{ url_for('retry_missing_attachments') }}" class="inline-form attachment-tree-action" onclick="event.stopPropagation();" data-attachment-retry-form data-attachment-retry-scope-form data-retry-start-url="{{ url_for('start_retry_missing_attachments') }}" data-retry-message="Retrying missing attachments for {{ creator['name'] }}...">
-              <input type="hidden" name="scope" value="creator">
-              <input type="hidden" name="scope_id" value="{{ creator['id'] }}">
-              <input type="hidden" name="return_to" value="{{ request.full_path if request.query_string else url_for('attachment_manager') }}">
-              <button type="submit">Retry Missing</button>
-            </form>
-          {% endif %}
         </summary>
-
-        <div class="attachment-tree-children">
-          {% for series in creator['series_nodes'] %}
-            <details class="attachment-tree-node attachment-tree-series" data-attachment-group="series" data-file-count="{{ series['file_count'] }}" data-size-bytes="{{ series['size_bytes'] }}" data-missing-count="{{ series['missing_count'] }}">
-              <summary class="attachment-tree-summary">
-                <div>
-                  <strong>{{ series['name'] }}</strong>
-                  <small data-attachment-group-summary>{{ series['file_count'] }} files, {{ series['size_bytes']|format_bytes }}, {{ series['missing_count'] }} missing</small>
-                </div>
-                {% if series['missing_count'] > 0 %}
-                  <form method="post" action="{{ url_for('retry_missing_attachments') }}" class="inline-form attachment-tree-action" onclick="event.stopPropagation();" data-attachment-retry-form data-attachment-retry-scope-form data-retry-start-url="{{ url_for('start_retry_missing_attachments') }}" data-retry-message="Retrying missing attachments in {{ series['name'] }}...">
-                    <input type="hidden" name="scope" value="series">
-                    <input type="hidden" name="scope_id" value="{{ series['series_id'] if series['series_id'] is not none else 'unsorted:' ~ creator['id'] }}">
-                    <input type="hidden" name="return_to" value="{{ request.full_path if request.query_string else url_for('attachment_manager') }}">
-                    <button type="submit">Retry Missing</button>
-                  </form>
-                {% endif %}
-              </summary>
-
-              <div class="attachment-tree-children">
-                {% for post in series['posts'] %}
-                  <details class="attachment-tree-node attachment-tree-post" data-attachment-group="post" data-file-count="{{ post['file_count'] }}" data-size-bytes="{{ post['size_bytes'] }}" data-missing-count="{{ post['missing_count'] }}" data-published-display="{% if post['published_at'] %}{{ post['published_at']|format_datetime }}{% endif %}">
-                    <summary class="attachment-tree-summary">
-                      <div>
-                        <strong><a href="{{ url_for('post_detail', post_id=post['post_id']) }}" data-post-detail-link data-post-creator-id="{{ creator['id'] }}">{{ post['title'] }}</a></strong>
-                        <small data-attachment-group-summary>{{ post['file_count'] }} files, {{ post['size_bytes']|format_bytes }}, {{ post['missing_count'] }} missing{% if post['published_at'] %}, {{ post['published_at']|format_datetime }}{% endif %}</small>
-                      </div>
-                      {% if post['missing_count'] > 0 %}
-                        <form method="post" action="{{ url_for('retry_missing_attachments') }}" class="inline-form attachment-tree-action" onclick="event.stopPropagation();" data-attachment-retry-form data-attachment-retry-scope-form data-retry-start-url="{{ url_for('start_retry_missing_attachments') }}" data-retry-message="Retrying missing attachments for {{ post['title'] }}...">
-                          <input type="hidden" name="scope" value="post">
-                          <input type="hidden" name="scope_id" value="{{ post['post_id'] }}">
-                          <input type="hidden" name="return_to" value="{{ request.full_path if request.query_string else url_for('attachment_manager') }}">
-                          <button type="submit">Retry Missing</button>
-                        </form>
-                      {% endif %}
-                    </summary>
-
-                    <div class="attachment-file-list">
-                      {% for file in post['attachments'] %}
-                        <article class="attachment-file-card {% if not file['local_available'] %}is-missing{% endif %}" data-attachment-card data-attachment-id="{{ file['id'] }}" data-local-available="{% if file['local_available'] %}1{% else %}0{% endif %}">
-                          <div class="attachment-file-preview">
-                            {% if file['is_image'] %}
-                              <button
-                                type="button"
-                                class="attachment-file-preview-trigger"
-                                data-post-file-image-trigger
-                                data-lightbox-src="{{ file['preview_url'] }}"
-                                data-lightbox-title="{{ file['name'] }}"
-                              >
-                                <img data-attachment-preview-image data-preview-src="{{ file['preview_url'] }}" alt="{{ file['name'] }}" loading="lazy">
-                                <span class="attachment-file-preview-placeholder" data-attachment-preview-placeholder hidden>
-                                  <span class="attachment-file-preview-placeholder-icon" aria-hidden="true"></span>
-                                  <span>Image unavailable</span>
-                                </span>
-                              </button>
-                            {% else %}
-                              <span class="attachment-file-preview-fallback">File</span>
-                            {% endif %}
-                          </div>
-                            <div class="attachment-file-body">
-                              <div class="attachment-file-meta">
-                              <strong class="attachment-file-name" title="{{ file['name'] }}">{{ file['name'] }}</strong>
-                              <small>
-                                {% if file['is_default_version'] %}Default{% else %}Version{% endif %}:
-                                {{ file['version_label'] }}{% if file['version_language'] %} ({{ file['version_language'] }}){% endif %}
-                              </small>
-                            </div>
-                            <div class="attachment-file-badges">
-                              <span class="chip chip--tight attachment-file-badge">{{ file['kind'] }}</span>
-                              <span class="chip chip--tight attachment-file-badge">{{ file['origin_kind'] }}</span>
-                              {% if file['name_ext'] %}
-                                <span class="chip chip--tight attachment-file-badge attachment-file-ext-badge">{{ file['name_ext'] }}</span>
-                              {% endif %}
-                              {% if file['local_available'] %}
-                                <span class="chip chip--tight attachment-file-badge" data-attachment-state-badge>saved</span>
-                              {% else %}
-                                <span class="chip chip--tight chip--danger attachment-file-badge is-missing" data-attachment-state-badge>missing</span>
-                              {% endif %}
-                            </div>
-                            <div class="attachment-file-stats">
-                              <span data-attachment-file-size data-size-bytes="{{ file['file_size'] or 0 }}">{{ file['file_size']|format_bytes }}</span>
-                              {% if file['local_path'] %}
-                                <span data-attachment-local-path title="{{ file['local_path'] }}">{{ file['local_path'] }}</span>
-                              {% else %}
-                                <span data-attachment-local-path>No local path yet</span>
-                              {% endif %}
-                            </div>
-                            <div class="attachment-file-url" title="{{ file['remote_url_display'] }}">{{ file['remote_domain'] }}</div>
-                            <div class="attachment-file-actions" data-attachment-file-actions>
-                              {% if file['local_available'] and file['local_path'] %}
-                                <a class="btn btn-link btn--ghost" href="{{ url_for('serve_file', relative_path=file['local_path']) }}" target="_blank" rel="noopener" data-attachment-open-local>Open local</a>
-                              {% endif %}
-                              <a class="btn btn-link btn--ghost" href="{{ file['remote_url_display'] }}" target="_blank" rel="noopener noreferrer">Open source</a>
-                              <a class="btn btn-link btn--ghost" href="{{ url_for('post_detail', post_id=file['post_id']) }}" data-post-detail-link data-post-creator-id="{{ creator['id'] }}">Open post</a>
-                              {% if not file['local_available'] %}
-                                <form method="post" action="{{ url_for('retry_missing_attachments') }}" class="inline-form" data-attachment-retry-form data-attachment-retry-inline data-retry-start-url="{{ url_for('start_retry_missing_attachments') }}" data-retry-message="Retrying {{ file['name'] }}...">
-                                  <input type="hidden" name="scope" value="attachment">
-                                  <input type="hidden" name="scope_id" value="{{ file['id'] }}">
-                                  <input type="hidden" name="return_to" value="{{ request.full_path if request.query_string else url_for('attachment_manager') }}">
-                                  <button type="submit">Retry</button>
-                                </form>
-                              {% endif %}
-                            </div>
-                          </div>
-                        </article>
-                      {% endfor %}
-                    </div>
-                  </details>
-                {% endfor %}
-              </div>
-            </details>
-          {% endfor %}
-        </div>
       </details>
+    {% else %}
+      <article class="panel">
+        <p class="creator-empty">No attachments matched the current filters.</p>
+      </article>
     {% endfor %}
   {% else %}
-    <article class="panel">
-      <p class="creator-empty">No attachments matched the current filters.</p>
-    </article>
+    {% include "_attachment_tree_content.html" %}
   {% endif %}
 </section>
 

@@ -1222,6 +1222,40 @@ class LibraryDB:
             ).fetchall()
             return list(rows)
 
+    def get_attachment_inventory_overview(self) -> sqlite3.Row:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT
+                    COUNT(a.id) AS file_count,
+                    COUNT(DISTINCT p.creator_id) AS creator_count,
+                    SUM(CASE WHEN a.local_path IS NULL OR TRIM(a.local_path) = '' THEN 1 ELSE 0 END) AS missing_count
+                FROM post_version_attachments a
+                JOIN post_versions v ON v.id = a.version_id
+                JOIN posts p ON p.id = v.post_id
+                """
+            ).fetchone()
+            return cast(sqlite3.Row, row)
+
+    def list_attachment_creator_summaries(self) -> list[sqlite3.Row]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    p.creator_id AS id,
+                    c.name AS name,
+                    COUNT(a.id) AS file_count,
+                    SUM(CASE WHEN a.local_path IS NULL OR TRIM(a.local_path) = '' THEN 1 ELSE 0 END) AS missing_count
+                FROM post_version_attachments a
+                JOIN post_versions v ON v.id = a.version_id
+                JOIN posts p ON p.id = v.post_id
+                JOIN creators c ON c.id = p.creator_id
+                GROUP BY p.creator_id, c.name
+                ORDER BY p.creator_id ASC
+                """
+            ).fetchall()
+            return list(rows)
+
     def update_attachment_local_path(self, attachment_id: int, local_path: str | None) -> None:
         with self._connect() as conn:
             conn.execute(

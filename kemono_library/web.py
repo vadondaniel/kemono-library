@@ -490,15 +490,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             "active_version_query_id": active_version_query_id,
         }
 
-    @app.get("/")
-    def index():
-        creators = db.list_creators()
-        recent_posts = db.list_recent_posts()
-        return render_template("index.html", creators=creators, recent_posts=recent_posts)
-
-    @app.get("/attachments")
-    def attachment_manager():
-        files_base = Path(app.config["FILES_DIR"])
+    def _normalize_attachment_manager_filters() -> tuple[str, str, str, str]:
         search_text = request.args.get("q", "").strip()
         state_filter = request.args.get("state", "all").strip().lower()
         if state_filter not in {"all", "missing", "local"}:
@@ -509,7 +501,53 @@ def create_app(test_config: dict | None = None) -> Flask:
         sort_key = request.args.get("sort", "creator").strip().lower()
         if sort_key not in {"creator", "size", "name", "recent"}:
             sort_key = "creator"
+        return search_text, state_filter, media_filter, sort_key
 
+    def _build_attachment_manager_url(
+        endpoint: str,
+        *,
+        search_text: str,
+        state_filter: str,
+        media_filter: str,
+        sort_key: str,
+    ) -> str:
+        params: dict[str, str] = {}
+        if search_text:
+            params["q"] = search_text
+        if state_filter != "all":
+            params["state"] = state_filter
+        if media_filter != "all":
+            params["media"] = media_filter
+        if sort_key != "creator":
+            params["sort"] = sort_key
+        return url_for(endpoint, **params) if params else url_for(endpoint)
+
+    def _attachment_manager_current_return_to() -> str:
+        return request.full_path if request.query_string else url_for("attachment_manager")
+
+    def _should_defer_attachment_manager_tree(
+        *,
+        search_text: str,
+        state_filter: str,
+        media_filter: str,
+        sort_key: str,
+    ) -> bool:
+        defer_enabled = bool(app.config.get("ATTACHMENT_MANAGER_DEFER_TREE", not app.testing))
+        if not defer_enabled:
+            return False
+        full_view_flag = request.args.get("full", "").strip().lower()
+        if full_view_flag in {"1", "true", "yes"}:
+            return False
+        return search_text == "" and state_filter == "all" and media_filter == "all" and sort_key == "creator"
+
+    def _build_attachment_inventory_view_data(
+        *,
+        search_text: str,
+        state_filter: str,
+        media_filter: str,
+        sort_key: str,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        files_base = Path(app.config["FILES_DIR"])
         source_rows = db.list_attachment_inventory()
         local_file_status = _collect_local_file_status_by_path(files_base, source_rows)
         inventory_rows: list[dict[str, Any]] = []
@@ -517,7 +555,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             local_path = _optional_str(row["local_path"])
             local_available, file_size = local_file_status.get(local_path or "", (False, None))
             attachment_name = str(row["name"])
-            name_stem, name_ext = _split_filename_for_display(attachment_name)
+            _, name_ext = _split_filename_for_display(attachment_name)
             remote_url = str(row["remote_url"])
             remote_url_display = _preferred_remote_url_for_access(remote_url, row["name"])
             remote_domain = _remote_domain_for_display(remote_url_display)
@@ -562,7 +600,6 @@ def create_app(test_config: dict | None = None) -> Flask:
                     "post_title": post_title,
                     "post_published_at": row["post_published_at"],
                     "name": attachment_name,
-                    "name_stem": name_stem,
                     "name_ext": name_ext,
                     "remote_url": remote_url,
                     "remote_url_display": remote_url_display,
@@ -590,6 +627,52 @@ def create_app(test_config: dict | None = None) -> Flask:
         sorted_rows = _sort_attachment_inventory_rows(filtered_rows, sort_key=sort_key)
         tree = _build_attachment_inventory_tree(sorted_rows, sort_key=sort_key)
         summary = _summarize_attachment_inventory(sorted_rows)
+        return tree, summary
+
+    @app.get("/")
+    def index():
+        creators = db.list_creators()
+        recent_posts = db.list_recent_posts()
+        return render_template("index.html", creators=creators, recent_posts=recent_posts)
+
+    @app.get("/attachments")
+    def attachment_manager():
+        search_text, state_filter, media_filter, sort_key = _normalize_attachment_manager_filters()
+        attachment_return_to = _attachment_manager_current_return_to()
+        attachment_tree_url = _build_attachment_manager_url(
+            "attachment_manager_tree",
+            search_text=search_text,
+            state_filter=state_filter,
+            media_filter=media_filter,
+            sort_key=sort_key,
+        )
+        defer_tree = _should_defer_attachment_manager_tree(
+            search_text=search_text,
+            state_filter=state_filter,
+            media_filter=media_filter,
+            sort_key=sort_key,
+        )
+        if defer_tree:
+            overview_row = db.get_attachment_inventory_overview()
+            summary = {
+                "file_count": int(overview_row["file_count"] or 0),
+                "total_size": 0,
+                "missing_count": int(overview_row["missing_count"] or 0),
+                "image_count": 0,
+                "creator_count": int(overview_row["creator_count"] or 0),
+                "series_count": 0,
+                "post_count": 0,
+            }
+            creator_summaries = [dict(row) for row in db.list_attachment_creator_summaries()]
+            tree: list[dict[str, Any]] = []
+        else:
+            tree, summary = _build_attachment_inventory_view_data(
+                search_text=search_text,
+                state_filter=state_filter,
+                media_filter=media_filter,
+                sort_key=sort_key,
+            )
+            creator_summaries = []
 
         return render_template(
             "attachment_manager.html",
@@ -599,7 +682,33 @@ def create_app(test_config: dict | None = None) -> Flask:
             state_filter=state_filter,
             media_filter=media_filter,
             sort_key=sort_key,
+            attachment_return_to=attachment_return_to,
+            attachment_tree_deferred=defer_tree,
+            attachment_creator_summaries=creator_summaries,
+            attachment_tree_url=attachment_tree_url,
             request_query=request.query_string.decode("utf-8"),
+        )
+
+    @app.get("/attachments/tree")
+    def attachment_manager_tree():
+        search_text, state_filter, media_filter, sort_key = _normalize_attachment_manager_filters()
+        tree, _ = _build_attachment_inventory_view_data(
+            search_text=search_text,
+            state_filter=state_filter,
+            media_filter=media_filter,
+            sort_key=sort_key,
+        )
+        attachment_return_to = _build_attachment_manager_url(
+            "attachment_manager",
+            search_text=search_text,
+            state_filter=state_filter,
+            media_filter=media_filter,
+            sort_key=sort_key,
+        )
+        return render_template(
+            "_attachment_tree_content.html",
+            attachment_tree=tree,
+            attachment_return_to=attachment_return_to,
         )
 
     @app.post("/creators")
