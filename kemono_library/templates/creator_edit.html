@@ -4,13 +4,13 @@
   <h1>Edit Creator</h1>
 
   <form method="post" class="form">
-    <label for="name">Creator name</label>
+    <label class="field-label" for="name">Creator name</label>
     <input class="field" id="name" name="name" required value="{{ creator['name'] }}">
 
-    <label for="description">Description</label>
+    <label class="field-label" for="description">Description</label>
     <textarea class="field" id="description" name="description" rows="4" placeholder="Optional description">{{ creator['description'] or '' }}</textarea>
 
-    <label for="tags_text">Tags</label>
+    <label class="field-label" for="tags_text">Tags</label>
     <input class="field" id="tags_text" name="tags_text" value="{{ creator['tags_text'] or '' }}" placeholder="tag one, tag two">
 
     <button type="submit">Save creator</button>
@@ -24,6 +24,3 @@
   </form>
 </section>
 {% endblock %}
-
-
-

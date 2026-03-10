@@ -95,6 +95,7 @@
   --field-shadow-inset: inset 0 1px 0 color-mix(in srgb, var(--card-solid) 78%, transparent);
   --field-focus-ring: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
   --field-placeholder: color-mix(in srgb, var(--muted) 86%, var(--text));
+  --label-color: color-mix(in srgb, var(--text) 90%, var(--muted));
 
   /* Layer scale */
   --z-local: 1;
@@ -468,8 +469,34 @@ button {
   font: inherit;
 }
 
-label {
-  font-weight: 600;
+.field-label {
+  display: block;
+  margin-bottom: 0.24rem;
+  color: var(--label-color);
+  font-size: 0.9rem;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.field-label--subtle {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.field-label--caps {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.field-help {
+  display: block;
+  margin-top: 0.18rem;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.35;
 }
 
 .field {
@@ -1050,8 +1077,6 @@ small {
 
 .quick-import-entry-hint {
   margin: 0;
-  color: var(--muted);
-  font-size: 0.85rem;
 }
 
 .quick-import-raw-toggle {
@@ -1348,11 +1373,6 @@ small {
   gap: 0.55rem;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   margin-top: 0.72rem;
-}
-
-.import-version-meta-grid label {
-  display: block;
-  margin-bottom: 0.24rem;
 }
 
 .import-files-head {
@@ -1965,14 +1985,6 @@ small {
   min-width: 0;
 }
 
-.attachment-manager-filter-field label {
-  color: var(--muted);
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-}
-
 .attachment-manager-filter-field .field {
   background: color-mix(in srgb, var(--card-solid) 97%, transparent);
 }
@@ -2332,11 +2344,6 @@ small {
   gap: 0.5rem;
 }
 
-.series-create-form label {
-  font-size: 0.86rem;
-  color: var(--muted);
-}
-
 .series-create-disclosure[open] .series-create-toggle {
   border-color: var(--accent);
 }
@@ -2515,11 +2522,6 @@ small {
 
 .series-edit-form {
   gap: 0.5rem;
-}
-
-.series-edit-form label {
-  font-size: 0.86rem;
-  color: var(--muted);
 }
 
 .series-edit-settings-row {

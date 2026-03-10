@@ -23,31 +23,31 @@
           <div class="series-create-popover import-meta-popover">
             <div class="import-meta-grid">
               <div class="import-meta-field import-meta-span-full">
-                <label for="meta-title">Title</label>
+                <label class="field-label" for="meta-title">Title</label>
                 <input class="field" id="meta-title" name="title" value="{{ payload.get('title') or '' }}" placeholder="Post title">
               </div>
               <div class="import-meta-field import-meta-span-full">
-                <label for="meta-content">Content</label>
+                <label class="field-label" for="meta-content">Content</label>
                 <textarea class="field" id="meta-content" name="content" rows="7" placeholder="Post content">{{ payload.get('content') or '' }}</textarea>
               </div>
               <div class="import-meta-field">
-                <label for="meta-published">Published</label>
+                <label class="field-label" for="meta-published">Published</label>
                 <input class="field" id="meta-published" name="published_at" value="{{ payload.get('published') or '' }}" placeholder="2025-10-25T12:00:00">
               </div>
               <div class="import-meta-field">
-                <label for="meta-edited">Edited</label>
+                <label class="field-label" for="meta-edited">Edited</label>
                 <input class="field" id="meta-edited" name="edited_at" value="{{ payload.get('edited') or '' }}" placeholder="2025-10-25T12:00:00">
               </div>
               <div class="import-meta-field">
-                <label for="meta-next">Next post id</label>
+                <label class="field-label" for="meta-next">Next post id</label>
                 <input class="field" id="meta-next" name="next_external_post_id" value="{{ payload.get('next') or '' }}" placeholder="Optional">
               </div>
               <div class="import-meta-field">
-                <label for="meta-prev">Previous post id</label>
+                <label class="field-label" for="meta-prev">Previous post id</label>
                 <input class="field" id="meta-prev" name="prev_external_post_id" value="{{ payload.get('prev') or '' }}" placeholder="Optional">
               </div>
               <div class="import-meta-field import-meta-span-full">
-                <label for="meta-tags">Tags (comma separated)</label>
+                <label class="field-label" for="meta-tags">Tags (comma separated)</label>
                 <input class="field" id="meta-tags" name="tags_text" value="{{ (payload.get('tags') or []) | join(', ') }}" placeholder="tag one, tag two">
               </div>
             </div>
@@ -93,9 +93,9 @@
           </label>
         </div>
         <div class="import-target-picker" data-only-existing>
-          <label for="target-post-search">Find target post</label>
+          <label class="field-label" for="target-post-search">Find target post</label>
           <input class="field" id="target-post-search" type="search" placeholder="Search by post id or title">
-          <label for="target-post-id">Target post</label>
+          <label class="field-label" for="target-post-id">Target post</label>
           <select class="field" id="target-post-id" name="target_post_id">
             <option value="">Select post</option>
             {% for creator_post in creator_posts %}
@@ -130,11 +130,11 @@
 
       <div class="import-version-meta-grid">
         <div>
-          <label for="version-label">Version label</label>
+          <label class="field-label" for="version-label">Version label</label>
           <input class="field" id="version-label" name="version_label" value="{{ default_version_label }}" placeholder="EN TL / JP / Manual">
         </div>
         <div>
-          <label for="version-language">Language (optional)</label>
+          <label class="field-label" for="version-language">Language (optional)</label>
           <input class="field" id="version-language" name="version_language" value="{{ default_version_language }}" placeholder="en / ja / ko">
         </div>
       </div>
@@ -259,6 +259,3 @@
 <script id="target-attachment-index" type="application/json">{{ target_attachment_index|tojson }}</script>
 <script src="{{ url_for('static', filename='import_preview.js') }}"></script>
 {% endblock %}
-
-
-

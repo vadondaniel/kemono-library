@@ -21,10 +21,10 @@
 
   <section id="import-tab-single" class="import-form-tab-panel" role="tabpanel" data-import-tab-panel="single">
     <form method="post" action="{{ url_for('import_preview') }}" class="form import-form-grid">
-      <label for="post-url">Kemono post URL</label>
+      <label class="field-label" for="post-url">Kemono post URL</label>
       <input class="field" id="post-url" name="post_url" required value="{{ prefill_url }}" placeholder="https://kemono.cr/fanbox/user/70479526/post/10791194">
 
-      <label for="creator-id">Creator</label>
+      <label class="field-label" for="creator-id">Creator</label>
       <select class="field" id="creator-id" name="creator_id" required>
         <option value="">Select creator</option>
         {% for creator in creators %}
@@ -34,7 +34,7 @@
         {% endfor %}
       </select>
 
-      <label for="series-id">Series (optional)</label>
+      <label class="field-label" for="series-id">Series (optional)</label>
       <select class="field" id="series-id" name="series_id">
         <option value="">No series</option>
         {% for series in series_list %}
@@ -57,7 +57,7 @@
 
   <section id="import-tab-quick" class="import-form-tab-panel" role="tabpanel" data-import-tab-panel="quick">
     <form method="post" action="{{ url_for('import_quick') }}" class="form import-form-grid quick-import-form" data-quick-import-form>
-      <label for="quick-creator-id">Creator</label>
+      <label class="field-label" for="quick-creator-id">Creator</label>
       <select class="field" id="quick-creator-id" name="creator_id" required>
         <option value="">Select creator</option>
         {% for creator in creators %}
@@ -67,7 +67,7 @@
         {% endfor %}
       </select>
 
-      <label for="quick-series-id">Series (optional)</label>
+      <label class="field-label" for="quick-series-id">Series (optional)</label>
       <select class="field" id="quick-series-id" name="series_id">
         <option value="">No series</option>
         {% for series in series_list %}
@@ -76,7 +76,7 @@
       </select>
 
       <div class="quick-import-entry-shell">
-        <label for="quick-link-input">Add post links</label>
+        <label class="field-label" for="quick-link-input">Add post links</label>
         <div class="quick-import-entry-row">
           <input class="field"
             id="quick-link-input"
@@ -88,7 +88,7 @@
           <button type="button" class="quick-import-add-btn" data-quick-link-add>Add</button>
           <button type="button" class="quick-import-paste-btn" data-quick-link-paste>Paste</button>
         </div>
-        <p class="quick-import-entry-hint">Paste, Enter, repeat. Duplicates are ignored.</p>
+        <p class="quick-import-entry-hint field-help">Paste, Enter, repeat. Duplicates are ignored.</p>
       </div>
 
       <details class="quick-import-raw-toggle">
@@ -118,4 +118,3 @@
 </section>
 <script src="{{ url_for('static', filename='import_form.js') }}"></script>
 {% endblock %}
-

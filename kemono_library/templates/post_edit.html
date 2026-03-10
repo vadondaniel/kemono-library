@@ -27,7 +27,7 @@
     </div>
     <div class="post-edit-head-tools">
       <form method="get" action="{{ url_for('edit_post', post_id=post['id']) }}" class="form post-edit-version-switch">
-        <label for="active-version">Active version</label>
+        <label class="field-label" for="active-version">Active version</label>
         <select class="field" id="active-version" name="version_id" onchange="this.form.submit()">
           {% for version in versions %}
             <option value="{{ version['id'] }}" {% if version['id'] == active_version['id'] %}selected{% endif %}>
@@ -45,15 +45,15 @@
       <h2>Version Metadata</h2>
       <div class="post-edit-field-row">
         <div>
-          <label for="version_label">Version label</label>
+          <label class="field-label" for="version_label">Version label</label>
           <input class="field" id="version_label" name="version_label" value="{{ active_version['label'] }}">
         </div>
         <div>
-          <label for="version_language">Language (optional)</label>
+          <label class="field-label" for="version_language">Language (optional)</label>
           <input class="field" id="version_language" name="version_language" value="{{ active_version['language'] or '' }}" placeholder="en / ja / ko">
         </div>
       </div>
-      <label for="title">Title</label>
+      <label class="field-label" for="title">Title</label>
       <input class="field" id="title" name="title" required value="{{ active_version['title'] }}">
     </section>
 
@@ -61,7 +61,7 @@
       <h2>Organization</h2>
       <div class="post-edit-field-row">
         <div>
-          <label for="series_id">Series</label>
+          <label class="field-label" for="series_id">Series</label>
           <select class="field" id="series_id" name="series_id">
             <option value="">No series</option>
             {% for series in series_list %}
@@ -70,7 +70,7 @@
           </select>
         </div>
         <div>
-          <label for="thumbnail_attachment_id">Thumbnail source</label>
+          <label class="field-label" for="thumbnail_attachment_id">Thumbnail source</label>
           <select class="field" id="thumbnail_attachment_id" name="thumbnail_attachment_id">
             <option value="__keep__" data-preview-url="{{ thumbnail_preview_url or '' }}" {% if not selected_thumbnail_choice %}selected{% endif %}>Keep current thumbnail</option>
             <option value="__none__" data-preview-url="">No thumbnail</option>
@@ -106,7 +106,7 @@
 
     <section class="post-edit-block">
       <h2>Content</h2>
-      <label for="content">Content (HTML/plain text)</label>
+      <label class="field-label" for="content">Content (HTML/plain text)</label>
       <textarea class="field" id="content" name="content" rows="18">{{ edit_content }}</textarea>
     </section>
 
@@ -187,7 +187,7 @@
           <small class="post-edit-source-note">not in version yet</small>
         {% endif %}
       </div>
-      <label for="attachment-name-{{ file['form_key'] }}">File name</label>
+      <label class="field-label" for="attachment-name-{{ file['form_key'] }}">File name</label>
       <input class="field"
         id="attachment-name-{{ file['form_key'] }}"
         name="attachment_name_{{ file['form_key'] }}"
@@ -287,6 +287,3 @@
 </div>
 <script src="{{ url_for('static', filename='post_edit.js') }}"></script>
 {% endblock %}
-
-
-

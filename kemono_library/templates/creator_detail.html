@@ -88,29 +88,29 @@
             <summary class="btn btn-link btn--ghost series-edit-toggle">Edit</summary>
             <div class="series-edit-popover">
               <form method="post" action="{{ url_for('update_series', creator_id=creator['id'], series_id=selected_series['id']) }}" class="form series-edit-form">
-                <label for="series-name">Folder name</label>
+                <label class="field-label field-label--subtle" for="series-name">Folder name</label>
                 <input class="field" id="series-name" name="name" required value="{{ selected_series['name'] }}">
-                <label for="series-description">Description</label>
+                <label class="field-label field-label--subtle" for="series-description">Description</label>
                 <textarea class="field" id="series-description" name="description" rows="4" placeholder="Optional description">{{ selected_series['description'] or '' }}</textarea>
-                <label for="series-tags">Tags</label>
+                <label class="field-label field-label--subtle" for="series-tags">Tags</label>
                 <input class="field" id="series-tags" name="tags_text" value="{{ selected_series['tags_text'] or '' }}" placeholder="tag one, tag two">
                 <div class="series-edit-settings-row">
                   <div>
-                    <label for="series-default-sort">Default sort</label>
+                    <label class="field-label field-label--subtle" for="series-default-sort">Default sort</label>
                     <select class="field" id="series-default-sort" name="default_sort_by">
                       <option value="published" {% if (selected_series['default_sort_by'] or 'published') == 'published' %}selected{% endif %}>Publish date</option>
                       <option value="title" {% if selected_series['default_sort_by'] == 'title' %}selected{% endif %}>Alphabetical</option>
                     </select>
                   </div>
                   <div>
-                    <label for="series-default-direction">Default order</label>
+                    <label class="field-label field-label--subtle" for="series-default-direction">Default order</label>
                     <select class="field" id="series-default-direction" name="default_sort_direction">
                       <option value="desc" {% if (selected_series['default_sort_direction'] or 'desc') == 'desc' %}selected{% endif %}>Descending</option>
                       <option value="asc" {% if selected_series['default_sort_direction'] == 'asc' %}selected{% endif %}>Ascending</option>
                     </select>
                   </div>
                 </div>
-                <label for="series-cover-post">Folder thumbnail source</label>
+                <label class="field-label field-label--subtle" for="series-cover-post">Folder thumbnail source</label>
                 <select class="field" id="series-cover-post" name="cover_post_id">
                   <option value="">Automatic (latest post)</option>
                   {% for option in series_thumbnail_options %}
@@ -152,11 +152,11 @@
             <summary class="btn btn-link btn--ghost series-create-toggle">New</summary>
             <div class="series-create-popover">
               <form method="post" action="{{ url_for('create_series', creator_id=creator['id']) }}" class="form series-create-form">
-                <label for="series-name">Series name</label>
+                <label class="field-label field-label--subtle" for="series-name">Series name</label>
                 <input class="field" id="series-name" name="name" required placeholder="Main Story Arc">
-                <label for="series-description">Description</label>
+                <label class="field-label field-label--subtle" for="series-description">Description</label>
                 <textarea class="field" id="series-description" name="description" rows="4" placeholder="Optional description"></textarea>
-                <label for="series-tags">Tags</label>
+                <label class="field-label field-label--subtle" for="series-tags">Tags</label>
                 <input class="field" id="series-tags" name="tags_text" placeholder="tag one, tag two">
                 <div class="series-edit-actions">
                   <button type="submit">Create</button>
@@ -367,6 +367,3 @@
   </article>
 </section>
 {% endblock %}
-
-
-

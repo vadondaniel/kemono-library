@@ -33,12 +33,12 @@
     </div>
 
     <div class="attachment-manager-filter-field attachment-manager-filter-field-search">
-      <label for="attachment-manager-search">Search</label>
+      <label class="field-label field-label--caps" for="attachment-manager-search">Search</label>
       <input class="field field--lg" id="attachment-manager-search" name="q" value="{{ search_text }}" placeholder="Search creators, series, posts, files, or URLs" data-attachment-filter-search>
     </div>
 
     <div class="attachment-manager-filter-field">
-      <label for="attachment-manager-state">State</label>
+      <label class="field-label field-label--caps" for="attachment-manager-state">State</label>
       <select class="field field--lg" id="attachment-manager-state" name="state">
         <option value="all" {% if state_filter == 'all' %}selected{% endif %}>All files</option>
         <option value="missing" {% if state_filter == 'missing' %}selected{% endif %}>Missing only</option>
@@ -47,7 +47,7 @@
     </div>
 
     <div class="attachment-manager-filter-field">
-      <label for="attachment-manager-media">Media</label>
+      <label class="field-label field-label--caps" for="attachment-manager-media">Media</label>
       <select class="field field--lg" id="attachment-manager-media" name="media">
         <option value="all" {% if media_filter == 'all' %}selected{% endif %}>All media</option>
         <option value="images" {% if media_filter == 'images' %}selected{% endif %}>Images</option>
@@ -56,7 +56,7 @@
     </div>
 
     <div class="attachment-manager-filter-field">
-      <label for="attachment-manager-sort">Sort</label>
+      <label class="field-label field-label--caps" for="attachment-manager-sort">Sort</label>
       <select class="field field--lg" id="attachment-manager-sort" name="sort">
         <option value="creator" {% if sort_key == 'creator' %}selected{% endif %}>Tree order</option>
         <option value="recent" {% if sort_key == 'recent' %}selected{% endif %}>Recent first</option>
@@ -249,6 +249,3 @@
 <script src="{{ url_for('static', filename='post_detail.js') }}"></script>
 <script src="{{ url_for('static', filename='attachment_manager.js') }}"></script>
 {% endblock %}
-
-
-
