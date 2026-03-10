@@ -1,39 +1,119 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="panel">
+<section class="panel import-form-shell" data-import-form-tabs data-import-default-tab="{{ prefill_import_tab or 'single' }}">
   <h1>Import Kemono Post</h1>
-  <form method="post" action="{{ url_for('import_preview') }}" class="form">
-    <label for="post-url">Kemono post URL</label>
-    <input id="post-url" name="post_url" required value="{{ prefill_url }}" placeholder="https://kemono.cr/fanbox/user/70479526/post/10791194">
+  <div class="import-form-tab-row" role="tablist" aria-label="Import mode">
+    <button
+      type="button"
+      class="import-form-tab-btn"
+      role="tab"
+      aria-controls="import-tab-single"
+      data-import-tab-trigger="single"
+    >Single post</button>
+    <button
+      type="button"
+      class="import-form-tab-btn"
+      role="tab"
+      aria-controls="import-tab-quick"
+      data-import-tab-trigger="quick"
+    >Quick multi</button>
+  </div>
 
-    <label for="creator-id">Creator</label>
-    <select id="creator-id" name="creator_id" required>
-      <option value="">Select creator</option>
-      {% for creator in creators %}
-        <option value="{{ creator['id'] }}" {% if selected_creator and selected_creator == creator['id'] %}selected{% endif %}>
-          {{ creator['name'] }}
-        </option>
-      {% endfor %}
-    </select>
+  <section id="import-tab-single" class="import-form-tab-panel" role="tabpanel" data-import-tab-panel="single">
+    <form method="post" action="{{ url_for('import_preview') }}" class="form import-form-grid">
+      <label for="post-url">Kemono post URL</label>
+      <input id="post-url" name="post_url" required value="{{ prefill_url }}" placeholder="https://kemono.cr/fanbox/user/70479526/post/10791194">
 
-    <label for="series-id">Series (optional)</label>
-    <select id="series-id" name="series_id">
-      <option value="">No series</option>
-      {% for series in series_list %}
-        <option value="{{ series['id'] }}" {% if selected_series and selected_series == series['id'] %}selected{% endif %}>{{ series['name'] }}</option>
-      {% endfor %}
-    </select>
+      <label for="creator-id">Creator</label>
+      <select id="creator-id" name="creator_id" required>
+        <option value="">Select creator</option>
+        {% for creator in creators %}
+          <option value="{{ creator['id'] }}" {% if selected_creator and selected_creator == creator['id'] %}selected{% endif %}>
+            {{ creator['name'] }}
+          </option>
+        {% endfor %}
+      </select>
 
-    <input type="hidden" name="import_target_mode" value="{{ prefill_import_target_mode or '' }}">
-    <input type="hidden" name="target_post_id" value="{{ prefill_target_post_id or '' }}">
-    <input type="hidden" name="force_target_post_version" value="{{ '1' if prefill_force_target_post_version else '0' }}">
-    <input type="hidden" name="force_overwrite_matching_version" value="{{ '1' if prefill_force_overwrite_matching_version else '0' }}">
-    <input type="hidden" name="overwrite_matching_version" value="{{ '1' if prefill_overwrite_matching_version else '0' }}">
-    <input type="hidden" name="set_as_default" value="{{ '1' if prefill_set_as_default else '0' }}">
-    <input type="hidden" name="version_label" value="{{ prefill_version_label or '' }}">
-    <input type="hidden" name="version_language" value="{{ prefill_version_language or '' }}">
+      <label for="series-id">Series (optional)</label>
+      <select id="series-id" name="series_id">
+        <option value="">No series</option>
+        {% for series in series_list %}
+          <option value="{{ series['id'] }}" {% if selected_series and selected_series == series['id'] %}selected{% endif %}>{{ series['name'] }}</option>
+        {% endfor %}
+      </select>
 
-    <button type="submit">Preview Import</button>
-  </form>
+      <input type="hidden" name="import_target_mode" value="{{ prefill_import_target_mode or '' }}">
+      <input type="hidden" name="target_post_id" value="{{ prefill_target_post_id or '' }}">
+      <input type="hidden" name="force_target_post_version" value="{{ '1' if prefill_force_target_post_version else '0' }}">
+      <input type="hidden" name="force_overwrite_matching_version" value="{{ '1' if prefill_force_overwrite_matching_version else '0' }}">
+      <input type="hidden" name="overwrite_matching_version" value="{{ '1' if prefill_overwrite_matching_version else '0' }}">
+      <input type="hidden" name="set_as_default" value="{{ '1' if prefill_set_as_default else '0' }}">
+      <input type="hidden" name="version_label" value="{{ prefill_version_label or '' }}">
+      <input type="hidden" name="version_language" value="{{ prefill_version_language or '' }}">
+
+      <button type="submit">Preview Import</button>
+    </form>
+  </section>
+
+  <section id="import-tab-quick" class="import-form-tab-panel" role="tabpanel" data-import-tab-panel="quick">
+    <form method="post" action="{{ url_for('import_quick') }}" class="form import-form-grid quick-import-form" data-quick-import-form>
+      <label for="quick-creator-id">Creator</label>
+      <select id="quick-creator-id" name="creator_id" required>
+        <option value="">Select creator</option>
+        {% for creator in creators %}
+          <option value="{{ creator['id'] }}" {% if selected_creator and selected_creator == creator['id'] %}selected{% endif %}>
+            {{ creator['name'] }}
+          </option>
+        {% endfor %}
+      </select>
+
+      <label for="quick-series-id">Series (optional)</label>
+      <select id="quick-series-id" name="series_id">
+        <option value="">No series</option>
+        {% for series in series_list %}
+          <option value="{{ series['id'] }}" {% if selected_series and selected_series == series['id'] %}selected{% endif %}>{{ series['name'] }}</option>
+        {% endfor %}
+      </select>
+
+      <div class="quick-import-entry-shell">
+        <label for="quick-link-input">Add post links</label>
+        <div class="quick-import-entry-row">
+          <input
+            id="quick-link-input"
+            type="text"
+            autocomplete="off"
+            placeholder="Paste a Kemono post URL and press Enter"
+            data-quick-link-input
+          >
+          <button type="button" class="quick-import-add-btn" data-quick-link-add>Add</button>
+        </div>
+        <p class="quick-import-entry-hint">Paste, Enter, repeat. Duplicates are ignored.</p>
+      </div>
+
+      <details class="quick-import-raw-toggle">
+        <summary>Bulk paste/edit raw links</summary>
+        <textarea
+          id="quick-post-urls"
+          name="post_urls"
+          rows="4"
+          class="quick-import-raw-input"
+          data-quick-hidden-urls
+        >{{ prefill_quick_urls or '' }}</textarea>
+      </details>
+
+      <div class="quick-import-link-board" data-quick-link-board>
+        <p class="quick-import-link-empty" data-quick-link-empty>No links added yet.</p>
+        <ul class="quick-import-link-list" data-quick-link-list></ul>
+      </div>
+
+      <label class="import-option-check">
+        <input type="checkbox" name="skip_attachment_downloads" value="1" {% if prefill_skip_attachment_downloads %}checked{% endif %}>
+        <span>Metadata only (skip attachment downloads for now)</span>
+      </label>
+
+      <button type="submit">Quick Import All Links</button>
+    </form>
+  </section>
 </section>
+<script src="{{ url_for('static', filename='import_form.js') }}"></script>
 {% endblock %}

@@ -129,6 +129,223 @@ def test_import_and_resolve_flow(tmp_path, monkeypatch):
     assert unresolved.headers["Location"].endswith("/posts/1")
 
 
+def test_import_form_renders_tabbed_quick_import_ui(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    creator_id = app.db.create_creator("Tabbed Import Creator")  # type: ignore[attr-defined]
+
+    response = app.test_client().get(f"/import?creator_id={creator_id}&tab=quick")
+    assert response.status_code == 200
+    soup = BeautifulSoup(response.data, "html.parser")
+    shell = soup.select_one("[data-import-form-tabs]")
+    assert shell is not None
+    assert shell.get("data-import-default-tab") == "quick"
+    assert soup.select_one("[data-import-tab-trigger='single']") is not None
+    assert soup.select_one("[data-import-tab-trigger='quick']") is not None
+    assert soup.select_one("[data-quick-link-input]") is not None
+    assert soup.select_one("[data-quick-link-list]") is not None
+    assert soup.select_one("[data-quick-hidden-urls]") is not None
+    assert b"/static/import_form.js" in response.data
+
+
+def test_quick_import_multiple_posts_metadata_only_skips_downloads(tmp_path, monkeypatch):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Batch Creator")
+
+    payload_by_post_id = {
+        "100": {
+            "post": {
+                "title": "Batch 100",
+                "content": "",
+                "user": "70479526",
+                "attachments": [{"name": "100-a.jpg", "path": "/data/100-a.jpg"}],
+            },
+            "attachments": [],
+        },
+        "101": {
+            "post": {
+                "title": "Batch 101",
+                "content": "",
+                "user": "70479526",
+                "attachments": [{"name": "101-a.jpg", "path": "/data/101-a.jpg"}],
+            },
+            "attachments": [],
+        },
+    }
+    download_calls: list[tuple[str, str]] = []
+
+    def fake_fetch(ref, fallback_user_id=None):  # noqa: ARG001
+        payload = payload_by_post_id.get(str(ref.post_id))
+        if payload is None:
+            raise AssertionError(f"Unexpected post id {ref.post_id}")
+        return payload
+
+    def fake_download(remote_url, destination):  # noqa: ARG001
+        download_calls.append((str(remote_url), str(destination)))
+        Path(destination).parent.mkdir(parents=True, exist_ok=True)
+        Path(destination).write_bytes(b"ok")
+
+    def fake_icon_download(service, user_id, icons_root):  # noqa: ARG001
+        return (f"https://img.kemono.cr/icons/{service}/{user_id}", None)
+
+    monkeypatch.setattr("kemono_library.web.fetch_post_json", fake_fetch)
+    monkeypatch.setattr("kemono_library.web.download_attachment", fake_download)
+    monkeypatch.setattr("kemono_library.web.download_creator_icon", fake_icon_download)
+
+    response = app.test_client().post(
+        "/import/quick",
+        data={
+            "creator_id": str(creator_id),
+            "series_id": "",
+            "post_urls": "\n".join(
+                [
+                    "https://kemono.cr/fanbox/user/70479526/post/100",
+                    "https://kemono.cr/fanbox/user/70479526/post/101",
+                ]
+            ),
+            "skip_attachment_downloads": "1",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    assert response.headers["Location"].startswith(f"/import?creator_id={creator_id}")
+    assert not download_calls
+
+    imported_100 = db.find_post_by_source("fanbox", "70479526", "100")
+    imported_101 = db.find_post_by_source("fanbox", "70479526", "101")
+    assert imported_100 is not None
+    assert imported_101 is not None
+    attachments_100 = db.list_attachments(int(imported_100["id"]))
+    attachments_101 = db.list_attachments(int(imported_101["id"]))
+    assert len(attachments_100) == 1
+    assert len(attachments_101) == 1
+    assert attachments_100[0]["local_path"] is None
+    assert attachments_101[0]["local_path"] is None
+
+
+def test_quick_import_accepts_hidden_post_url_values(tmp_path, monkeypatch):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Hidden Field Batch Creator")
+
+    payload = {
+        "post": {
+            "title": "Batch 200",
+            "content": "",
+            "user": "70479526",
+            "attachments": [],
+        },
+        "attachments": [],
+    }
+
+    def fake_fetch(ref, fallback_user_id=None):  # noqa: ARG001
+        assert str(ref.post_id) == "200"
+        return payload
+
+    def fake_icon_download(service, user_id, icons_root):  # noqa: ARG001
+        return (f"https://img.kemono.cr/icons/{service}/{user_id}", None)
+
+    monkeypatch.setattr("kemono_library.web.fetch_post_json", fake_fetch)
+    monkeypatch.setattr("kemono_library.web.download_creator_icon", fake_icon_download)
+
+    response = app.test_client().post(
+        "/import/quick",
+        data=MultiDict(
+            [
+                ("creator_id", str(creator_id)),
+                ("series_id", ""),
+                ("post_urls", ""),
+                ("post_url_values", "https://kemono.cr/fanbox/user/70479526/post/200"),
+                ("skip_attachment_downloads", "1"),
+            ]
+        ),
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    assert response.headers["Location"] == "/posts/1"
+    imported = db.find_post_by_source("fanbox", "70479526", "200")
+    assert imported is not None
+
+
+def test_quick_import_reports_failures_and_prefills_failed_urls(tmp_path, monkeypatch):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Batch Creator")
+
+    payload = {
+        "post": {
+            "title": "Batch 100",
+            "content": "",
+            "user": "70479526",
+            "attachments": [],
+        },
+        "attachments": [],
+    }
+
+    def fake_fetch(ref, fallback_user_id=None):  # noqa: ARG001
+        assert str(ref.post_id) == "100"
+        return payload
+
+    def fake_icon_download(service, user_id, icons_root):  # noqa: ARG001
+        return (f"https://img.kemono.cr/icons/{service}/{user_id}", None)
+
+    monkeypatch.setattr("kemono_library.web.fetch_post_json", fake_fetch)
+    monkeypatch.setattr("kemono_library.web.download_creator_icon", fake_icon_download)
+
+    response = app.test_client().post(
+        "/import/quick",
+        data={
+            "creator_id": str(creator_id),
+            "series_id": "",
+            "post_urls": "\n".join(
+                [
+                    "https://kemono.cr/fanbox/user/70479526/post/100",
+                    "https://example.com/not-kemono",
+                ]
+            ),
+            "skip_attachment_downloads": "1",
+        },
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert b"Quick import finished: 1 succeeded, 1 failed." in response.data
+    assert b"Only kemono.cr post links are supported." in response.data
+    assert b"https://example.com/not-kemono" in response.data
+    assert db.find_post_by_source("fanbox", "70479526", "100") is not None
+
+
 def test_import_start_reports_live_progress_until_complete(tmp_path, monkeypatch):
     app = create_app(
         {

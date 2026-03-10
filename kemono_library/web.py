@@ -826,9 +826,46 @@ def create_app(test_config: dict | None = None) -> Flask:
         flash("Creator deleted.", "success")
         return redirect(url_for("index"))
 
+    def _render_import_form_page(
+        *,
+        selected_creator: int | None,
+        selected_series: int | None,
+        prefill_url: str,
+        prefill_force_target_post_version: bool,
+        prefill_force_overwrite_matching_version: bool,
+        prefill_import_target_mode: str,
+        prefill_target_post_id: int | None,
+        prefill_overwrite_matching_version: bool,
+        prefill_set_as_default: bool,
+        prefill_version_label: str,
+        prefill_version_language: str,
+        prefill_quick_urls: str,
+        prefill_skip_attachment_downloads: bool,
+        prefill_import_tab: str = "single",
+    ):
+        resolved_import_tab = prefill_import_tab if prefill_import_tab in {"single", "quick"} else "single"
+        return render_template(
+            "import_form.html",
+            creators=db.list_creators(),
+            selected_creator=selected_creator,
+            selected_series=selected_series,
+            prefill_url=prefill_url,
+            prefill_force_target_post_version=prefill_force_target_post_version,
+            prefill_force_overwrite_matching_version=prefill_force_overwrite_matching_version,
+            prefill_import_target_mode=prefill_import_target_mode,
+            prefill_target_post_id=prefill_target_post_id,
+            prefill_overwrite_matching_version=prefill_overwrite_matching_version,
+            prefill_set_as_default=prefill_set_as_default,
+            prefill_version_label=prefill_version_label,
+            prefill_version_language=prefill_version_language,
+            prefill_quick_urls=prefill_quick_urls,
+            prefill_skip_attachment_downloads=prefill_skip_attachment_downloads,
+            prefill_import_tab=resolved_import_tab,
+            series_list=db.list_series(selected_creator) if selected_creator else [],
+        )
+
     @app.get("/import")
     def import_form():
-        creators = db.list_creators()
         selected_creator = request.args.get("creator_id", type=int)
         selected_series = request.args.get("series_id", type=int)
         prefill_url = request.args.get("url", "")
@@ -857,9 +894,15 @@ def create_app(test_config: dict | None = None) -> Flask:
         )
         prefill_version_label = request.args.get("version_label", "")
         prefill_version_language = request.args.get("version_language", "")
-        return render_template(
-            "import_form.html",
-            creators=creators,
+        prefill_quick_urls = request.args.get("quick_urls", "")
+        prefill_skip_attachment_downloads = _parse_boolish(
+            request.args.get("quick_skip_attachment_downloads"),
+            default=True,
+        )
+        prefill_import_tab = request.args.get("tab", "").strip().lower()
+        if prefill_import_tab not in {"single", "quick"}:
+            prefill_import_tab = "quick" if prefill_quick_urls else "single"
+        return _render_import_form_page(
             selected_creator=selected_creator,
             selected_series=selected_series,
             prefill_url=prefill_url,
@@ -871,7 +914,9 @@ def create_app(test_config: dict | None = None) -> Flask:
             prefill_set_as_default=prefill_set_as_default,
             prefill_version_label=prefill_version_label,
             prefill_version_language=prefill_version_language,
-            series_list=db.list_series(selected_creator) if selected_creator else [],
+            prefill_quick_urls=prefill_quick_urls,
+            prefill_skip_attachment_downloads=prefill_skip_attachment_downloads,
+            prefill_import_tab=prefill_import_tab,
         )
 
     @app.post("/import/preview")
@@ -1002,6 +1047,191 @@ def create_app(test_config: dict | None = None) -> Flask:
             force_overwrite_matching_version=force_overwrite_matching_version,
             target_attachment_index=target_attachment_index,
         )
+
+    @app.post("/import/quick")
+    def import_quick():
+        creator_id = request.form.get("creator_id", type=int)
+        series_id = request.form.get("series_id", type=int)
+        urls, prefill_quick_urls = _extract_quick_import_urls_from_form(request.form)
+        skip_attachment_downloads = _form_checkbox_enabled(
+            request.form,
+            "skip_attachment_downloads",
+            default=True,
+        )
+
+        if not creator_id:
+            flash("Pick a creator first.", "error")
+            return _render_import_form_page(
+                selected_creator=None,
+                selected_series=series_id,
+                prefill_url="",
+                prefill_force_target_post_version=False,
+                prefill_force_overwrite_matching_version=False,
+                prefill_import_target_mode="",
+                prefill_target_post_id=None,
+                prefill_overwrite_matching_version=True,
+                prefill_set_as_default=True,
+                prefill_version_label="",
+                prefill_version_language="",
+                prefill_quick_urls=prefill_quick_urls,
+                prefill_skip_attachment_downloads=skip_attachment_downloads,
+                prefill_import_tab="quick",
+            )
+
+        creator = db.get_creator(creator_id)
+        if not creator:
+            flash("Creator not found.", "error")
+            return _render_import_form_page(
+                selected_creator=creator_id,
+                selected_series=series_id,
+                prefill_url="",
+                prefill_force_target_post_version=False,
+                prefill_force_overwrite_matching_version=False,
+                prefill_import_target_mode="",
+                prefill_target_post_id=None,
+                prefill_overwrite_matching_version=True,
+                prefill_set_as_default=True,
+                prefill_version_label="",
+                prefill_version_language="",
+                prefill_quick_urls=prefill_quick_urls,
+                prefill_skip_attachment_downloads=skip_attachment_downloads,
+                prefill_import_tab="quick",
+            )
+
+        try:
+            series_id = _validate_import_series_selection(db, creator_id=creator_id, series_id=series_id)
+        except ValueError as exc:
+            flash(str(exc), "error")
+            return _render_import_form_page(
+                selected_creator=creator_id,
+                selected_series=series_id,
+                prefill_url="",
+                prefill_force_target_post_version=False,
+                prefill_force_overwrite_matching_version=False,
+                prefill_import_target_mode="",
+                prefill_target_post_id=None,
+                prefill_overwrite_matching_version=True,
+                prefill_set_as_default=True,
+                prefill_version_label="",
+                prefill_version_language="",
+                prefill_quick_urls=prefill_quick_urls,
+                prefill_skip_attachment_downloads=skip_attachment_downloads,
+                prefill_import_tab="quick",
+            )
+
+        if not urls:
+            flash("Add at least one Kemono post URL.", "error")
+            return _render_import_form_page(
+                selected_creator=creator_id,
+                selected_series=series_id,
+                prefill_url="",
+                prefill_force_target_post_version=False,
+                prefill_force_overwrite_matching_version=False,
+                prefill_import_target_mode="",
+                prefill_target_post_id=None,
+                prefill_overwrite_matching_version=True,
+                prefill_set_as_default=True,
+                prefill_version_label="",
+                prefill_version_language="",
+                prefill_quick_urls=prefill_quick_urls,
+                prefill_skip_attachment_downloads=skip_attachment_downloads,
+                prefill_import_tab="quick",
+            )
+
+        succeeded = 0
+        failed: list[tuple[str, str]] = []
+        imported_post_ids: list[int] = []
+        for raw_url in urls:
+            try:
+                post_ref = parse_kemono_post_url(raw_url)
+                resolved_user_id = _optional_str(post_ref.user_id)
+                if not resolved_user_id:
+                    fallback_user_id = _optional_str(creator["external_user_id"])
+                    raw_payload = fetch_post_json(post_ref, fallback_user_id=fallback_user_id)
+                    payload = normalize_post_payload(raw_payload)
+                    resolved_user_id = _optional_str(payload.get("user")) or fallback_user_id
+                    if not resolved_user_id:
+                        raise ValueError("Could not infer user ID for this URL.")
+
+                shared_kwargs = {
+                    "db": db,
+                    "files_base": Path(app.config["FILES_DIR"]),
+                    "icons_base": Path(app.config["ICONS_DIR"]),
+                    "creator_id": creator_id,
+                    "series_id": series_id,
+                    "service": post_ref.service,
+                    "user_id": resolved_user_id,
+                    "post_id": post_ref.post_id,
+                    "target_post_id": None,
+                    "overwrite_matching_version": True,
+                    "set_as_default": True,
+                    "version_label": None,
+                    "version_language": None,
+                    "requested_title": None,
+                    "requested_content": None,
+                    "requested_published_at": None,
+                    "requested_edited_at": None,
+                    "requested_next_external_post_id": None,
+                    "requested_prev_external_post_id": None,
+                    "tags_text": None,
+                    "field_presence": {},
+                    "selected_attachment_indices": None,
+                    "skip_attachment_downloads": skip_attachment_downloads,
+                }
+
+                try:
+                    local_post_id, _ = _import_post_into_library(
+                        import_target_mode="new",
+                        **shared_kwargs,
+                    )
+                except ValueError as exc:
+                    if "already exists locally" not in str(exc):
+                        raise
+                    local_post_id, _ = _import_post_into_library(
+                        import_target_mode="existing",
+                        **shared_kwargs,
+                    )
+            except Exception as exc:  # noqa: BLE001
+                failed.append((raw_url, str(exc)))
+                continue
+            succeeded += 1
+            imported_post_ids.append(local_post_id)
+
+        if succeeded:
+            flash(
+                f"Quick import finished: {succeeded} succeeded, {len(failed)} failed.",
+                "success" if not failed else "warning",
+            )
+        else:
+            flash("Quick import failed for every provided URL.", "error")
+
+        if failed:
+            preview_count = min(3, len(failed))
+            for idx in range(preview_count):
+                failed_url, message = failed[idx]
+                flash(f"{failed_url}: {message}", "error")
+            if len(failed) > preview_count:
+                flash(f"{len(failed) - preview_count} additional imports failed.", "error")
+            return _render_import_form_page(
+                selected_creator=creator_id,
+                selected_series=series_id,
+                prefill_url="",
+                prefill_force_target_post_version=False,
+                prefill_force_overwrite_matching_version=False,
+                prefill_import_target_mode="",
+                prefill_target_post_id=None,
+                prefill_overwrite_matching_version=True,
+                prefill_set_as_default=True,
+                prefill_version_label="",
+                prefill_version_language="",
+                prefill_quick_urls="\n".join(url for url, _ in failed),
+                prefill_skip_attachment_downloads=skip_attachment_downloads,
+                prefill_import_tab="quick",
+            )
+
+        if len(imported_post_ids) == 1:
+            return redirect(url_for("post_detail", post_id=imported_post_ids[0]))
+        return redirect(url_for("import_form", creator_id=creator_id, series_id=series_id, tab="quick"))
 
     @app.post("/import/commit")
     def import_commit():
@@ -3435,7 +3665,8 @@ def _import_post_into_library(
     requested_prev_external_post_id: str | None,
     tags_text: str | None,
     field_presence: dict[str, bool],
-    selected_attachment_indices: set[str],
+    selected_attachment_indices: set[str] | None,
+    skip_attachment_downloads: bool = False,
     progress_callback: Callable[[int, int, str | None], None] | None = None,
 ) -> tuple[int, int]:
     creator = db.get_creator(creator_id)
@@ -3481,9 +3712,12 @@ def _import_post_into_library(
     )
 
     all_attachments = extract_attachments(raw_payload)
-    selected_attachments = [
-        candidate for idx, candidate in enumerate(all_attachments) if str(idx) in selected_attachment_indices
-    ]
+    if selected_attachment_indices is None:
+        selected_attachments = list(all_attachments)
+    else:
+        selected_attachments = [
+            candidate for idx, candidate in enumerate(all_attachments) if str(idx) in selected_attachment_indices
+        ]
     if progress_callback:
         progress_callback(0, len(selected_attachments), None)
 
@@ -3638,17 +3872,18 @@ def _import_post_into_library(
                     or existing_by_name.get(filename)
                     or (download_root / filename)
                 )
-                needs_download = not _is_valid_file(destination)
-                if needs_download:
-                    used_remote_url = _download_with_fallback_remote_url(
-                        candidate.remote_url,
-                        destination,
-                        candidate.name,
-                    )
-                    if used_remote_url and destination is not None and _is_valid_file(destination):
-                        created_files.add(destination)
-                    if not used_remote_url:
-                        destination = None
+                if not skip_attachment_downloads:
+                    needs_download = not _is_valid_file(destination)
+                    if needs_download:
+                        used_remote_url = _download_with_fallback_remote_url(
+                            candidate.remote_url,
+                            destination,
+                            candidate.name,
+                        )
+                        if used_remote_url and destination is not None and _is_valid_file(destination):
+                            created_files.add(destination)
+                        if not used_remote_url:
+                            destination = None
                 if destination and _is_valid_file(destination):
                     local_path = destination.relative_to(files_base).as_posix()
                 else:
@@ -3808,6 +4043,30 @@ def _parse_boolish(value: Any, *, default: bool) -> bool:
     if not text:
         return default
     return text in {"1", "true", "on", "yes"}
+
+
+def _parse_quick_import_urls(raw_urls: str | None) -> list[str]:
+    if not raw_urls:
+        return []
+    seen: set[str] = set()
+    parsed: list[str] = []
+    for line in raw_urls.splitlines():
+        value = line.strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        parsed.append(value)
+    return parsed
+
+
+def _extract_quick_import_urls_from_form(form: Any) -> tuple[list[str], str]:
+    raw_values = form.getlist("post_url_values")
+    if raw_values:
+        parsed = _parse_quick_import_urls("\n".join(str(value) for value in raw_values))
+        return parsed, "\n".join(parsed)
+    raw_urls = form.get("post_urls", "")
+    parsed = _parse_quick_import_urls(raw_urls)
+    return parsed, "\n".join(parsed)
 
 
 def _form_checkbox_enabled(form: Any, field_name: str, *, default: bool) -> bool:
