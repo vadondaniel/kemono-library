@@ -2437,23 +2437,16 @@ button:disabled,
 }
 
 .attachment-file-name {
-  display: flex !important;
-  align-items: baseline;
-  gap: 0.03rem;
-}
-
-.attachment-file-name-base {
+  display: block !important;
   min-width: 0;
-  flex: 0 1 auto;
+  max-width: 100%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.attachment-file-name-ext {
-  flex: 0 0 auto;
-  white-space: nowrap;
-  color: inherit;
+.attachment-file-ext-badge {
+  letter-spacing: 0.01em;
 }
 
 .attachment-file-meta small,

@@ -150,9 +150,7 @@
                           </div>
                             <div class="attachment-file-body">
                               <div class="attachment-file-meta">
-                              <strong class="attachment-file-name" title="{{ file['name'] }}">
-                                <span class="attachment-file-name-base">{{ file['name_stem'] }}</span>{% if file['name_ext'] %}<span class="attachment-file-name-ext">{{ file['name_ext'] }}</span>{% endif %}
-                              </strong>
+                              <strong class="attachment-file-name" title="{{ file['name'] }}">{{ file['name'] }}</strong>
                               <small>
                                 {% if file['is_default_version'] %}Default{% else %}Version{% endif %}:
                                 {{ file['version_label'] }}{% if file['version_language'] %} ({{ file['version_language'] }}){% endif %}
@@ -161,6 +159,9 @@
                             <div class="attachment-file-badges">
                               <span class="chip chip--tight attachment-file-badge">{{ file['kind'] }}</span>
                               <span class="chip chip--tight attachment-file-badge">{{ file['origin_kind'] }}</span>
+                              {% if file['name_ext'] %}
+                                <span class="chip chip--tight attachment-file-badge attachment-file-ext-badge">{{ file['name_ext'] }}</span>
+                              {% endif %}
                               {% if file['local_available'] %}
                                 <span class="chip chip--tight attachment-file-badge" data-attachment-state-badge>saved</span>
                               {% else %}

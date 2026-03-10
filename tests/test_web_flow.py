@@ -2345,6 +2345,9 @@ def test_attachment_manager_lists_grouped_inventory_with_sizes(tmp_path):
     assert soup.select_one("[data-attachment-retry-close]") is not None
     assert soup.select_one("[data-attachment-retry-refresh]") is None
     assert soup.select_one("[data-attachment-retry-dismiss]") is None
+    ext_chips = [node.get_text(strip=True) for node in soup.select(".attachment-file-ext-badge")]
+    assert ".jpg" in ext_chips
+    assert ".zip" in ext_chips
     assert b"/static/attachment_manager.js" in response.data
 
 
