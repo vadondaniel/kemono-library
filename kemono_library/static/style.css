@@ -105,6 +105,9 @@
   --type-size-body: 0.98rem;
   --type-size-small: 0.82rem;
   --type-size-kicker: 0.78rem;
+  --link-color: color-mix(in srgb, var(--accent) 90%, var(--text) 10%);
+  --link-color-hover: var(--accent-strong);
+  --link-color-visited: color-mix(in srgb, var(--accent-strong) 74%, var(--muted) 26%);
 
   /* Layer scale */
   --z-local: 1;
@@ -169,6 +172,9 @@ html[data-theme="dark"] {
   --shadow-popover-strong: 0 16px 28px rgba(0, 0, 0, 0.56);
   --shadow-control: 0 1px 4px rgba(0, 0, 0, 0.42);
   --popover-border-color: color-mix(in srgb, var(--border) 82%, var(--accent) 18%);
+  --link-color: color-mix(in srgb, var(--accent) 88%, var(--text) 12%);
+  --link-color-hover: color-mix(in srgb, var(--accent-strong) 90%, white 10%);
+  --link-color-visited: color-mix(in srgb, var(--accent-strong) 78%, var(--muted) 22%);
 }
 
 * {
@@ -191,13 +197,31 @@ body {
   transition: background-color 180ms ease, color 180ms ease;
 }
 
-a {
-  color: var(--accent);
+a:not([class]),
+a.text-link {
+  color: var(--link-color);
+  text-decoration-color: color-mix(in srgb, currentColor 58%, transparent);
+  text-decoration-thickness: 0.085em;
   text-underline-offset: 0.15em;
+  transition: color 140ms ease, text-decoration-color 140ms ease;
 }
 
-a:hover {
-  color: var(--accent-strong);
+a:not([class]):visited,
+a.text-link:visited {
+  color: var(--link-color-visited);
+}
+
+a:not([class]):hover,
+a.text-link:hover {
+  color: var(--link-color-hover);
+  text-decoration-color: currentColor;
+}
+
+a:not([class]):focus-visible,
+a.text-link:focus-visible {
+  outline: none;
+  border-radius: 0.22rem;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 26%, transparent);
 }
 
 h1,
