@@ -48,6 +48,22 @@
   --popover-shadow: var(--shadow-popover-strong);
   --popover-padding: 0.72rem;
   --popover-gap: 0.55rem;
+  --button-height: 2.35rem;
+  --button-padding-x: 0.88rem;
+  --button-radius: 0.6rem;
+  --button-font-weight: 650;
+  --button-transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease, box-shadow 150ms ease, transform 120ms ease;
+  --button-primary-border: color-mix(in srgb, var(--accent) 74%, var(--accent-strong));
+  --button-primary-bg: linear-gradient(180deg, color-mix(in srgb, var(--accent) 96%, white 4%), var(--accent-strong));
+  --button-primary-bg-hover: linear-gradient(180deg, color-mix(in srgb, var(--accent) 90%, white 10%), color-mix(in srgb, var(--accent-strong) 90%, black 10%));
+  --button-ghost-border: color-mix(in srgb, var(--border) 74%, var(--accent) 26%);
+  --button-ghost-bg: color-mix(in srgb, var(--card-solid) 94%, transparent);
+  --button-ghost-bg-hover: color-mix(in srgb, var(--accent-soft) 40%, var(--card-solid));
+  --button-chip-border: color-mix(in srgb, var(--border) 78%, transparent);
+  --button-chip-bg: color-mix(in srgb, var(--card-solid) 94%, transparent);
+  --button-chip-bg-hover: color-mix(in srgb, var(--accent-soft) 34%, transparent);
+  --button-chip-bg-active: color-mix(in srgb, var(--accent-soft) 58%, transparent);
+  --button-focus-ring: 0 0 0 2px color-mix(in srgb, var(--accent) 24%, transparent);
 
   /* Layer scale */
   --z-local: 1;
@@ -249,17 +265,21 @@ h4 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--border);
-  background: var(--card-solid);
+  min-height: var(--button-height);
+  padding: 0.46rem var(--button-padding-x);
+  border: 1px solid var(--button-ghost-border);
+  background: var(--button-ghost-bg);
   color: var(--text);
-  padding: 0.38rem 0.7rem;
   border-radius: 999px;
-  font-weight: 600;
+  font-weight: var(--button-font-weight);
   cursor: pointer;
+  box-shadow: var(--shadow-control);
+  transition: var(--button-transition);
 }
 
 .theme-toggle:hover {
-  border-color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 56%, var(--border));
+  background: var(--button-ghost-bg-hover);
   color: var(--accent-strong);
 }
 
@@ -292,24 +312,26 @@ h4 {
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  border: 1px solid transparent;
+  border: 1px solid var(--button-chip-border);
   padding: 0.2rem 0.55rem;
   font-size: 0.78rem;
   font-weight: 650;
   text-decoration: none;
   color: var(--muted);
+  background: var(--button-chip-bg);
+  transition: var(--button-transition);
 }
 
 .post-view-mode-chip:hover {
   border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
   color: var(--accent-strong);
-  background: color-mix(in srgb, var(--accent-soft) 32%, transparent);
+  background: var(--button-chip-bg-hover);
 }
 
 .post-view-mode-chip.is-active {
   border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
   color: var(--accent-strong);
-  background: color-mix(in srgb, var(--accent-soft) 56%, transparent);
+  background: var(--button-chip-bg-active);
 }
 
 .post-view-mode-select {
@@ -393,24 +415,49 @@ textarea {
 
 button,
 .button-link {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.35rem;
   width: fit-content;
-  padding: 0.5rem 0.82rem;
-  border: 1px solid var(--accent);
-  border-radius: 0.5rem;
-  background: linear-gradient(180deg, var(--accent), var(--accent-strong));
+  min-height: var(--button-height);
+  padding: 0.46rem var(--button-padding-x);
+  border: 1px solid var(--button-primary-border);
+  border-radius: var(--button-radius);
+  background: var(--button-primary-bg);
   color: var(--text-inverse);
   text-decoration: none;
   cursor: pointer;
-  font-weight: 650;
+  font-weight: var(--button-font-weight);
+  line-height: 1;
+  vertical-align: middle;
+  box-shadow: var(--shadow-control);
+  transition: var(--button-transition);
 }
 
 button:hover,
 .button-link:hover {
-  filter: brightness(1.06);
+  border-color: color-mix(in srgb, var(--accent) 84%, var(--accent-strong));
+  background: var(--button-primary-bg-hover);
+}
+
+button:active,
+.button-link:active {
+  transform: translateY(1px);
+}
+
+button:focus-visible,
+.button-link:focus-visible {
+  outline: none;
+  box-shadow: var(--button-focus-ring), var(--shadow-control);
+}
+
+button:disabled,
+.button-link[aria-disabled="true"] {
+  opacity: 0.58;
+  cursor: not-allowed;
+  pointer-events: none;
+  box-shadow: none;
 }
 
 .inline-form {
@@ -459,15 +506,17 @@ button:hover,
 }
 
 .button-danger:hover {
-  filter: brightness(1.08);
+  border-color: color-mix(in srgb, var(--danger-strong) 88%, black 12%);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--danger) 88%, white 12%), color-mix(in srgb, var(--danger-strong) 90%, black 10%));
 }
 
 .button-danger-quiet {
   border-color: color-mix(in srgb, var(--danger-accent) 40%, var(--border));
-  background: color-mix(in srgb, var(--danger-accent) 8%, var(--card-solid));
+  background: color-mix(in srgb, var(--danger-accent) 10%, var(--card-solid));
   color: color-mix(in srgb, var(--danger-accent) 86%, var(--text));
   width: 100%;
   justify-content: flex-start;
+  box-shadow: none;
 }
 
 .button-danger-quiet:hover {
@@ -671,18 +720,20 @@ small {
 }
 
 .post-content-settings-reset {
-  border: 1px solid transparent;
+  border: 1px solid var(--button-chip-border);
   border-radius: 999px;
   padding: 0.2rem 0.55rem;
   font-size: 0.78rem;
   font-weight: 650;
   color: var(--muted);
+  background: var(--button-chip-bg);
+  transition: var(--button-transition);
 }
 
 .post-content-settings-reset:hover {
   border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
   color: var(--accent-strong);
-  background: color-mix(in srgb, var(--accent-soft) 32%, transparent);
+  background: var(--button-chip-bg-hover);
 }
 
 .post-content-settings-grid {
@@ -823,25 +874,26 @@ small {
 }
 
 .import-form-tab-btn {
-  border: 1px solid transparent;
+  border: 1px solid var(--button-chip-border);
   border-radius: 999px;
   padding: 0.32rem 0.78rem;
-  background: transparent;
+  background: var(--button-chip-bg);
   color: var(--muted);
   font-weight: 650;
+  transition: var(--button-transition);
 }
 
 .import-form-tab-btn:hover {
   border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
   color: var(--accent-strong);
-  background: color-mix(in srgb, var(--accent-soft) 34%, transparent);
+  background: var(--button-chip-bg-hover);
   filter: none;
 }
 
 .import-form-tab-btn.is-active {
   border-color: color-mix(in srgb, var(--accent) 48%, var(--border));
   color: var(--accent-strong);
-  background: color-mix(in srgb, var(--accent-soft) 58%, transparent);
+  background: var(--button-chip-bg-active);
 }
 
 .import-form-tab-panel[hidden] {
@@ -1266,14 +1318,17 @@ small {
 }
 
 .button-ghost {
-  border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--card-solid) 92%, transparent);
+  border: 1px solid var(--button-ghost-border);
+  background: var(--button-ghost-bg);
   color: var(--text);
-  font-weight: 600;
+  font-weight: var(--button-font-weight);
+  box-shadow: none;
 }
 
 .button-ghost:hover {
-  border-color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 56%, var(--border));
+  background: var(--button-ghost-bg-hover);
+  color: var(--accent-strong);
 }
 
 .kind-filters {
@@ -1284,18 +1339,25 @@ small {
 }
 
 .kind-filter {
-  border: 1px solid var(--border);
+  border: 1px solid var(--button-chip-border);
   border-radius: 999px;
   padding: 0.3rem 0.65rem;
-  background: color-mix(in srgb, var(--card-solid) 93%, transparent);
+  background: var(--button-chip-bg);
   color: var(--text);
   cursor: pointer;
   font-weight: 600;
+  transition: var(--button-transition);
+}
+
+.kind-filter:hover {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  color: var(--accent-strong);
+  background: var(--button-chip-bg-hover);
 }
 
 .kind-filter.is-active {
   border-color: var(--accent);
-  background: var(--accent-soft);
+  background: var(--button-chip-bg-active);
 }
 
 .import-duplicate-tools {
@@ -2442,16 +2504,17 @@ small {
 }
 
 .creator-toolbar-icon-button {
-  width: 2.9rem;
-  min-width: 2.9rem;
-  height: 2.55rem;
+  width: var(--button-height);
+  min-width: var(--button-height);
+  height: var(--button-height);
   padding: 0;
   justify-content: center;
+  border-radius: 0.64rem;
 }
 
 .creator-toolbar-icon {
-  width: 1.2rem;
-  height: 1.2rem;
+  width: 1.3rem;
+  height: 1.3rem;
   stroke: currentColor;
   fill: none;
   stroke-width: 2;
@@ -2902,12 +2965,22 @@ small {
 
 .post-edit-lightbox-close {
   justify-self: end;
-  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border: 1px solid var(--button-ghost-border);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--card-solid) 94%, transparent);
+  background: var(--button-ghost-bg);
   color: var(--text);
-  padding: 0.28rem 0.72rem;
+  min-height: 2rem;
+  padding: 0.28rem 0.78rem;
   cursor: pointer;
+  font-weight: var(--button-font-weight);
+  box-shadow: none;
+  transition: var(--button-transition);
+}
+
+.post-edit-lightbox-close:hover {
+  border-color: color-mix(in srgb, var(--accent) 56%, var(--border));
+  background: var(--button-ghost-bg-hover);
+  color: var(--accent-strong);
 }
 
 .post-edit-lightbox-dialog figcaption,
