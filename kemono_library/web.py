@@ -277,9 +277,30 @@ def create_app(test_config: dict | None = None) -> Flask:
             retry_results: list[dict[str, Any]] = []
             total = len(missing_rows)
             files_base = Path(app.config["FILES_DIR"])
+            current_display_name = str(missing_rows[0].get("display_name") or missing_rows[0]["name"])
+            with attachment_retry_jobs_lock:
+                live_job = attachment_retry_jobs.get(job_id)
+                if live_job:
+                    live_job.update(
+                        {
+                            "status": "running",
+                            "queue_position": 0,
+                            "message": f"Retrying attachments (0/{total})...",
+                            "completed": 0,
+                            "total": total,
+                            "current_file": current_display_name,
+                            "success_count": 0,
+                            "failure_count": 0,
+                        }
+                    )
 
-            for idx, row in enumerate(missing_rows, start=1):
-                display_name = str(row.get("display_name") or row["name"])
+            def progress_callback(
+                completed: int,
+                total_count: int,
+                display_name: str,
+                current_success_count: int,
+                current_failure_count: int,
+            ) -> None:
                 with attachment_retry_jobs_lock:
                     live_job = attachment_retry_jobs.get(job_id)
                     if live_job:
@@ -287,56 +308,26 @@ def create_app(test_config: dict | None = None) -> Flask:
                             {
                                 "status": "running",
                                 "queue_position": 0,
-                                "message": f"Retrying attachments ({idx}/{total})...",
-                                "completed": idx - 1,
-                                "total": total,
+                                "message": f"Processed {completed}/{total_count} attachment(s)...",
+                                "completed": completed,
+                                "total": total_count,
                                 "current_file": display_name,
-                                "success_count": success_count,
-                                "failure_count": failure_count,
+                                "success_count": current_success_count,
+                                "failure_count": current_failure_count,
                             }
                         )
 
-                result = _retry_attachment_row(
-                    db,
-                    files_base=files_base,
-                    attachment_id=int(row["id"]),
-                    post_id=int(row["post_id"]),
-                    attachment_name=row["name"],
-                    remote_url=str(row["remote_url"]),
-                    existing_local_path=_optional_str(row["local_path"]),
-                )
-                retry_results.append(
-                    {
-                        "id": int(row["id"]),
-                        "success": bool(result["success"]),
-                        "error": result["error"],
-                        "local_path": result["local_path"],
-                        "file_size": result["file_size"],
-                    }
-                )
-                if bool(result["success"]):
-                    success_count += 1
-                else:
-                    failure_count += 1
-                    error = _optional_str(result["error"])
-                    if error and len(failure_samples) < 3:
-                        failure_samples.append(f"{row['name']}: {error}")
-
-                with attachment_retry_jobs_lock:
-                    live_job = attachment_retry_jobs.get(job_id)
-                    if live_job:
-                        live_job.update(
-                            {
-                                "status": "running",
-                                "queue_position": 0,
-                                "message": f"Processed {idx}/{total} attachment(s)...",
-                                "completed": idx,
-                                "total": total,
-                                "current_file": display_name,
-                                "success_count": success_count,
-                                "failure_count": failure_count,
-                            }
-                        )
+            retry_summary = _retry_missing_attachment_rows(
+                db,
+                files_base=files_base,
+                missing_rows=missing_rows,
+                max_concurrency=IMPORT_DOWNLOAD_CONCURRENCY,
+                progress_callback=progress_callback,
+            )
+            success_count = int(retry_summary["success_count"])
+            failure_count = int(retry_summary["failure_count"])
+            failure_samples = list(retry_summary["failure_samples"])
+            retry_results = list(retry_summary["retry_results"])
 
             summary_message = f"Retried {success_count} missing attachment(s)."
             if failure_count:
@@ -1679,26 +1670,16 @@ def create_app(test_config: dict | None = None) -> Flask:
             flash("No missing attachments matched this retry scope.", "success")
             return redirect(return_to)
 
-        success_count = 0
-        failure_count = 0
-        failure_samples: list[str] = []
-        for row in missing_rows:
-            result = _retry_attachment_row(
-                db,
-                files_base=files_base,
-                attachment_id=int(row["id"]),
-                post_id=int(row["post_id"]),
-                attachment_name=row["name"],
-                remote_url=str(row["remote_url"]),
-                existing_local_path=_optional_str(row["local_path"]),
-            )
-            if bool(result["success"]):
-                success_count += 1
-                continue
-            failure_count += 1
-            error = _optional_str(result["error"])
-            if error and len(failure_samples) < 3:
-                failure_samples.append(f"{row['name']}: {error}")
+        retry_summary = _retry_missing_attachment_rows(
+            db,
+            files_base=files_base,
+            missing_rows=missing_rows,
+            max_concurrency=IMPORT_DOWNLOAD_CONCURRENCY,
+            progress_callback=None,
+        )
+        success_count = int(retry_summary["success_count"])
+        failure_count = int(retry_summary["failure_count"])
+        failure_samples = list(retry_summary["failure_samples"])
 
         if success_count:
             flash(f"Retried {success_count} missing attachment(s).", "success")
@@ -2361,6 +2342,175 @@ def _retry_attachment_row(
     except OSError:
         file_size = None
     return {"success": True, "error": None, "local_path": local_rel, "file_size": file_size}
+
+
+def _retry_missing_attachment_rows(
+    db: LibraryDBLike,
+    *,
+    files_base: Path,
+    missing_rows: list[dict[str, Any]],
+    max_concurrency: int,
+    progress_callback: Callable[[int, int, str, int, int], None] | None,
+) -> dict[str, Any]:
+    total = len(missing_rows)
+    if total <= 0:
+        return {
+            "total": 0,
+            "success_count": 0,
+            "failure_count": 0,
+            "failure_samples": [],
+            "retry_results": [],
+        }
+
+    destination_lock_guard = threading.Lock()
+    destination_locks: dict[str, threading.Lock] = {}
+
+    def _lock_for_destination(destination: Path) -> threading.Lock:
+        lock_key = str(destination)
+        with destination_lock_guard:
+            lock = destination_locks.get(lock_key)
+            if lock is None:
+                lock = threading.Lock()
+                destination_locks[lock_key] = lock
+            return lock
+
+    def _run_retry(index: int, row: dict[str, Any]) -> tuple[int, dict[str, Any], dict[str, Any]]:
+        post_id = int(row["post_id"])
+        attachment_name = row["name"]
+        existing_local_path = _optional_str(row["local_path"])
+        if existing_local_path:
+            destination = files_base / existing_local_path
+        else:
+            destination = files_base / f"post_{post_id}" / sanitize_filename(str(attachment_name))
+        display_name = str(row.get("display_name") or attachment_name)
+
+        lock = _lock_for_destination(destination)
+        with lock:
+            if _is_valid_file(destination):
+                local_rel = destination.relative_to(files_base).as_posix()
+                try:
+                    file_size = destination.stat().st_size
+                except OSError:
+                    file_size = None
+                return index, row, {
+                    "success": True,
+                    "error": None,
+                    "local_path": local_rel,
+                    "file_size": file_size,
+                    "display_name": display_name,
+                }
+
+            try:
+                used_remote_url = _download_with_fallback_remote_url(
+                    str(row["remote_url"]),
+                    destination,
+                    attachment_name,
+                )
+                if not used_remote_url:
+                    return index, row, {
+                        "success": False,
+                        "error": "all download URL variants failed",
+                        "local_path": None,
+                        "file_size": None,
+                        "display_name": display_name,
+                    }
+            except Exception as exc:  # noqa: BLE001
+                return index, row, {
+                    "success": False,
+                    "error": str(exc),
+                    "local_path": None,
+                    "file_size": None,
+                    "display_name": display_name,
+                }
+
+            if not _is_valid_file(destination):
+                return index, row, {
+                    "success": False,
+                    "error": "downloaded file is empty",
+                    "local_path": None,
+                    "file_size": None,
+                    "display_name": display_name,
+                }
+
+            local_rel = destination.relative_to(files_base).as_posix()
+            try:
+                file_size = destination.stat().st_size
+            except OSError:
+                file_size = None
+            return index, row, {
+                "success": True,
+                "error": None,
+                "local_path": local_rel,
+                "file_size": file_size,
+                "display_name": display_name,
+            }
+
+    worker_count = max(1, min(max_concurrency, total))
+    completed = 0
+    success_count = 0
+    failure_count = 0
+    failure_samples: list[str] = []
+    retry_results: list[dict[str, Any] | None] = [None] * total
+
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        futures = {
+            executor.submit(_run_retry, index, row): index
+            for index, row in enumerate(missing_rows)
+        }
+        for future in as_completed(futures):
+            index = futures[future]
+            row = missing_rows[index]
+            display_name = str(row.get("display_name") or row["name"])
+            try:
+                _, row, result = future.result()
+            except Exception as exc:  # noqa: BLE001
+                result = {
+                    "success": False,
+                    "error": str(exc),
+                    "local_path": None,
+                    "file_size": None,
+                    "display_name": display_name,
+                }
+
+            if bool(result["success"]) and result["local_path"]:
+                try:
+                    db.update_attachment_local_path(int(row["id"]), str(result["local_path"]))
+                except Exception as exc:  # noqa: BLE001
+                    result = {
+                        "success": False,
+                        "error": str(exc),
+                        "local_path": None,
+                        "file_size": None,
+                        "display_name": display_name,
+                    }
+
+            if bool(result["success"]):
+                success_count += 1
+            else:
+                failure_count += 1
+                error = _optional_str(result["error"])
+                if error and len(failure_samples) < 3:
+                    failure_samples.append(f"{row['name']}: {error}")
+
+            retry_results[index] = {
+                "id": int(row["id"]),
+                "success": bool(result["success"]),
+                "error": result["error"],
+                "local_path": result["local_path"],
+                "file_size": result["file_size"],
+            }
+
+            completed += 1
+            if progress_callback:
+                progress_callback(completed, total, str(result["display_name"]), success_count, failure_count)
+
+    return {
+        "total": total,
+        "success_count": success_count,
+        "failure_count": failure_count,
+        "failure_samples": failure_samples,
+        "retry_results": [entry for entry in retry_results if entry is not None],
+    }
 
 
 def _build_local_file_url(relative_path: str | None) -> str | None:

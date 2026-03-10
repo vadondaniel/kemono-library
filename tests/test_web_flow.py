@@ -2835,6 +2835,94 @@ def test_attachment_retry_job_reports_live_progress_until_complete(tmp_path, mon
     assert final_status["redirect_url"] == "/attachments"
 
 
+def test_attachment_retry_job_uses_three_worker_concurrency(tmp_path, monkeypatch):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Retry Concurrency Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="retry-concurrency-user",
+        external_post_id="1012",
+        title="Retry Concurrency Post",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/retry-concurrency-user/post/1012",
+    )
+    db.replace_attachments(
+        post_id,
+        [
+            {
+                "name": f"{idx}.jpg",
+                "remote_url": f"https://n1.kemono.cr/path/{idx}.jpg",
+                "local_path": f"post_{post_id}/{idx}.jpg",
+                "kind": "attachment",
+            }
+            for idx in range(8)
+        ],
+    )
+
+    active_downloads = 0
+    max_active_downloads = 0
+    guard = threading.Lock()
+
+    def fake_download(remote_url, destination):  # noqa: ARG001
+        nonlocal active_downloads, max_active_downloads
+        with guard:
+            active_downloads += 1
+            max_active_downloads = max(max_active_downloads, active_downloads)
+        try:
+            time.sleep(0.03)
+            Path(destination).parent.mkdir(parents=True, exist_ok=True)
+            Path(destination).write_bytes(b"ok")
+        finally:
+            with guard:
+                active_downloads -= 1
+
+    monkeypatch.setattr("kemono_library.web.download_attachment", fake_download)
+
+    client = app.test_client()
+    start = client.post(
+        "/attachments/retry-missing/start",
+        data={
+            "scope": "post",
+            "scope_id": str(post_id),
+            "return_to": "/attachments",
+        },
+    )
+    assert start.status_code == 200
+    payload = start.get_json()
+    assert isinstance(payload, dict)
+    status_url = payload["status_url"]
+
+    final_status: dict[str, object] | None = None
+    for _ in range(200):
+        status_response = client.get(status_url)
+        assert status_response.status_code == 200
+        status_payload = status_response.get_json()
+        assert isinstance(status_payload, dict)
+        if status_payload["status"] == "completed":
+            final_status = status_payload
+            break
+        if status_payload["status"] == "failed":
+            raise AssertionError(status_payload["error"])
+        time.sleep(0.01)
+
+    assert final_status is not None
+    assert final_status["success_count"] == 8
+    assert final_status["failure_count"] == 0
+    assert 2 <= max_active_downloads <= 3
+
+
 def test_edit_page_prettifies_html_content(tmp_path):
     app = create_app(
         {
