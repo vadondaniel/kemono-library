@@ -150,6 +150,7 @@ def test_import_form_renders_tabbed_quick_import_ui(tmp_path):
     assert soup.select_one("[data-import-tab-trigger='single']") is not None
     assert soup.select_one("[data-import-tab-trigger='quick']") is not None
     assert soup.select_one("[data-quick-link-input]") is not None
+    assert soup.select_one("[data-quick-link-paste]") is not None
     assert soup.select_one("[data-quick-link-list]") is not None
     assert soup.select_one("[data-quick-hidden-urls]") is not None
     assert b"/static/import_form.js" in response.data

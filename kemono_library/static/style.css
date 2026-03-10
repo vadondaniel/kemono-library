@@ -800,6 +800,21 @@ small {
   white-space: nowrap;
 }
 
+.quick-import-paste-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  border-color: color-mix(in srgb, var(--border) 70%, var(--accent) 30%);
+  background: color-mix(in srgb, var(--card-solid) 95%, transparent);
+  color: var(--text);
+}
+
+.quick-import-paste-btn:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent-soft) 38%, transparent);
+  filter: none;
+}
+
 .quick-import-entry-hint {
   margin: 0;
   color: var(--muted);
@@ -3883,6 +3898,10 @@ body.is-post-reader-page .site-header {
   }
 
   .quick-import-add-btn {
+    width: 100%;
+  }
+
+  .quick-import-paste-btn {
     width: 100%;
   }
 

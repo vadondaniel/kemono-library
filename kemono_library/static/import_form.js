@@ -57,6 +57,7 @@
   }
   const linkInput = quickForm.querySelector("[data-quick-link-input]");
   const addButton = quickForm.querySelector("[data-quick-link-add]");
+  const pasteButton = quickForm.querySelector("[data-quick-link-paste]");
   const linkList = quickForm.querySelector("[data-quick-link-list]");
   const emptyState = quickForm.querySelector("[data-quick-link-empty]");
   const hiddenUrls = quickForm.querySelector("[data-quick-hidden-urls]");
@@ -64,6 +65,7 @@
   if (
     !(linkInput instanceof HTMLInputElement) ||
     !(addButton instanceof HTMLButtonElement) ||
+    !(pasteButton instanceof HTMLButtonElement) ||
     !(linkList instanceof HTMLElement) ||
     !(emptyState instanceof HTMLElement) ||
     !(hiddenUrls instanceof HTMLTextAreaElement)
@@ -89,6 +91,19 @@
     urlSet.add(normalized);
     urls.push(normalized);
     return true;
+  }
+
+  function addUrlsFromText(rawText) {
+    let changed = false;
+    for (const line of String(rawText || "").split(/\r?\n/)) {
+      if (addUrl(line)) {
+        changed = true;
+      }
+    }
+    if (changed) {
+      renderUrls();
+    }
+    return changed;
   }
 
   function removeUrl(value) {
@@ -136,16 +151,25 @@
     if (!raw.trim()) {
       return;
     }
-    let changed = false;
-    for (const line of raw.split(/\r?\n/)) {
-      if (addUrl(line)) {
-        changed = true;
-      }
-    }
+    const changed = addUrlsFromText(raw);
     linkInput.value = "";
     linkInput.setCustomValidity("");
-    if (changed) {
-      renderUrls();
+    if (!changed) {
+      linkInput.setCustomValidity("That URL is already in the list.");
+      linkInput.reportValidity();
+    }
+  }
+
+  function promptManualPaste() {
+    const pasted = window.prompt("Paste Kemono post URL(s), one per line:", "");
+    if (pasted === null) {
+      return;
+    }
+    const changed = addUrlsFromText(pasted);
+    if (!changed && pasted.trim()) {
+      linkInput.focus();
+      linkInput.setCustomValidity("Pasted URLs were already in the list.");
+      linkInput.reportValidity();
     }
   }
 
@@ -155,6 +179,29 @@
   renderUrls();
 
   addButton.addEventListener("click", ingestFromInput);
+  pasteButton.addEventListener("click", async () => {
+    linkInput.setCustomValidity("");
+    const clipboardApi = navigator.clipboard;
+    if (!clipboardApi || typeof clipboardApi.readText !== "function") {
+      promptManualPaste();
+      return;
+    }
+
+    try {
+      const pasted = await clipboardApi.readText();
+      if (!pasted.trim()) {
+        return;
+      }
+      const changed = addUrlsFromText(pasted);
+      if (!changed) {
+        linkInput.focus();
+        linkInput.setCustomValidity("Pasted URLs were already in the list.");
+        linkInput.reportValidity();
+      }
+    } catch (_error) {
+      promptManualPaste();
+    }
+  });
   linkInput.addEventListener("keydown", (event) => {
     if (event.key !== "Enter") {
       return;
