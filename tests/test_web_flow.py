@@ -2556,7 +2556,7 @@ def test_attachment_manager_size_sort_orders_tree_by_aggregate_sizes(tmp_path):
     assert "Large Post" in first_post.get_text(" ", strip=True)
 
     attachment_names = [
-        node.get_text(" ", strip=True)
+        node.get_text("", strip=True)
         for node in creator_nodes[1].select(".attachment-file-meta strong")
     ]
     assert attachment_names[:2] == ["small-a.bin", "small-b.bin"]

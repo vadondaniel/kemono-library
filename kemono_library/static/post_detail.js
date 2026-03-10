@@ -1322,22 +1322,23 @@
 
   const readerView = initializeReaderView();
   const middleEllipsisTargets = Array.from(document.querySelectorAll("[data-middle-ellipsis]"));
+  const ellipsisMeasureCanvas = document.createElement("canvas");
+  const ellipsisMeasureContext = ellipsisMeasureCanvas.getContext("2d");
 
   function measureTextWidth(element, value) {
-    if (!(element instanceof HTMLElement)) {
+    if (!(element instanceof HTMLElement) || !ellipsisMeasureContext) {
       return value.length * 8;
     }
     const style = window.getComputedStyle(element);
     const font = style.font && style.font !== "normal normal normal normal 16px / normal sans-serif"
       ? style.font
       : `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
-    const canvas = document.createElement("canvas");
-    const context = canvas.getContext("2d");
-    if (!context) {
-      return value.length * 8;
-    }
-    context.font = font;
-    return context.measureText(value).width;
+    ellipsisMeasureContext.font = font;
+    return ellipsisMeasureContext.measureText(value).width;
+  }
+
+  function isInsideClosedDetails(element) {
+    return element.closest("details:not([open])") instanceof HTMLDetailsElement;
   }
 
   function middleEllipsizeToFit(element, value) {
@@ -1389,6 +1390,9 @@
     if (!(element instanceof HTMLElement)) {
       return;
     }
+    if (isInsideClosedDetails(element)) {
+      return;
+    }
     const fullText = (element.dataset.fullText || element.textContent || "").trim();
     if (!fullText) {
       return;
@@ -1399,6 +1403,9 @@
   }
 
   function applyMiddleEllipsisAll() {
+    if (!middleEllipsisTargets.length) {
+      return;
+    }
     middleEllipsisTargets.forEach((target) => {
       applyMiddleEllipsis(target);
     });

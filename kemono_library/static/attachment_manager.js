@@ -759,6 +759,8 @@
     if (!previewSrc.trim()) {
       return;
     }
+    // Reset stale broken state before a new load attempt.
+    setPreviewBrokenState(image, false);
     image.src = previewSrc;
   }
 
@@ -791,8 +793,9 @@
     image.addEventListener("load", () => {
       setPreviewBrokenState(image, false);
     });
-    if (image.complete && image.naturalWidth <= 0) {
-      setPreviewBrokenState(image, true);
+    const currentSrc = image.getAttribute("src");
+    if (currentSrc && image.complete) {
+      setPreviewBrokenState(image, image.naturalWidth <= 0);
     }
   }
 

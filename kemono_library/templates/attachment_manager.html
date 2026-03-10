@@ -148,9 +148,11 @@
                               <span class="attachment-file-preview-fallback">File</span>
                             {% endif %}
                           </div>
-                          <div class="attachment-file-body">
-                            <div class="attachment-file-meta">
-                              <strong data-middle-ellipsis title="{{ file['name'] }}">{{ file['name'] }}</strong>
+                            <div class="attachment-file-body">
+                              <div class="attachment-file-meta">
+                              <strong class="attachment-file-name" title="{{ file['name'] }}">
+                                <span class="attachment-file-name-base">{{ file['name_stem'] }}</span>{% if file['name_ext'] %}<span class="attachment-file-name-ext">{{ file['name_ext'] }}</span>{% endif %}
+                              </strong>
                               <small>
                                 {% if file['is_default_version'] %}Default{% else %}Version{% endif %}:
                                 {{ file['version_label'] }}{% if file['version_language'] %} ({{ file['version_language'] }}){% endif %}
@@ -168,7 +170,7 @@
                             <div class="attachment-file-stats">
                               <span data-attachment-file-size data-size-bytes="{{ file['file_size'] or 0 }}">{{ file['file_size']|format_bytes }}</span>
                               {% if file['local_path'] %}
-                                <span data-attachment-local-path data-middle-ellipsis title="{{ file['local_path'] }}">{{ file['local_path'] }}</span>
+                                <span data-attachment-local-path title="{{ file['local_path'] }}">{{ file['local_path'] }}</span>
                               {% else %}
                                 <span data-attachment-local-path>No local path yet</span>
                               {% endif %}

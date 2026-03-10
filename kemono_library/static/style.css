@@ -2383,6 +2383,10 @@ button:disabled,
   text-transform: uppercase;
 }
 
+.attachment-file-preview-placeholder[hidden] {
+  display: none !important;
+}
+
 .attachment-file-preview-placeholder-icon {
   width: 1.15rem;
   height: 0.9rem;
@@ -2432,6 +2436,26 @@ button:disabled,
   max-width: 100%;
 }
 
+.attachment-file-name {
+  display: flex !important;
+  align-items: baseline;
+  gap: 0.03rem;
+}
+
+.attachment-file-name-base {
+  min-width: 0;
+  flex: 0 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.attachment-file-name-ext {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  color: inherit;
+}
+
 .attachment-file-meta small,
 .attachment-file-stats,
 .attachment-file-url {
@@ -2468,6 +2492,9 @@ button:disabled,
   min-width: 0;
   flex: 1 1 16rem;
   max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .attachment-file-url {

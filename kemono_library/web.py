@@ -516,6 +516,8 @@ def create_app(test_config: dict | None = None) -> Flask:
         for row in source_rows:
             local_path = _optional_str(row["local_path"])
             local_available, file_size = local_file_status.get(local_path or "", (False, None))
+            attachment_name = str(row["name"])
+            name_stem, name_ext = _split_filename_for_display(attachment_name)
             remote_url = str(row["remote_url"])
             remote_url_display = _preferred_remote_url_for_access(remote_url, row["name"])
             remote_domain = _remote_domain_for_display(remote_url_display)
@@ -541,7 +543,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                     creator_name,
                     series_name,
                     post_title,
-                    str(row["name"]),
+                    attachment_name,
                     remote_url,
                     version_label,
                     version_language or "",
@@ -559,7 +561,9 @@ def create_app(test_config: dict | None = None) -> Flask:
                     "series_name": series_name,
                     "post_title": post_title,
                     "post_published_at": row["post_published_at"],
-                    "name": str(row["name"]),
+                    "name": attachment_name,
+                    "name_stem": name_stem,
+                    "name_ext": name_ext,
                     "remote_url": remote_url,
                     "remote_url_display": remote_url_display,
                     "remote_domain": remote_domain,
@@ -2609,6 +2613,16 @@ def _remote_domain_for_display(raw_url: str) -> str:
         return "unknown source"
     parsed = urlparse(value if "://" in value else f"//{value}")
     return parsed.netloc or parsed.path or value
+
+
+def _split_filename_for_display(raw_name: Any) -> tuple[str, str]:
+    value = str(raw_name or "").strip()
+    if not value:
+        return "attachment", ""
+    dot_index = value.rfind(".")
+    if dot_index <= 0 or dot_index >= len(value) - 1:
+        return value, ""
+    return value[:dot_index], value[dot_index:]
 
 
 def _kemono_data_fallback_url(remote_url: str, attachment_name: Any) -> str | None:
