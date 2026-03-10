@@ -64,6 +64,18 @@
   --button-chip-bg-hover: color-mix(in srgb, var(--accent-soft) 34%, transparent);
   --button-chip-bg-active: color-mix(in srgb, var(--accent-soft) 58%, transparent);
   --button-focus-ring: 0 0 0 2px color-mix(in srgb, var(--accent) 24%, transparent);
+  --field-height: 2.35rem;
+  --field-padding-y: 0.5rem;
+  --field-padding-x: 0.68rem;
+  --field-radius: 0.58rem;
+  --field-radius-lg: 0.72rem;
+  --field-border: color-mix(in srgb, var(--border) 82%, transparent);
+  --field-border-focus: color-mix(in srgb, var(--accent) 68%, var(--border));
+  --field-bg: color-mix(in srgb, var(--card-solid) 95%, transparent);
+  --field-bg-focus: color-mix(in srgb, var(--card-solid) 98%, transparent);
+  --field-shadow-inset: inset 0 1px 0 color-mix(in srgb, var(--card-solid) 78%, transparent);
+  --field-focus-ring: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
+  --field-placeholder: color-mix(in srgb, var(--muted) 86%, var(--text));
 
   /* Layer scale */
   --z-local: 1;
@@ -390,27 +402,52 @@ label {
   font-weight: 600;
 }
 
-input,
+input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]),
 select,
 textarea {
   width: 100%;
-  padding: 0.52rem 0.62rem;
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  min-height: var(--field-height);
+  padding: var(--field-padding-y) var(--field-padding-x);
+  border: 1px solid var(--field-border);
+  border-radius: var(--field-radius);
   color: var(--text);
-  background: color-mix(in srgb, var(--card-solid) 94%, transparent);
+  background: var(--field-bg);
+  box-shadow: var(--field-shadow-inset);
+  transition: border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
 }
 
-input:focus,
+input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]):focus,
 select:focus,
 textarea:focus {
   outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
+  border-color: var(--field-border-focus);
+  background: var(--field-bg-focus);
+  box-shadow: var(--field-focus-ring), var(--field-shadow-inset);
 }
 
 textarea {
   resize: vertical;
+}
+
+input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"])::placeholder,
+textarea::placeholder {
+  color: var(--field-placeholder);
+}
+
+input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]):disabled,
+select:disabled,
+textarea:disabled {
+  color: var(--muted);
+  background: color-mix(in srgb, var(--card-solid) 89%, transparent);
+  border-color: color-mix(in srgb, var(--border) 90%, transparent);
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+input[type="checkbox"],
+input[type="radio"],
+input[type="range"] {
+  accent-color: var(--accent);
 }
 
 button,
@@ -1866,8 +1903,8 @@ small {
 
 .attachment-manager-filter-field input,
 .attachment-manager-filter-field select {
-  min-height: 2.8rem;
-  border-radius: 0.72rem;
+  min-height: calc(var(--field-height) + 0.45rem);
+  border-radius: var(--field-radius-lg);
   background: color-mix(in srgb, var(--card-solid) 97%, transparent);
 }
 
