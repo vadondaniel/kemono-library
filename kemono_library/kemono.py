@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -477,6 +477,9 @@ def _with_default_inline_extension(tag_name: str, absolute_url: str, name: str) 
 
 
 def _default_inline_extension(tag_name: str, absolute_url: str) -> str:
+    inferred = _infer_extension_hint_from_url(absolute_url)
+    if inferred:
+        return inferred
     if tag_name == "img":
         return ".jpg"
     if tag_name in {"video", "source"}:
@@ -484,6 +487,73 @@ def _default_inline_extension(tag_name: str, absolute_url: str) -> str:
     if tag_name == "audio":
         return ".mp3"
     return ""
+
+
+def _infer_extension_hint_from_url(absolute_url: str) -> str:
+    parsed = urlparse(absolute_url)
+    for key, value in parse_qsl(parsed.query, keep_blank_values=False):
+        key_norm = key.strip().lower()
+        value_norm = value.strip().lower()
+        if not key_norm or not value_norm:
+            continue
+
+        if key_norm in {"f", "file", "filename", "name", "download", "fn"}:
+            ext = Path(value_norm).suffix.lower()
+            if _is_known_file_extension(ext):
+                return ext
+            continue
+
+        if key_norm in {"format", "fm", "ext", "extension", "type", "mime", "content_type"}:
+            ext = _extension_from_mime_or_format(value_norm)
+            if ext:
+                return ext
+    return ""
+
+
+def _extension_from_mime_or_format(value: str) -> str:
+    if not isinstance(value, str):
+        return ""
+    normalized = value.strip().lower()
+    if not normalized:
+        return ""
+    if normalized.startswith(".") and _is_known_file_extension(normalized):
+        return normalized
+
+    mime_mapping = {
+        "image/jpeg": ".jpg",
+        "image/jpg": ".jpg",
+        "image/png": ".png",
+        "image/gif": ".gif",
+        "image/webp": ".webp",
+        "image/bmp": ".bmp",
+        "image/svg+xml": ".svg",
+        "image/avif": ".avif",
+        "video/mp4": ".mp4",
+        "video/webm": ".webm",
+        "audio/mpeg": ".mp3",
+        "audio/mp3": ".mp3",
+        "audio/ogg": ".ogg",
+        "audio/wav": ".wav",
+    }
+    if normalized in mime_mapping:
+        return mime_mapping[normalized]
+
+    format_mapping = {
+        "jpeg": ".jpg",
+        "jpg": ".jpg",
+        "png": ".png",
+        "gif": ".gif",
+        "webp": ".webp",
+        "bmp": ".bmp",
+        "svg": ".svg",
+        "avif": ".avif",
+        "mp4": ".mp4",
+        "webm": ".webm",
+        "mp3": ".mp3",
+        "ogg": ".ogg",
+        "wav": ".wav",
+    }
+    return format_mapping.get(normalized, "")
 
 
 def _looks_like_media_url(url: str) -> bool:
@@ -499,6 +569,7 @@ def _looks_like_media_url(url: str) -> bool:
         ".webp",
         ".bmp",
         ".svg",
+        ".avif",
         ".mp4",
         ".webm",
         ".m4v",
@@ -677,6 +748,7 @@ def _is_known_file_extension(suffix: str) -> bool:
         ".webp",
         ".bmp",
         ".svg",
+        ".avif",
         ".mp4",
         ".webm",
         ".m4v",

@@ -2363,9 +2363,22 @@ def _retry_attachment_row(
         return {"success": False, "error": "downloaded file is empty", "local_path": None, "file_size": None}
 
     local_rel = destination.relative_to(files_base).as_posix()
+    resolved_name, local_rel = _normalize_downloaded_attachment_image_extension(
+        files_base=files_base,
+        local_path=local_rel,
+        attachment_name=attachment_name,
+        remote_url=remote_url,
+    )
     db.update_attachment_local_path(attachment_id, local_rel)
+    current_name = sanitize_filename(str(attachment_name).strip()) or str(attachment_name).strip()
+    if resolved_name and resolved_name != current_name:
+        db.sync_attachment_name_by_remote_for_post(
+            post_id,
+            remote_url=remote_url,
+            new_name=resolved_name,
+        )
     try:
-        file_size = destination.stat().st_size
+        file_size = (files_base / local_rel).stat().st_size
     except OSError:
         file_size = None
     return {"success": True, "error": None, "local_path": local_rel, "file_size": file_size}
@@ -2415,6 +2428,7 @@ def _retry_missing_attachment_rows(
         with lock:
             if _is_valid_file(destination):
                 local_rel = destination.relative_to(files_base).as_posix()
+                normalized_name = sanitize_filename(str(attachment_name).strip()) or str(attachment_name).strip()
                 try:
                     file_size = destination.stat().st_size
                 except OSError:
@@ -2425,6 +2439,7 @@ def _retry_missing_attachment_rows(
                     "local_path": local_rel,
                     "file_size": file_size,
                     "display_name": display_name,
+                    "normalized_name": normalized_name,
                 }
 
             try:
@@ -2440,6 +2455,7 @@ def _retry_missing_attachment_rows(
                         "local_path": None,
                         "file_size": None,
                         "display_name": display_name,
+                        "normalized_name": None,
                     }
             except Exception as exc:  # noqa: BLE001
                 return index, row, {
@@ -2448,6 +2464,7 @@ def _retry_missing_attachment_rows(
                     "local_path": None,
                     "file_size": None,
                     "display_name": display_name,
+                    "normalized_name": None,
                 }
 
             if not _is_valid_file(destination):
@@ -2457,11 +2474,18 @@ def _retry_missing_attachment_rows(
                     "local_path": None,
                     "file_size": None,
                     "display_name": display_name,
+                    "normalized_name": None,
                 }
 
             local_rel = destination.relative_to(files_base).as_posix()
+            normalized_name, local_rel = _normalize_downloaded_attachment_image_extension(
+                files_base=files_base,
+                local_path=local_rel,
+                attachment_name=attachment_name,
+                remote_url=_optional_str(row.get("remote_url")),
+            )
             try:
-                file_size = destination.stat().st_size
+                file_size = (files_base / local_rel).stat().st_size
             except OSError:
                 file_size = None
             return index, row, {
@@ -2470,6 +2494,7 @@ def _retry_missing_attachment_rows(
                 "local_path": local_rel,
                 "file_size": file_size,
                 "display_name": display_name,
+                "normalized_name": normalized_name,
             }
 
     worker_count = max(1, min(max_concurrency, total))
@@ -2497,11 +2522,21 @@ def _retry_missing_attachment_rows(
                     "local_path": None,
                     "file_size": None,
                     "display_name": display_name,
+                    "normalized_name": None,
                 }
 
             if bool(result["success"]) and result["local_path"]:
                 try:
                     db.update_attachment_local_path(int(row["id"]), str(result["local_path"]))
+                    normalized_name = _optional_str(result.get("normalized_name"))
+                    remote_url = _optional_str(row.get("remote_url"))
+                    current_name = sanitize_filename(str(row.get("name") or "")).strip()
+                    if normalized_name and remote_url and normalized_name != current_name:
+                        db.sync_attachment_name_by_remote_for_post(
+                            int(row["post_id"]),
+                            remote_url=remote_url,
+                            new_name=normalized_name,
+                        )
                 except Exception as exc:  # noqa: BLE001
                     result = {
                         "success": False,
@@ -2509,6 +2544,7 @@ def _retry_missing_attachment_rows(
                         "local_path": None,
                         "file_size": None,
                         "display_name": display_name,
+                        "normalized_name": None,
                     }
 
             if bool(result["success"]):
@@ -3726,6 +3762,60 @@ def _detect_image_mime(path: Path) -> str | None:
     return None
 
 
+def _image_extension_from_detected_mime(mime: str | None) -> str | None:
+    if not isinstance(mime, str):
+        return None
+    mapping = {
+        "image/jpeg": ".jpg",
+        "image/png": ".png",
+        "image/gif": ".gif",
+        "image/webp": ".webp",
+        "image/bmp": ".bmp",
+        "image/svg+xml": ".svg",
+    }
+    return mapping.get(mime.strip().lower())
+
+
+def _normalize_downloaded_attachment_image_extension(
+    *,
+    files_base: Path,
+    local_path: str,
+    attachment_name: Any,
+    remote_url: str | None,
+) -> tuple[str, str]:
+    current_name = sanitize_filename(str(attachment_name).strip()) or Path(local_path).name or "attachment"
+    local_file = files_base / local_path
+    if not _is_valid_file(local_file):
+        return current_name, local_path
+
+    detected_mime = _detect_image_mime(local_file)
+    detected_ext = _image_extension_from_detected_mime(detected_mime)
+    if not detected_ext:
+        return current_name, local_path
+
+    remote_ext = _extract_extension(remote_url)
+    current_ext = Path(current_name).suffix.lower()
+    if current_ext == detected_ext:
+        return current_name, local_path
+    if remote_ext:
+        return current_name, local_path
+    if current_ext and current_ext not in _IMAGE_EXTENSIONS:
+        return current_name, local_path
+
+    name_stem = Path(current_name).stem if current_ext else current_name
+    desired_name = f"{name_stem or 'attachment'}{detected_ext}"
+    next_local_path = _rename_local_attachment_file(
+        files_base=files_base,
+        local_path=local_path,
+        desired_name=desired_name,
+        fallback_name=current_name,
+    )
+    if next_local_path != local_path:
+        final_name = sanitize_filename(Path(next_local_path).name) or desired_name
+        return final_name, next_local_path
+    return current_name, local_path
+
+
 def _attachment_collapse_key(name: Any) -> str:
     if not isinstance(name, str):
         return ""
@@ -4160,9 +4250,24 @@ def _import_post_into_library(
                     local_path = destination.relative_to(files_base).as_posix()
                 else:
                     local_path = None
+                saved_name = str(candidate.name)
+                if local_path and destination is not None:
+                    saved_name, normalized_local_path = _normalize_downloaded_attachment_image_extension(
+                        files_base=files_base,
+                        local_path=local_path,
+                        attachment_name=saved_name,
+                        remote_url=candidate.remote_url,
+                    )
+                    if normalized_local_path != local_path:
+                        old_abs = files_base / local_path
+                        new_abs = files_base / normalized_local_path
+                        if old_abs in created_files:
+                            created_files.remove(old_abs)
+                            created_files.add(new_abs)
+                        local_path = normalized_local_path
                 saved.append(
                     {
-                        "name": candidate.name,
+                        "name": saved_name,
                         "remote_url": candidate.remote_url,
                         "local_path": local_path,
                         "kind": candidate.kind,

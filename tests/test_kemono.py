@@ -286,3 +286,13 @@ def test_extract_attachments_includes_inline_img_without_extension():
     assert len(matches) == 1
     assert matches[0].kind == "inline_only"
     assert matches[0].name.endswith(".jpg")
+
+
+def test_extract_attachments_uses_inline_query_format_hint_for_extension():
+    inline_url = "https://cdn.example/media/asset?format=gif"
+    payload = {"post": {"content": f'<p><img src="{inline_url}" alt=""></p>'}}
+    items = extract_attachments(payload)
+    matches = [item for item in items if item.remote_url == inline_url]
+    assert len(matches) == 1
+    assert matches[0].kind == "inline_only"
+    assert matches[0].name.endswith(".gif")

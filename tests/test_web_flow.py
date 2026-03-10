@@ -129,6 +129,166 @@ def test_import_and_resolve_flow(tmp_path, monkeypatch):
     assert unresolved.headers["Location"].endswith("/posts/1")
 
 
+def test_import_corrects_extensionless_image_name_from_downloaded_bytes(tmp_path, monkeypatch):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+
+    payload = {
+        "post": {
+            "title": "Extensionless Asset",
+            "content": "",
+            "user": "70479526",
+            "attachments": [{"name": "loop_image", "path": "/data/x/loop_image"}],
+        },
+        "attachments": [],
+    }
+
+    def fake_fetch(ref, fallback_user_id=None):  # noqa: ARG001
+        return payload
+
+    def fake_download(remote_url, destination):  # noqa: ARG001
+        Path(destination).parent.mkdir(parents=True, exist_ok=True)
+        Path(destination).write_bytes(b"GIF89a" + b"\x00" * 24)
+
+    def fake_icon_download(service, user_id, icons_root):  # noqa: ARG001
+        return (f"https://img.kemono.cr/icons/{service}/{user_id}", None)
+
+    monkeypatch.setattr("kemono_library.web.fetch_post_json", fake_fetch)
+    monkeypatch.setattr("kemono_library.web.download_attachment", fake_download)
+    monkeypatch.setattr("kemono_library.web.download_creator_icon", fake_icon_download)
+
+    client = app.test_client()
+    creator_response = client.post("/creators", data={"name": "Creator A"}, follow_redirects=False)
+    assert creator_response.status_code == 302
+
+    commit = client.post(
+        "/import/commit",
+        data={
+            "creator_id": "1",
+            "series_id": "",
+            "service": "fanbox",
+            "user_id": "70479526",
+            "post_id": "100",
+            "selected_attachment": "0",
+        },
+        follow_redirects=False,
+    )
+    assert commit.status_code == 302
+    attachments = app.db.list_attachments(1)  # type: ignore[attr-defined]
+    assert len(attachments) == 1
+    assert attachments[0]["name"] == "loop_image.gif"
+    assert attachments[0]["local_path"] == "post_1/loop_image.gif"
+    saved_file = Path(app.config["FILES_DIR"]) / "post_1" / "loop_image.gif"
+    assert saved_file.is_file()
+
+
+def test_import_reuses_existing_extensionless_image_and_still_corrects_extension(tmp_path, monkeypatch):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Creator Existing")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="70479526",
+        external_post_id="100",
+        title="Existing Post",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/70479526/post/100",
+    )
+    db.replace_attachments(
+        post_id,
+        [
+            {
+                "name": "loop_image.jpg",
+                "remote_url": "https://kemono.cr/data/x/loop_image",
+                "local_path": f"post_{post_id}/loop_image.jpg",
+                "kind": "attachment",
+            }
+        ],
+    )
+    existing_file = Path(app.config["FILES_DIR"]) / f"post_{post_id}" / "loop_image.jpg"
+    existing_file.parent.mkdir(parents=True, exist_ok=True)
+    existing_file.write_bytes(b"GIF89a" + b"\x00" * 24)
+
+    payload = {
+        "post": {
+            "title": "Extensionless Asset",
+            "content": "",
+            "user": "70479526",
+            "attachments": [{"name": "loop_image", "path": "/data/x/loop_image"}],
+        },
+        "attachments": [],
+    }
+    download_calls = {"count": 0}
+
+    def fake_fetch(ref, fallback_user_id=None):  # noqa: ARG001
+        return payload
+
+    def fake_download(remote_url, destination):  # noqa: ARG001
+        download_calls["count"] += 1
+        Path(destination).parent.mkdir(parents=True, exist_ok=True)
+        Path(destination).write_bytes(b"GIF89a" + b"\x00" * 24)
+
+    def fake_icon_download(service, user_id, icons_root):  # noqa: ARG001
+        return (f"https://img.kemono.cr/icons/{service}/{user_id}", None)
+
+    monkeypatch.setattr("kemono_library.web.fetch_post_json", fake_fetch)
+    monkeypatch.setattr("kemono_library.web.download_attachment", fake_download)
+    monkeypatch.setattr("kemono_library.web.download_creator_icon", fake_icon_download)
+
+    _, version_id = _import_post_into_library(
+        db,
+        files_base=Path(app.config["FILES_DIR"]),
+        icons_base=Path(app.config["ICONS_DIR"]),
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        user_id="70479526",
+        post_id="100",
+        import_target_mode="existing",
+        target_post_id=post_id,
+        overwrite_matching_version=True,
+        set_as_default=True,
+        version_label=None,
+        version_language=None,
+        requested_title=None,
+        requested_content=None,
+        requested_published_at=None,
+        requested_edited_at=None,
+        requested_next_external_post_id=None,
+        requested_prev_external_post_id=None,
+        tags_text=None,
+        field_presence={},
+        selected_attachment_indices={"0"},
+    )
+    assert version_id > 0
+    assert download_calls["count"] == 0
+
+    attachments = db.list_attachments(post_id)
+    assert len(attachments) == 1
+    assert attachments[0]["name"] == "loop_image.gif"
+    assert attachments[0]["local_path"] == f"post_{post_id}/loop_image.gif"
+    assert not existing_file.exists()
+    assert (Path(app.config["FILES_DIR"]) / f"post_{post_id}" / "loop_image.gif").is_file()
+
+
 def test_import_form_renders_tabbed_quick_import_ui(tmp_path):
     app = create_app(
         {
