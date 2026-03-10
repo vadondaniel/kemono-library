@@ -264,10 +264,32 @@
               {% endif %}
             {% endif %}
           </div>
-          <button type="submit" class="button-link button-ghost">Search</button>
+          <button
+            type="submit"
+            class="button-link button-ghost creator-toolbar-icon-button"
+            aria-label="Search posts"
+            title="Search posts"
+          >
+            <svg class="creator-toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <circle cx="11" cy="11" r="6.25"></circle>
+              <path d="M16 16L20 20"></path>
+            </svg>
+            <span class="sr-only">Search posts</span>
+          </button>
         </form>
         <details class="creator-sort-popover post-content-settings-popover">
-          <summary class="button-link button-ghost creator-sort-toggle">Filter / Sort</summary>
+          <summary
+            class="button-link button-ghost creator-sort-toggle creator-toolbar-icon-button"
+            aria-label="Filter and sort options"
+            title="Filter and sort options"
+          >
+            <svg class="creator-toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M4 6H20"></path>
+              <path d="M7 12H17"></path>
+              <path d="M10 18H14"></path>
+            </svg>
+            <span class="sr-only">Filter / Sort</span>
+          </summary>
           <div class="creator-sort-popover-panel post-content-settings-popover-panel">
             <div class="creator-sort-bar">
               {% if not selected_series %}

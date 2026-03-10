@@ -2377,6 +2377,24 @@ small {
   white-space: nowrap;
 }
 
+.creator-toolbar-icon-button {
+  width: 2.9rem;
+  min-width: 2.9rem;
+  height: 2.55rem;
+  padding: 0;
+  justify-content: center;
+}
+
+.creator-toolbar-icon {
+  width: 1.2rem;
+  height: 1.2rem;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .creator-post-search-clear {
   position: absolute;
   top: 50%;
