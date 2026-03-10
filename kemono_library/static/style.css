@@ -2130,7 +2130,7 @@ small {
   background: color-mix(in srgb, var(--card-solid) 96%, transparent);
   box-shadow: var(--shadow);
   padding: 0.72rem;
-  z-index: 14;
+  z-index: 40;
 }
 
 .folder-explorer-grid {
@@ -2303,7 +2303,7 @@ small {
   background: color-mix(in srgb, var(--card-solid) 96%, transparent);
   box-shadow: var(--shadow);
   padding: 0.72rem;
-  z-index: 14;
+  z-index: 40;
 }
 
 .series-edit-form {
