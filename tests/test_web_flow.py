@@ -2435,6 +2435,63 @@ def test_attachment_manager_lists_grouped_inventory_with_sizes(tmp_path):
     assert b"/static/attachment_manager.js" in response.data
 
 
+def test_attachment_manager_suppresses_inline_alias_missing_when_local_exists(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Inline Alias Inventory Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="alias-user",
+        external_post_id="2001",
+        title="Inline Alias Inventory Post",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/alias-user/post/2001",
+    )
+    db.replace_attachments(
+        post_id,
+        [
+            {
+                "name": "1.jpg",
+                "remote_url": "https://kemono.cr/data/hash/1.jpg",
+                "local_path": f"post_{post_id}/1.jpg",
+                "kind": "attachment",
+            },
+            {
+                "name": "1.jpeg",
+                "remote_url": "https://downloads.fanbox.cc/images/post/2001/inline-random.jpeg",
+                "local_path": None,
+                "kind": "inline_only",
+            },
+        ],
+    )
+    local_file = Path(app.config["FILES_DIR"]) / f"post_{post_id}" / "1.jpg"
+    local_file.parent.mkdir(parents=True, exist_ok=True)
+    local_file.write_bytes(b"img")
+
+    response = app.test_client().get("/attachments")
+    assert response.status_code == 200
+    soup = BeautifulSoup(response.data, "html.parser")
+    cards = soup.select("[data-attachment-card]")
+    assert len(cards) == 1
+    page_text = soup.get_text(" ", strip=True)
+    assert "1.jpg" in page_text
+    assert "1.jpeg" not in page_text
+    assert "0 missing" in page_text
+    assert "Retry All Missing" not in page_text
+    assert "Retry Missing" not in page_text
+
+
 def test_attachment_manager_deferred_tree_loads_skeleton_and_fragment(tmp_path):
     app = create_app(
         {
@@ -2513,6 +2570,71 @@ def test_attachment_manager_deferred_tree_loads_skeleton_and_fragment(tmp_path):
     tree_soup = BeautifulSoup(tree_html, "html.parser")
     hydrated_names = [node.get_text(strip=True) for node in tree_soup.select(".attachment-tree-creator > .attachment-tree-summary strong")]
     assert hydrated_names == ["Z Creator First", "A Creator Second"]
+
+
+def test_attachment_manager_deferred_summary_suppresses_inline_alias_missing(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+            "ATTACHMENT_MANAGER_DEFER_TREE": True,
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Deferred Alias Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="defer-alias-user",
+        external_post_id="9012",
+        title="Deferred Alias Post",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/defer-alias-user/post/9012",
+    )
+    db.replace_attachments(
+        post_id,
+        [
+            {
+                "name": "1.jpg",
+                "remote_url": "https://kemono.cr/data/hash/1.jpg",
+                "local_path": f"post_{post_id}/1.jpg",
+                "kind": "attachment",
+            },
+            {
+                "name": "1.jpeg",
+                "remote_url": "https://downloads.fanbox.cc/images/post/9012/inline-random.jpeg",
+                "local_path": None,
+                "kind": "inline_only",
+            },
+        ],
+    )
+    local_file = Path(app.config["FILES_DIR"]) / f"post_{post_id}" / "1.jpg"
+    local_file.parent.mkdir(parents=True, exist_ok=True)
+    local_file.write_bytes(b"img")
+
+    client = app.test_client()
+    page = client.get("/attachments")
+    assert page.status_code == 200
+    soup = BeautifulSoup(page.data, "html.parser")
+    page_text = soup.get_text(" ", strip=True)
+    assert "1 missing" not in page_text
+    assert "0 missing" in page_text
+    assert "Retry All Missing" not in page_text
+    skeleton = soup.select_one("[data-attachment-skeleton] .attachment-tree-summary small")
+    assert skeleton is not None
+    assert "1 files, 0 missing" in skeleton.get_text(" ", strip=True)
+
+    tree = client.get("/attachments/tree")
+    assert tree.status_code == 200
+    tree_soup = BeautifulSoup(tree.data, "html.parser")
+    cards = tree_soup.select("[data-attachment-card]")
+    assert len(cards) == 1
+    assert "1.jpeg" not in tree.get_data(as_text=True)
 
 
 def test_attachment_manager_only_auto_opens_when_one_creator(tmp_path):
@@ -3040,6 +3162,70 @@ def test_attachment_manager_batch_retry_uses_scope_and_recovers_missing_files(tm
     second_saved = Path(app.config["FILES_DIR"]) / f"post_{second_post_id}" / "second.jpg"
     assert first_saved.exists()
     assert not second_saved.exists()
+
+
+def test_attachment_retry_scope_skips_inline_alias_missing_when_local_exists(tmp_path, monkeypatch):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Retry Alias Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="retry-alias-user",
+        external_post_id="1006",
+        title="Retry Alias Post",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/retry-alias-user/post/1006",
+    )
+    db.replace_attachments(
+        post_id,
+        [
+            {
+                "name": "1.jpg",
+                "remote_url": "https://kemono.cr/data/hash/1.jpg",
+                "local_path": f"post_{post_id}/1.jpg",
+                "kind": "attachment",
+            },
+            {
+                "name": "1.jpeg",
+                "remote_url": "https://downloads.fanbox.cc/images/post/1006/inline-random.jpeg",
+                "local_path": None,
+                "kind": "inline_only",
+            },
+        ],
+    )
+    local_file = Path(app.config["FILES_DIR"]) / f"post_{post_id}" / "1.jpg"
+    local_file.parent.mkdir(parents=True, exist_ok=True)
+    local_file.write_bytes(b"img")
+    attempted_urls: list[str] = []
+
+    def fake_download(remote_url, destination):  # noqa: ARG001
+        attempted_urls.append(remote_url)
+
+    monkeypatch.setattr("kemono_library.web.download_attachment", fake_download)
+
+    response = app.test_client().post(
+        "/attachments/retry-missing",
+        data={
+            "scope": "post",
+            "scope_id": str(post_id),
+            "return_to": "/attachments",
+        },
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert attempted_urls == []
+    assert b"No missing attachments matched this retry scope." in response.data
 
 
 def test_attachment_retry_job_reports_live_progress_until_complete(tmp_path, monkeypatch):

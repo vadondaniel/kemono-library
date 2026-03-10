@@ -200,6 +200,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                 "remote_url": str(row["remote_url"]),
                 "local_path": local_path,
                 "local_available": local_available,
+                "kind": str(row["kind"]),
                 "creator_name": _optional_str(row["creator_name"]),
                 "post_title": _optional_str(row["post_title"]),
                 "version_label": _optional_str(row["version_label"]),
@@ -208,6 +209,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             inventory_rows.append(
                 inventory_row
             )
+        inventory_rows = _suppress_resolved_inline_alias_rows(inventory_rows)
         scoped_rows = _filter_retry_scope_rows(inventory_rows, scope=scope, scope_id_raw=scope_id_raw)
         return [row for row in scoped_rows if not row["local_available"]]
 
@@ -629,6 +631,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                 }
             )
 
+        inventory_rows = _suppress_resolved_inline_alias_rows(inventory_rows)
         filtered_rows = _filter_attachment_inventory_rows(
             inventory_rows,
             search_text=search_text,
@@ -639,6 +642,63 @@ def create_app(test_config: dict | None = None) -> Flask:
         tree = _build_attachment_inventory_tree(sorted_rows, sort_key=sort_key)
         summary = _summarize_attachment_inventory(sorted_rows)
         return tree, summary
+
+    def _build_attachment_inventory_deferred_view_data() -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        files_base = Path(app.config["FILES_DIR"])
+        source_rows = db.list_attachment_inventory()
+        local_file_status = _collect_local_file_status_by_path(files_base, source_rows)
+        inventory_rows: list[dict[str, Any]] = []
+        for row in source_rows:
+            local_path = _optional_str(row["local_path"])
+            local_available, _ = local_file_status.get(local_path or "", (False, None))
+            creator_id = int(row["creator_id"])
+            creator_name = str(row["creator_name"]).strip() if row["creator_name"] else f"Creator {creator_id}"
+            inventory_rows.append(
+                {
+                    "id": int(row["id"]),
+                    "post_id": int(row["post_id"]),
+                    "creator_id": creator_id,
+                    "series_id": int(row["series_id"]) if row["series_id"] is not None else None,
+                    "name": str(row["name"]),
+                    "kind": str(row["kind"]),
+                    "local_available": local_available,
+                    "creator_name": creator_name,
+                }
+            )
+
+        inventory_rows = _suppress_resolved_inline_alias_rows(inventory_rows)
+        creator_ids = {int(row["creator_id"]) for row in inventory_rows}
+        series_keys = {
+            (int(row["creator_id"]), int(row["series_id"]) if row["series_id"] is not None else None)
+            for row in inventory_rows
+        }
+        post_ids = {int(row["post_id"]) for row in inventory_rows}
+        summary = {
+            "file_count": len(inventory_rows),
+            "total_size": 0,
+            "missing_count": sum(1 for row in inventory_rows if not row["local_available"]),
+            "image_count": 0,
+            "creator_count": len(creator_ids),
+            "series_count": len(series_keys),
+            "post_count": len(post_ids),
+        }
+        creator_summaries_by_id: dict[int, dict[str, Any]] = {}
+        creator_summaries: list[dict[str, Any]] = []
+        for row in inventory_rows:
+            creator_id = int(row["creator_id"])
+            creator_node = creator_summaries_by_id.get(creator_id)
+            if creator_node is None:
+                creator_node = {
+                    "id": creator_id,
+                    "name": str(row["creator_name"]),
+                    "file_count": 0,
+                    "missing_count": 0,
+                }
+                creator_summaries_by_id[creator_id] = creator_node
+                creator_summaries.append(creator_node)
+            creator_node["file_count"] += 1
+            creator_node["missing_count"] += 0 if row["local_available"] else 1
+        return summary, creator_summaries
 
     @app.get("/")
     def index():
@@ -669,17 +729,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             sort_key=sort_key,
         )
         if defer_tree:
-            overview_row = db.get_attachment_inventory_overview()
-            summary = {
-                "file_count": int(overview_row["file_count"] or 0),
-                "total_size": 0,
-                "missing_count": int(overview_row["missing_count"] or 0),
-                "image_count": 0,
-                "creator_count": int(overview_row["creator_count"] or 0),
-                "series_count": 0,
-                "post_count": 0,
-            }
-            creator_summaries = [dict(row) for row in db.list_attachment_creator_summaries()]
+            summary, creator_summaries = _build_attachment_inventory_deferred_view_data()
             tree: list[dict[str, Any]] = []
         else:
             tree, summary = _build_attachment_inventory_view_data(
@@ -3300,24 +3350,30 @@ def _dedupe_post_detail_attachments(rows: list[dict[str, Any]]) -> list[dict[str
         winner = by_key.get(key)
         if winner is not None:
             deduped.append(winner)
-    local_name_keys = {
-        _attachment_collapse_key(row.get("name"))
-        for row in deduped
-        if bool(row.get("local_available"))
-    }
-    local_stem_key_counts: dict[str, int] = {}
-    for row in deduped:
+    return _suppress_resolved_inline_alias_rows(deduped)
+
+
+def _suppress_resolved_inline_alias_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not rows:
+        return []
+
+    local_name_keys_by_post: dict[int, set[str]] = {}
+    local_stem_counts_by_post: dict[int, dict[str, int]] = {}
+
+    for row in rows:
         if not bool(row.get("local_available")):
             continue
+        post_id = int(row.get("post_id") or 0)
+        name_key = _attachment_collapse_key(row.get("name"))
+        if name_key:
+            local_name_keys_by_post.setdefault(post_id, set()).add(name_key)
         stem_key = _attachment_stem_key(row.get("name"))
         if stem_key:
-            local_stem_key_counts[stem_key] = local_stem_key_counts.get(stem_key, 0) + 1
-    local_name_keys.discard("")
-    if not local_name_keys and not local_stem_key_counts:
-        return deduped
+            stem_counts = local_stem_counts_by_post.setdefault(post_id, {})
+            stem_counts[stem_key] = stem_counts.get(stem_key, 0) + 1
 
     filtered: list[dict[str, Any]] = []
-    for row in deduped:
+    for row in rows:
         if bool(row.get("local_available")):
             filtered.append(row)
             continue
@@ -3325,11 +3381,14 @@ def _dedupe_post_detail_attachments(rows: list[dict[str, Any]]) -> list[dict[str
         if kind not in {"inline_only", "inline_media"}:
             filtered.append(row)
             continue
+        post_id = int(row.get("post_id") or 0)
+        local_name_keys = local_name_keys_by_post.get(post_id, set())
+        local_stem_counts = local_stem_counts_by_post.get(post_id, {})
         name_key = _attachment_collapse_key(row.get("name"))
         if name_key and name_key in local_name_keys:
             continue
         stem_key = _attachment_stem_key(row.get("name"))
-        if stem_key and local_stem_key_counts.get(stem_key, 0) == 1:
+        if stem_key and local_stem_counts.get(stem_key, 0) == 1:
             continue
         filtered.append(row)
     return filtered
