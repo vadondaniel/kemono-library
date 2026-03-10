@@ -215,7 +215,8 @@ body {
 }
 
 a:not([class]),
-a.text-link {
+a.text-link,
+a.post-file-link {
   color: var(--link-color);
   text-decoration-color: color-mix(in srgb, currentColor 58%, transparent);
   text-decoration-thickness: 0.085em;
@@ -224,18 +225,21 @@ a.text-link {
 }
 
 a:not([class]):visited,
-a.text-link:visited {
+a.text-link:visited,
+a.post-file-link:visited {
   color: var(--link-color-visited);
 }
 
 a:not([class]):hover,
-a.text-link:hover {
+a.text-link:hover,
+a.post-file-link:hover {
   color: var(--link-color-hover);
   text-decoration-color: currentColor;
 }
 
 a:not([class]):focus-visible,
-a.text-link:focus-visible {
+a.text-link:focus-visible,
+a.post-file-link:focus-visible {
   outline: none;
   border-radius: var(--radius-xs);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 26%, transparent);
