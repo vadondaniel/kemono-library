@@ -3421,6 +3421,10 @@ def test_creator_folder_filter_and_sort_modes(tmp_path):
     root = client.get(f"/creators/{creator_id}")
     assert root.status_code == 200
     soup = BeautifulSoup(root.data, "html.parser")
+    assert soup.select_one(".post-toolbar .creator-toolbar-main details.creator-sort-popover") is not None
+    sort_toggle = soup.select_one(".post-toolbar .creator-sort-toggle")
+    assert sort_toggle is not None
+    assert "Filter / Sort" in sort_toggle.get_text(" ", strip=True)
     folder_names = [node.get_text(strip=True) for node in soup.select(".folder-explorer-grid .folder-tile-name")]
     assert "Unsorted" not in folder_names
     filter_links = [anchor.get("href") or "" for anchor in soup.select(".creator-sort-bar a")]

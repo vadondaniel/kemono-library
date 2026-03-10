@@ -211,85 +211,98 @@
 
   <article class="panel creator-posts-panel">
     <div class="post-toolbar">
-      <form
-        method="get"
-        action="{{ url_for('creator_detail', creator_id=creator['id']) }}"
-        class="creator-post-search"
-        role="search"
-        autocomplete="off"
-      >
-        {% if selected_series %}
-          <input type="hidden" name="series_id" value="{{ selected_series['id'] }}">
-        {% elif active_folder == 'unsorted' %}
-          <input type="hidden" name="folder" value="unsorted">
-        {% endif %}
-        <input type="hidden" name="sort" value="{{ sort_by }}">
-        <input type="hidden" name="direction" value="{{ sort_direction }}">
-        <div class="creator-post-search-field">
-          <input
-            type="search"
-            name="q"
-            value="{{ post_search_text }}"
-            placeholder="Search posts"
-            aria-label="Search posts"
-            list="creator-post-search-suggestions"
-            autocomplete="off"
-            autocorrect="off"
-            autocapitalize="none"
-            spellcheck="false"
-          >
-          {% if post_search_text %}
-            {% if selected_series %}
-              <a
-                class="creator-post-search-clear"
-                href="{{ url_for('creator_detail', creator_id=creator['id'], series_id=selected_series['id'], sort=sort_by, direction=sort_direction) }}"
-                aria-label="Clear search"
-                title="Clear search"
-              >&times;</a>
-            {% elif active_folder == 'unsorted' %}
-              <a
-                class="creator-post-search-clear"
-                href="{{ url_for('creator_detail', creator_id=creator['id'], folder='unsorted', sort=sort_by, direction=sort_direction) }}"
-                aria-label="Clear search"
-                title="Clear search"
-              >&times;</a>
-            {% else %}
-              <a
-                class="creator-post-search-clear"
-                href="{{ url_for('creator_detail', creator_id=creator['id'], sort=sort_by, direction=sort_direction) }}"
-                aria-label="Clear search"
-                title="Clear search"
-              >&times;</a>
-            {% endif %}
+      <div class="creator-toolbar-main">
+        <form
+          method="get"
+          action="{{ url_for('creator_detail', creator_id=creator['id']) }}"
+          class="creator-post-search"
+          role="search"
+          autocomplete="off"
+        >
+          {% if selected_series %}
+            <input type="hidden" name="series_id" value="{{ selected_series['id'] }}">
+          {% elif active_folder == 'unsorted' %}
+            <input type="hidden" name="folder" value="unsorted">
           {% endif %}
-        </div>
-        <button type="submit" class="button-link button-ghost">Search</button>
-      </form>
+          <input type="hidden" name="sort" value="{{ sort_by }}">
+          <input type="hidden" name="direction" value="{{ sort_direction }}">
+          <div class="creator-post-search-field">
+            <input
+              type="search"
+              name="q"
+              value="{{ post_search_text }}"
+              placeholder="Search posts"
+              aria-label="Search posts"
+              list="creator-post-search-suggestions"
+              autocomplete="off"
+              autocorrect="off"
+              autocapitalize="none"
+              spellcheck="false"
+            >
+            {% if post_search_text %}
+              {% if selected_series %}
+                <a
+                  class="creator-post-search-clear"
+                  href="{{ url_for('creator_detail', creator_id=creator['id'], series_id=selected_series['id'], sort=sort_by, direction=sort_direction) }}"
+                  aria-label="Clear search"
+                  title="Clear search"
+                >&times;</a>
+              {% elif active_folder == 'unsorted' %}
+                <a
+                  class="creator-post-search-clear"
+                  href="{{ url_for('creator_detail', creator_id=creator['id'], folder='unsorted', sort=sort_by, direction=sort_direction) }}"
+                  aria-label="Clear search"
+                  title="Clear search"
+                >&times;</a>
+              {% else %}
+                <a
+                  class="creator-post-search-clear"
+                  href="{{ url_for('creator_detail', creator_id=creator['id'], sort=sort_by, direction=sort_direction) }}"
+                  aria-label="Clear search"
+                  title="Clear search"
+                >&times;</a>
+              {% endif %}
+            {% endif %}
+          </div>
+          <button type="submit" class="button-link button-ghost">Search</button>
+        </form>
+        <details class="creator-sort-popover post-content-settings-popover">
+          <summary class="button-link button-ghost creator-sort-toggle">Filter / Sort</summary>
+          <div class="creator-sort-popover-panel post-content-settings-popover-panel">
+            <div class="creator-sort-bar">
+              {% if not selected_series %}
+                <div class="creator-sort-group post-view-mode-switch post-settings-switch">
+                  <span class="post-view-mode-label">Filter</span>
+                  <div class="post-view-mode-chip-row">
+                    <a class="post-view-mode-chip {% if active_folder == 'all' %}is-active{% endif %}" href="{{ filter_all_url }}">All posts</a>
+                    <a class="post-view-mode-chip {% if active_folder == 'unsorted' %}is-active{% endif %}" href="{{ filter_unsorted_url }}">Unsorted</a>
+                  </div>
+                </div>
+              {% endif %}
+              <div class="creator-sort-group post-view-mode-switch post-settings-switch">
+                <span class="post-view-mode-label">Sort</span>
+                <div class="post-view-mode-chip-row">
+                  <a class="post-view-mode-chip {% if sort_by == 'published' %}is-active{% endif %}" href="{{ sort_published_url }}">Publish date</a>
+                  <a class="post-view-mode-chip {% if sort_by == 'title' %}is-active{% endif %}" href="{{ sort_title_url }}">Alphabetical</a>
+                </div>
+              </div>
+              <div class="creator-sort-group post-view-mode-switch post-settings-switch">
+                <span class="post-view-mode-label">Order</span>
+                <div class="post-view-mode-chip-row">
+                  <a class="post-view-mode-chip {% if sort_direction == 'desc' %}is-active{% endif %}" href="{{ direction_desc_url }}">Descending</a>
+                  <a class="post-view-mode-chip {% if sort_direction == 'asc' %}is-active{% endif %}" href="{{ direction_asc_url }}">Ascending</a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </details>
+      </div>
       <datalist id="creator-post-search-suggestions">
         {% for suggestion in post_search_suggestions %}
           <option value="{{ suggestion }}">
         {% endfor %}
       </datalist>
       <small>{{ posts|length }} posts{% if post_search_text %} matching "{{ post_search_text }}"{% endif %}</small>
-      <div class="creator-sort-bar">
-        {% if not selected_series %}
-          <div class="creator-sort-group">
-            <span>Filter</span>
-            <a class="sort-chip {% if active_folder == 'all' %}is-active{% endif %}" href="{{ filter_all_url }}">All posts</a>
-            <a class="sort-chip {% if active_folder == 'unsorted' %}is-active{% endif %}" href="{{ filter_unsorted_url }}">Unsorted</a>
-          </div>
-        {% endif %}
-        <div class="creator-sort-group">
-          <span>Sort</span>
-          <a class="sort-chip {% if sort_by == 'published' %}is-active{% endif %}" href="{{ sort_published_url }}">Publish date</a>
-          <a class="sort-chip {% if sort_by == 'title' %}is-active{% endif %}" href="{{ sort_title_url }}">Alphabetical</a>
-        </div>
-        <div class="creator-sort-group">
-          <span>Order</span>
-          <a class="sort-chip {% if sort_direction == 'desc' %}is-active{% endif %}" href="{{ direction_desc_url }}">Descending</a>
-          <a class="sort-chip {% if sort_direction == 'asc' %}is-active{% endif %}" href="{{ direction_asc_url }}">Ascending</a>
-        </div>
-      </div>
     </div>
 
     {% if posts %}
