@@ -861,6 +861,22 @@ def test_import_preview_rejects_source_owned_by_other_creator(tmp_path, monkeypa
     assert b"Creator A" in response.data
 
 
+def test_import_preview_client_redirects_with_history_replace(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    response = app.test_client().get("/static/import_preview.js")
+    assert response.status_code == 200
+    assert b"window.location.replace(payload.redirect_url);" in response.data
+    assert b"window.location.assign(payload.redirect_url);" not in response.data
+
+
 def test_served_files_are_inline_not_forced_download(tmp_path):
     app = create_app(
         {
@@ -3478,6 +3494,8 @@ def test_edit_page_prettifies_html_content(tmp_path):
     assert b"&lt;p&gt;" in response.data
     assert b"&lt;strong&gt;" in response.data
     assert b"Hello" in response.data
+    assert b'data-nav-replace-redirect' in response.data
+    assert b"/static/transient_navigation.js" in response.data
 
 
 def test_edit_post_saves_thumbnail_focus_and_applies_to_creator_grid(tmp_path):
@@ -3533,6 +3551,55 @@ def test_edit_post_saves_thumbnail_focus_and_applies_to_creator_grid(tmp_path):
     assert creator_page.status_code == 200
     html = creator_page.data.decode("utf-8")
     assert "object-position: 22.5% 77.5%" in html
+
+
+def test_edit_post_ajax_submit_returns_redirect_json(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Ajax Edit Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="ajax-user",
+        external_post_id="ajax-post",
+        title="Ajax Title",
+        content="<p>Body</p>",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/ajax-user/post/ajax-post",
+    )
+    version_row = db.get_post_version(post_id)
+    assert version_row is not None
+    version_id = int(version_row["id"])
+
+    response = app.test_client().post(
+        f"/posts/{post_id}/edit",
+        headers={"X-Requested-With": "XMLHttpRequest"},
+        data={
+            "version_id": str(version_id),
+            "version_label": "Original",
+            "version_language": "",
+            "title": "Ajax Title Updated",
+            "series_id": "",
+            "thumbnail_attachment_id": "__keep__",
+            "thumbnail_focus_x": "50",
+            "thumbnail_focus_y": "50",
+            "content": "<p>Body</p>",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload is not None
+    assert payload["redirect_url"].endswith(f"/posts/{post_id}?version_id={version_id}")
 
 
 def test_edit_post_thumbnail_selector_keeps_current_when_name_match_is_ambiguous(tmp_path):
@@ -4417,6 +4484,8 @@ def test_creator_edit_flow_updates_metadata(tmp_path):
     assert _page_title(edit_get) == _expected_page_title("Creator Before", "Edit Creator")
     assert b"Edit Creator" in edit_get.data
     assert b"Creator Before" in edit_get.data
+    assert b'data-nav-replace-redirect' in edit_get.data
+    assert b"/static/transient_navigation.js" in edit_get.data
 
     edit_post = client.post(
         f"/creators/{creator_id}/edit",
@@ -4435,6 +4504,38 @@ def test_creator_edit_flow_updates_metadata(tmp_path):
     assert updated["name"] == "Creator After"
     assert updated["description"] == "Creator description"
     assert updated["tags_text"] == "tag-a, tag-b"
+
+
+def test_creator_edit_ajax_submit_returns_redirect_json(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Creator Ajax Before")
+
+    response = app.test_client().post(
+        f"/creators/{creator_id}/edit",
+        headers={"X-Requested-With": "XMLHttpRequest"},
+        data={
+            "name": "Creator Ajax After",
+            "description": "Ajax description",
+            "tags_text": "ajax-tag",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload is not None
+    assert payload["redirect_url"].endswith(f"/creators/{creator_id}")
+    updated = db.get_creator(creator_id)
+    assert updated is not None
+    assert updated["name"] == "Creator Ajax After"
 
 
 def test_creator_edit_duplicate_name_is_rejected(tmp_path):

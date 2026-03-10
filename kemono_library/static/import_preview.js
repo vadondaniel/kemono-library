@@ -115,7 +115,7 @@
 
       if (payload.status === "completed") {
         if (payload.redirect_url) {
-          window.location.assign(payload.redirect_url);
+          window.location.replace(payload.redirect_url);
           return;
         }
         throw new Error("Import finished but no destination was returned.");

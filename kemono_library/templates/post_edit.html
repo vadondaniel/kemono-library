@@ -39,7 +39,7 @@
     </div>
   </header>
 
-  <form method="post" id="post-edit-main-form" class="form post-edit-form">
+  <form method="post" id="post-edit-main-form" class="form post-edit-form" data-nav-replace-redirect>
     <input type="hidden" name="version_id" value="{{ active_version['id'] }}">
     <section class="post-edit-block">
       <h2>Version Metadata</h2>
@@ -291,4 +291,5 @@
 </div>
 </div>
 <script src="{{ url_for('static', filename='post_edit.js') }}"></script>
+<script src="{{ url_for('static', filename='transient_navigation.js') }}"></script>
 {% endblock %}

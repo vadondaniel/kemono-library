@@ -183,6 +183,11 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     threading.Thread(target=import_worker, daemon=True).start()
 
+    def _redirect_with_ajax(url: str):
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return jsonify({"redirect_url": url})
+        return redirect(url)
+
     def _collect_retry_scope_rows(scope: str, scope_id_raw: str) -> list[dict[str, Any]]:
         files_base = Path(app.config["FILES_DIR"])
         source_rows = db.list_attachment_inventory()
@@ -801,7 +806,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             tags_text = request.form.get("tags_text", "")
             if not name:
                 flash("Creator name is required.", "error")
-                return redirect(url_for("edit_creator", creator_id=creator_id))
+                return _redirect_with_ajax(url_for("edit_creator", creator_id=creator_id))
             try:
                 db.update_creator(
                     creator_id,
@@ -811,9 +816,9 @@ def create_app(test_config: dict | None = None) -> Flask:
                 )
             except sqlite3.IntegrityError:
                 flash("Creator name already exists.", "error")
-                return redirect(url_for("edit_creator", creator_id=creator_id))
+                return _redirect_with_ajax(url_for("edit_creator", creator_id=creator_id))
             flash("Creator updated.", "success")
-            return redirect(url_for("creator_detail", creator_id=creator_id))
+            return _redirect_with_ajax(url_for("creator_detail", creator_id=creator_id))
 
         header_context = _build_creator_header_context(creator=creator, selected_series=None)
         creator_name = _optional_str(creator["name"]) or "Creator"
@@ -2140,7 +2145,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             action = request.form.get("action", "save").strip().lower()
             if action == "remove_attachment":
                 flash("Attachment changes are now applied on Save Changes.", "success")
-                return redirect(url_for("edit_post", post_id=post_id, version_id=active_version_id))
+                return _redirect_with_ajax(url_for("edit_post", post_id=post_id, version_id=active_version_id))
 
             title = request.form.get("title", "").strip()
             content = request.form.get("content", "")
@@ -2156,7 +2161,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             )
             if not title:
                 flash("Version title is required.", "error")
-                return redirect(url_for("edit_post", post_id=post_id, version_id=active_version_id))
+                return _redirect_with_ajax(url_for("edit_post", post_id=post_id, version_id=active_version_id))
             try:
                 series_id = _validate_import_series_selection(
                     db,
@@ -2165,7 +2170,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                 )
             except ValueError as exc:
                 flash(str(exc), "error")
-                return redirect(url_for("edit_post", post_id=post_id, version_id=active_version_id))
+                return _redirect_with_ajax(url_for("edit_post", post_id=post_id, version_id=active_version_id))
 
             # Apply attachment edits only on Save.
             managed_attachments_by_choice: dict[str, dict[str, Any]] = {}
@@ -2251,7 +2256,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                 selected_attachment = managed_attachments_by_choice.get(thumbnail_choice)
                 if selected_attachment is None:
                     flash("Selected thumbnail file was not found.", "error")
-                    return redirect(url_for("edit_post", post_id=post_id, version_id=active_version_id))
+                    return _redirect_with_ajax(url_for("edit_post", post_id=post_id, version_id=active_version_id))
                 resolved_thumbnail_name = selected_attachment["name"]
                 resolved_thumbnail_remote_url = selected_attachment["remote_url"]
                 resolved_thumbnail_local_path = _optional_str(selected_attachment["local_path"])
@@ -2317,9 +2322,9 @@ def create_app(test_config: dict | None = None) -> Flask:
                     )
             except Exception as exc:  # noqa: BLE001
                 flash(f"Failed to update post: {exc}", "error")
-                return redirect(url_for("edit_post", post_id=post_id, version_id=active_version_id))
+                return _redirect_with_ajax(url_for("edit_post", post_id=post_id, version_id=active_version_id))
             flash("Post updated.", "success")
-            return redirect(url_for("post_detail", post_id=post_id, version_id=active_version_id))
+            return _redirect_with_ajax(url_for("post_detail", post_id=post_id, version_id=active_version_id))
 
         tracked_attachment_rows = [item for item in attachment_rows if item["tracked"]]
         source_attachment_rows = [item for item in attachment_rows if not item["tracked"]]

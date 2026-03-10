@@ -3,7 +3,7 @@
 <section class="panel">
   <h1>Edit Creator</h1>
 
-  <form method="post" class="form">
+  <form method="post" class="form" data-nav-replace-redirect>
     <label class="field-label" for="name">Creator name</label>
     <input class="field" id="name" name="name" required value="{{ creator['name'] }}">
 
@@ -23,4 +23,5 @@
     <button type="submit" class="btn btn--ghost btn--danger-quiet">Delete creator</button>
   </form>
 </section>
+<script src="{{ url_for('static', filename='transient_navigation.js') }}"></script>
 {% endblock %}
