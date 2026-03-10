@@ -679,6 +679,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             "direction",
             series_default_direction if selected_series else "desc",
         ).strip().lower()
+        search_text = request.args.get("q", "").strip()
 
         if sort_by not in {"published", "title"}:
             sort_by = series_default_sort if selected_series else "published"
@@ -691,7 +692,24 @@ def create_app(test_config: dict | None = None) -> Flask:
             unsorted_only=unsorted_only,
             sort_by=sort_by,
             sort_direction=sort_direction,
+            search_text=search_text,
         )
+        suggestion_rows = db.list_posts_for_creator(
+            creator_id,
+            series_id=selected_series_id,
+            unsorted_only=unsorted_only,
+            sort_by="title",
+            sort_direction="asc",
+        )
+        post_search_suggestions: list[str] = []
+        seen_suggestions: set[str] = set()
+        for row in suggestion_rows:
+            title = str(row["title"]).strip() if row["title"] else ""
+            if title:
+                normalized_title = title.lower()
+                if normalized_title not in seen_suggestions:
+                    post_search_suggestions.append(title)
+                    seen_suggestions.add(normalized_title)
         posts: list[dict[str, Any]] = []
         for row in posts_rows:
             item = dict(row)
@@ -699,14 +717,23 @@ def create_app(test_config: dict | None = None) -> Flask:
             item["thumbnail_focus_x"] = focus_x
             item["thumbnail_focus_y"] = focus_y
             posts.append(item)
+        series_thumbnail_rows = posts_rows
+        if selected_series and search_text:
+            series_thumbnail_rows = db.list_posts_for_creator(
+                creator_id,
+                series_id=selected_series_id,
+                unsorted_only=False,
+                sort_by=sort_by,
+                sort_direction=sort_direction,
+            )
         series_thumbnail_options = (
             [
                 {
-                    "id": int(item["id"]),
-                    "title": str(item["title"]) if item["title"] else f"Post {item['id']}",
-                    "published_at": str(item["published_at"]) if item["published_at"] else "",
+                    "id": int(row["id"]),
+                    "title": str(row["title"]) if row["title"] else f"Post {row['id']}",
+                    "published_at": str(row["published_at"]) if row["published_at"] else "",
                 }
-                for item in posts
+                for row in series_thumbnail_rows
             ]
             if selected_series
             else []
@@ -722,6 +749,8 @@ def create_app(test_config: dict | None = None) -> Flask:
             active_folder=active_folder,
             sort_by=sort_by,
             sort_direction=sort_direction,
+            post_search_text=search_text,
+            post_search_suggestions=post_search_suggestions,
             header_context=header_context if selected_series else None,
         )
 

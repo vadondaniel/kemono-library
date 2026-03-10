@@ -2341,6 +2341,62 @@ small {
   white-space: nowrap;
 }
 
+.creator-post-search {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.44rem;
+  flex: 1 1 19rem;
+  max-width: min(100%, 29rem);
+}
+
+.creator-post-search-field {
+  position: relative;
+  flex: 1 1 auto;
+}
+
+.creator-post-search-field input[type="search"] {
+  width: 100%;
+  min-width: 0;
+  padding-right: 2rem;
+}
+
+.creator-post-search .button-link {
+  white-space: nowrap;
+}
+
+.creator-post-search-clear {
+  position: absolute;
+  top: 50%;
+  right: 0.36rem;
+  transform: translateY(-50%);
+  width: 1.45rem;
+  height: 1.45rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1;
+  font-weight: 700;
+  text-decoration: none;
+  border-radius: 999px;
+  background: transparent;
+  border: 1px solid transparent;
+}
+
+.creator-post-search-clear:hover {
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent-soft) 45%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+}
+
+.creator-post-search-clear:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 58%, var(--border));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
 .creator-sort-bar {
   margin: 0;
   display: flex;
@@ -4052,6 +4108,11 @@ body.is-post-reader-page .site-header {
 
   .post-toolbar {
     align-items: flex-start;
+  }
+
+  .creator-post-search {
+    width: 100%;
+    max-width: none;
   }
 
   .creator-sort-bar {

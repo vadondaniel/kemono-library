@@ -1,18 +1,19 @@
 {% extends "base.html" %}
 {% block content %}
+{% set search_query = post_search_text or none %}
 {% if selected_series %}
-  {% set sort_published_url = url_for('creator_detail', creator_id=creator['id'], series_id=selected_series['id'], sort='published', direction=sort_direction) %}
-  {% set sort_title_url = url_for('creator_detail', creator_id=creator['id'], series_id=selected_series['id'], sort='title', direction=sort_direction) %}
-  {% set direction_desc_url = url_for('creator_detail', creator_id=creator['id'], series_id=selected_series['id'], sort=sort_by, direction='desc') %}
-  {% set direction_asc_url = url_for('creator_detail', creator_id=creator['id'], series_id=selected_series['id'], sort=sort_by, direction='asc') %}
+  {% set sort_published_url = url_for('creator_detail', creator_id=creator['id'], series_id=selected_series['id'], sort='published', direction=sort_direction, q=search_query) %}
+  {% set sort_title_url = url_for('creator_detail', creator_id=creator['id'], series_id=selected_series['id'], sort='title', direction=sort_direction, q=search_query) %}
+  {% set direction_desc_url = url_for('creator_detail', creator_id=creator['id'], series_id=selected_series['id'], sort=sort_by, direction='desc', q=search_query) %}
+  {% set direction_asc_url = url_for('creator_detail', creator_id=creator['id'], series_id=selected_series['id'], sort=sort_by, direction='asc', q=search_query) %}
   {% set import_post_url = url_for('import_form', creator_id=creator['id'], series_id=selected_series['id']) %}
 {% else %}
-  {% set sort_published_url = url_for('creator_detail', creator_id=creator['id'], sort='published', direction=sort_direction) %}
-  {% set sort_title_url = url_for('creator_detail', creator_id=creator['id'], sort='title', direction=sort_direction) %}
-  {% set direction_desc_url = url_for('creator_detail', creator_id=creator['id'], sort=sort_by, direction='desc') %}
-  {% set direction_asc_url = url_for('creator_detail', creator_id=creator['id'], sort=sort_by, direction='asc') %}
-  {% set filter_all_url = url_for('creator_detail', creator_id=creator['id'], sort=sort_by, direction=sort_direction) %}
-  {% set filter_unsorted_url = url_for('creator_detail', creator_id=creator['id'], folder='unsorted', sort=sort_by, direction=sort_direction) %}
+  {% set sort_published_url = url_for('creator_detail', creator_id=creator['id'], sort='published', direction=sort_direction, q=search_query) %}
+  {% set sort_title_url = url_for('creator_detail', creator_id=creator['id'], sort='title', direction=sort_direction, q=search_query) %}
+  {% set direction_desc_url = url_for('creator_detail', creator_id=creator['id'], sort=sort_by, direction='desc', q=search_query) %}
+  {% set direction_asc_url = url_for('creator_detail', creator_id=creator['id'], sort=sort_by, direction='asc', q=search_query) %}
+  {% set filter_all_url = url_for('creator_detail', creator_id=creator['id'], sort=sort_by, direction=sort_direction, q=search_query) %}
+  {% set filter_unsorted_url = url_for('creator_detail', creator_id=creator['id'], folder='unsorted', sort=sort_by, direction=sort_direction, q=search_query) %}
   {% set import_post_url = url_for('import_form', creator_id=creator['id']) %}
 {% endif %}
 
@@ -170,7 +171,7 @@
       <div class="folder-explorer-grid">
         {% for series in series_list %}
           <div class="folder-tile-wrap">
-            <a class="folder-tile {% if selected_series and selected_series['id'] == series['id'] %}is-active{% endif %}" href="{{ url_for('creator_detail', creator_id=creator['id'], series_id=series['id']) }}">
+            <a class="folder-tile {% if selected_series and selected_series['id'] == series['id'] %}is-active{% endif %}" href="{{ url_for('creator_detail', creator_id=creator['id'], series_id=series['id'], q=search_query) }}">
               {% if series['cover_thumbnail_local_path'] %}
                 <span class="folder-tile-thumb-wrap">
                   <img
@@ -210,7 +211,66 @@
 
   <article class="panel creator-posts-panel">
     <div class="post-toolbar">
-      <small>{{ posts|length }} posts</small>
+      <form
+        method="get"
+        action="{{ url_for('creator_detail', creator_id=creator['id']) }}"
+        class="creator-post-search"
+        role="search"
+        autocomplete="off"
+      >
+        {% if selected_series %}
+          <input type="hidden" name="series_id" value="{{ selected_series['id'] }}">
+        {% elif active_folder == 'unsorted' %}
+          <input type="hidden" name="folder" value="unsorted">
+        {% endif %}
+        <input type="hidden" name="sort" value="{{ sort_by }}">
+        <input type="hidden" name="direction" value="{{ sort_direction }}">
+        <div class="creator-post-search-field">
+          <input
+            type="search"
+            name="q"
+            value="{{ post_search_text }}"
+            placeholder="Search posts"
+            aria-label="Search posts"
+            list="creator-post-search-suggestions"
+            autocomplete="off"
+            autocorrect="off"
+            autocapitalize="none"
+            spellcheck="false"
+          >
+          {% if post_search_text %}
+            {% if selected_series %}
+              <a
+                class="creator-post-search-clear"
+                href="{{ url_for('creator_detail', creator_id=creator['id'], series_id=selected_series['id'], sort=sort_by, direction=sort_direction) }}"
+                aria-label="Clear search"
+                title="Clear search"
+              >&times;</a>
+            {% elif active_folder == 'unsorted' %}
+              <a
+                class="creator-post-search-clear"
+                href="{{ url_for('creator_detail', creator_id=creator['id'], folder='unsorted', sort=sort_by, direction=sort_direction) }}"
+                aria-label="Clear search"
+                title="Clear search"
+              >&times;</a>
+            {% else %}
+              <a
+                class="creator-post-search-clear"
+                href="{{ url_for('creator_detail', creator_id=creator['id'], sort=sort_by, direction=sort_direction) }}"
+                aria-label="Clear search"
+                title="Clear search"
+              >&times;</a>
+            {% endif %}
+          {% endif %}
+        </div>
+        <button type="submit" class="button-link button-ghost">Search</button>
+      </form>
+      <datalist id="creator-post-search-suggestions">
+        {% for suggestion in post_search_suggestions %}
+          <option value="{{ suggestion }}">
+        {% endfor %}
+      </datalist>
+      <small>{{ posts|length }} posts{% if post_search_text %} matching "{{ post_search_text }}"{% endif %}</small>
       <div class="creator-sort-bar">
         {% if not selected_series %}
           <div class="creator-sort-group">
@@ -267,7 +327,7 @@
         {% endfor %}
       </div>
     {% else %}
-      <p class="creator-empty">No posts in this folder yet.</p>
+      <p class="creator-empty">{% if post_search_text %}No posts match this search in the current view.{% else %}No posts in this folder yet.{% endif %}</p>
     {% endif %}
   </article>
 </section>

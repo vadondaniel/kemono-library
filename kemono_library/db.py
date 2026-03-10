@@ -1456,6 +1456,7 @@ class LibraryDB:
         unsorted_only: bool = False,
         sort_by: str = "published",
         sort_direction: str = "desc",
+        search_text: str = "",
     ) -> list[sqlite3.Row]:
         normalized_sort = sort_by.lower().strip()
         if normalized_sort not in {"published", "title"}:
@@ -1464,6 +1465,7 @@ class LibraryDB:
         normalized_direction = sort_direction.lower().strip()
         if normalized_direction not in {"asc", "desc"}:
             normalized_direction = "desc"
+        normalized_search = search_text.strip().lower()
 
         if normalized_sort == "title":
             order_sql = f"LOWER(p.title) {normalized_direction.upper()}, p.id {normalized_direction.upper()}"
@@ -1482,6 +1484,17 @@ class LibraryDB:
             params.append(series_id)
         elif unsorted_only:
             where_clauses.append("p.series_id IS NULL")
+        if normalized_search:
+            like_value = f"%{normalized_search}%"
+            where_clauses.append(
+                "("
+                "LOWER(COALESCE(p.title, '')) LIKE ? "
+                "OR LOWER(COALESCE(p.content, '')) LIKE ? "
+                "OR LOWER(COALESCE(s.name, '')) LIKE ? "
+                "OR LOWER(COALESCE(p.external_post_id, '')) LIKE ?"
+                ")"
+            )
+            params.extend([like_value, like_value, like_value, like_value])
 
         where_sql = " AND ".join(where_clauses)
         with self._connect() as conn:

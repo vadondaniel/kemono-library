@@ -3430,8 +3430,9 @@ def test_creator_folder_filter_and_sort_modes(tmp_path):
 
     title_sorted = client.get(f"/creators/{creator_id}?sort=title&direction=asc")
     assert title_sorted.status_code == 200
-    title_html = title_sorted.data.decode("utf-8")
-    assert title_html.index("Alpha Post") < title_html.index("Beta Post") < title_html.index("Gamma Post")
+    title_soup = BeautifulSoup(title_sorted.data, "html.parser")
+    title_order = [node.get_text(strip=True) for node in title_soup.select(".creator-post-list .creator-post-body h3 a")]
+    assert title_order == ["Alpha Post", "Beta Post", "Gamma Post"]
 
     unsorted_only = client.get(f"/creators/{creator_id}?folder=unsorted")
     assert unsorted_only.status_code == 200
@@ -3449,10 +3450,108 @@ def test_creator_folder_filter_and_sort_modes(tmp_path):
 
     published_desc = client.get(f"/creators/{creator_id}?sort=published&direction=desc")
     assert published_desc.status_code == 200
-    published_desc_html = published_desc.data.decode("utf-8")
-    assert published_desc_html.index("Gamma Post") < published_desc_html.index("Beta Post") < published_desc_html.index(
-        "Alpha Post"
+    published_desc_soup = BeautifulSoup(published_desc.data, "html.parser")
+    published_desc_order = [
+        node.get_text(strip=True)
+        for node in published_desc_soup.select(".creator-post-list .creator-post-body h3 a")
+    ]
+    assert published_desc_order == ["Gamma Post", "Beta Post", "Alpha Post"]
+
+
+def test_creator_post_search_filters_results_and_preserves_query(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
     )
+    db = app.db  # type: ignore[attr-defined]
+
+    creator_id = db.create_creator("Search Creator")
+    main_series_id = db.create_series(creator_id, "Main Series")
+    side_series_id = db.create_series(creator_id, "Side Series")
+
+    db.upsert_post(
+        creator_id=creator_id,
+        series_id=main_series_id,
+        service="fanbox",
+        external_user_id="user-1",
+        external_post_id="200",
+        title="Beta Patrol",
+        content="General update",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/user-1/post/200",
+        published_at="2025-01-02T00:00:00",
+    )
+    db.upsert_post(
+        creator_id=creator_id,
+        series_id=side_series_id,
+        service="fanbox",
+        external_user_id="user-1",
+        external_post_id="201",
+        title="Delta Note",
+        content="Needle content marker",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/user-1/post/201",
+        published_at="2025-01-01T00:00:00",
+    )
+    db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="user-1",
+        external_post_id="202",
+        title="Gamma Post",
+        content="General notes",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/user-1/post/202",
+        published_at="2025-01-03T00:00:00",
+    )
+
+    client = app.test_client()
+    searched = client.get(f"/creators/{creator_id}?q=needle")
+    assert searched.status_code == 200
+    searched_soup = BeautifulSoup(searched.data, "html.parser")
+    searched_titles = [node.get_text(strip=True) for node in searched_soup.select(".creator-post-list .creator-post-body h3 a")]
+    assert searched_titles == ["Delta Note"]
+    search_form = searched_soup.select_one("form.creator-post-search")
+    assert search_form is not None
+    assert search_form.get("autocomplete") == "off"
+    query_input = searched_soup.select_one(".creator-post-search input[name='q']")
+    assert query_input is not None
+    assert query_input.get("value") == "needle"
+    assert query_input.get("list") == "creator-post-search-suggestions"
+    assert query_input.get("autocomplete") == "off"
+    assert query_input.get("autocorrect") == "off"
+    assert query_input.get("autocapitalize") == "none"
+    assert query_input.get("spellcheck") == "false"
+    suggestion_values = [
+        option.get("value") or ""
+        for option in searched_soup.select("#creator-post-search-suggestions option")
+    ]
+    assert "Beta Patrol" in suggestion_values
+    assert "Delta Note" in suggestion_values
+    assert "Gamma Post" in suggestion_values
+    sort_links = [anchor.get("href") or "" for anchor in searched_soup.select(".creator-sort-bar a")]
+    assert sort_links
+    assert all("q=needle" in href for href in sort_links)
+    clear_link = searched_soup.select_one(".creator-post-search-clear")
+    assert clear_link is not None
+    clear_href = clear_link.get("href") or ""
+    assert "q=" not in clear_href
+
+    unsorted_only = client.get(f"/creators/{creator_id}?folder=unsorted&q=needle")
+    assert unsorted_only.status_code == 200
+    assert b"No posts match this search in the current view." in unsorted_only.data
+
+    series_filtered = client.get(f"/creators/{creator_id}?series_id={main_series_id}&q=beta")
+    assert series_filtered.status_code == 200
+    series_html = series_filtered.data.decode("utf-8")
+    assert "Beta Patrol" in series_html
+    assert "Delta Note" not in series_html
 
 
 def test_creator_does_not_show_unsorted_folder_tile_without_series(tmp_path):
