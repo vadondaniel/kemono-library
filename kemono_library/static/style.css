@@ -1814,12 +1814,12 @@ button:disabled,
 }
 
 .import-submit-card {
-  width: min(520px, 94vw);
+  width: min(560px, 94vw);
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   background: color-mix(in srgb, var(--card-solid) 96%, transparent);
   box-shadow: var(--shadow);
-  padding: 0.9rem 1rem;
+  padding: 1rem 1.05rem;
   display: grid;
   gap: var(--space-lg);
 }
@@ -1898,22 +1898,93 @@ button:disabled,
 
 .attachment-retry-result-examples {
   margin: 0;
-  padding-left: 1.1rem;
+  padding: 0;
   display: grid;
   gap: var(--space-sm);
   color: var(--muted);
   font-size: 0.82rem;
   line-height: 1.35;
-  max-height: 9rem;
-  overflow: auto;
+  max-height: min(16rem, 45vh);
+  overflow-y: auto;
+  overflow-x: hidden;
+  list-style: none;
 }
 
 .attachment-retry-result-example {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.42rem;
+  padding: 0.24rem 0.46rem;
   min-width: 0;
   max-width: 100%;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--card-solid) 92%, transparent);
+  cursor: default;
+}
+
+.attachment-retry-result-example::before {
+  content: "";
+  width: 0.38rem;
+  height: 0.38rem;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--status-failure-accent) 78%, var(--danger));
+  flex: 0 0 auto;
+}
+
+.attachment-retry-result-example:hover {
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
+  background: color-mix(in srgb, var(--accent-soft) 30%, var(--card-solid));
+}
+
+.attachment-retry-result-example:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 44%, var(--border));
+  box-shadow: var(--field-focus-ring);
+}
+
+.attachment-retry-result-name {
+  display: block;
+  min-width: 0;
+  flex: 1 1 auto;
+  color: var(--muted);
+  font-size: 0.81rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.attachment-retry-error-tooltip {
+  position: fixed;
+  z-index: var(--z-modal-front);
+  max-width: min(30rem, calc(100vw - 1.5rem));
+  display: grid;
+  gap: var(--space-xs);
+  padding: 0.5rem 0.62rem;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, var(--accent) 28%);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--card-solid) 97%, black 3%);
+  color: var(--text);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  white-space: pre-line;
+  overflow-wrap: break-word;
+  box-shadow: var(--shadow);
+  pointer-events: none;
+}
+
+.attachment-retry-error-tooltip-title {
+  color: var(--text-strong);
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.attachment-retry-error-tooltip-body {
+  color: var(--muted);
+  font-size: 0.79rem;
 }
 
 .attachment-retry-dock {

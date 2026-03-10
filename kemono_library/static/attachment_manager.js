@@ -7,6 +7,7 @@
   const progressTotal = document.querySelector("[data-attachment-retry-progress-total]");
   const progressFailures = document.querySelector("[data-attachment-retry-progress-failures]");
   const progressPercent = document.querySelector("[data-attachment-retry-progress-percent]");
+  const progressLine = document.querySelector(".import-submit-progress-line");
   const progressTrack = document.querySelector("[data-attachment-retry-progress-track]");
   const progressFill = document.querySelector("[data-attachment-retry-progress-fill]");
   const resultPanel = document.querySelector("[data-attachment-retry-result]");
@@ -28,6 +29,8 @@
   let minimized = false;
   let previewObserver = null;
   let filterSubmitTimer = null;
+  let retryErrorTooltip = null;
+  let retryErrorTooltipTarget = null;
   const measureCanvas = document.createElement("canvas");
   const measureContext = measureCanvas.getContext("2d");
 
@@ -105,16 +108,21 @@
     return `${value.slice(0, 3)}...${value.slice(-Math.max(4, minRight))}`;
   }
 
-  function applyMiddleEllipsis(element) {
+  function applyMiddleEllipsis(element, options = {}) {
     if (!(element instanceof HTMLElement)) {
       return;
     }
+    const { setTitle = true } = options;
     const fullText = (element.dataset.fullText || element.textContent || "").trim();
     if (!fullText) {
       return;
     }
     element.dataset.fullText = fullText;
-    element.title = fullText;
+    if (setTitle) {
+      element.title = fullText;
+    } else {
+      element.removeAttribute("title");
+    }
     element.textContent = middleEllipsizeToFit(element, fullText);
   }
 
@@ -122,11 +130,189 @@
     if (!(resultExamples instanceof HTMLElement)) {
       return;
     }
-    Array.from(resultExamples.querySelectorAll(".attachment-retry-result-example")).forEach((node) => {
+    Array.from(resultExamples.querySelectorAll(".attachment-retry-result-name")).forEach((node) => {
       if (node instanceof HTMLElement) {
-        applyMiddleEllipsis(node);
+        applyMiddleEllipsis(node, { setTitle: false });
       }
     });
+  }
+
+  function ensureRetryErrorTooltip() {
+    if (retryErrorTooltip instanceof HTMLElement) {
+      return retryErrorTooltip;
+    }
+    const tooltip = document.createElement("div");
+    tooltip.className = "attachment-retry-error-tooltip";
+    tooltip.hidden = true;
+    document.body.appendChild(tooltip);
+    retryErrorTooltip = tooltip;
+    return tooltip;
+  }
+
+  function hideRetryErrorTooltip() {
+    retryErrorTooltipTarget = null;
+    if (!(retryErrorTooltip instanceof HTMLElement)) {
+      return;
+    }
+    retryErrorTooltip.hidden = true;
+    retryErrorTooltip.replaceChildren();
+    retryErrorTooltip.style.left = "";
+    retryErrorTooltip.style.top = "";
+    retryErrorTooltip.style.visibility = "";
+  }
+
+  function normalizeRetryFailureError(rawError, name = "") {
+    const fallback = "Retry failed.";
+    let text = typeof rawError === "string" ? rawError.trim() : "";
+    if (!text) {
+      return fallback;
+    }
+
+    const normalizedName = typeof name === "string" ? name.trim() : "";
+    if (normalizedName && text.toLowerCase().startsWith(`${normalizedName.toLowerCase()}:`)) {
+      text = text.slice(normalizedName.length + 1).trim();
+    }
+
+    const chunks = text
+      .split(/\s*;\s+/)
+      .map((chunk) => chunk.replace(/^https?:\/\/\S+\s*:\s*/i, "").trim())
+      .filter(Boolean);
+    if (chunks.length > 0) {
+      text = chunks.join("\n");
+    }
+
+    text = text.replace(/\s+\n/g, "\n").replace(/\n\s+/g, "\n").trim();
+    return text || fallback;
+  }
+
+  function setRetryErrorTooltipContent(rawError) {
+    if (!(retryErrorTooltip instanceof HTMLElement)) {
+      return;
+    }
+    const title = document.createElement("strong");
+    title.className = "attachment-retry-error-tooltip-title";
+    title.textContent = "Download error";
+    const body = document.createElement("span");
+    body.className = "attachment-retry-error-tooltip-body";
+    body.textContent = rawError;
+    retryErrorTooltip.replaceChildren(title, body);
+  }
+
+  function showRetryErrorTooltip(target, errorText) {
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+    const text = typeof errorText === "string" ? errorText.trim() : "";
+    if (!text) {
+      hideRetryErrorTooltip();
+      return;
+    }
+
+    const tooltip = ensureRetryErrorTooltip();
+    retryErrorTooltipTarget = target;
+    setRetryErrorTooltipContent(text);
+    tooltip.hidden = false;
+    tooltip.style.visibility = "hidden";
+
+    const targetRect = target.getBoundingClientRect();
+    const tooltipRect = tooltip.getBoundingClientRect();
+    const viewportPadding = 12;
+    const offset = 10;
+
+    let left = targetRect.right + offset;
+    if (left + tooltipRect.width > window.innerWidth - viewportPadding) {
+      left = targetRect.left - tooltipRect.width - offset;
+    }
+    if (left < viewportPadding) {
+      left = targetRect.left;
+    }
+    if (left + tooltipRect.width > window.innerWidth - viewportPadding) {
+      left = window.innerWidth - viewportPadding - tooltipRect.width;
+    }
+    left = Math.max(viewportPadding, Math.round(left));
+
+    let top = targetRect.top;
+    if (top + tooltipRect.height > window.innerHeight - viewportPadding) {
+      top = window.innerHeight - viewportPadding - tooltipRect.height;
+    }
+    if (top + tooltipRect.height > window.innerHeight - viewportPadding) {
+      top = targetRect.top - tooltipRect.height - offset;
+    }
+    top = Math.max(viewportPadding, Math.round(top));
+
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
+    tooltip.style.visibility = "";
+  }
+
+  function bindRetryFailureTooltip(item, errorText) {
+    if (!(item instanceof HTMLElement)) {
+      return;
+    }
+    const text = typeof errorText === "string" ? errorText.trim() : "";
+    if (!text) {
+      return;
+    }
+
+    item.addEventListener("mouseenter", () => {
+      showRetryErrorTooltip(item, text);
+    });
+    item.addEventListener("mouseleave", () => {
+      if (retryErrorTooltipTarget === item) {
+        hideRetryErrorTooltip();
+      }
+    });
+    item.addEventListener("focusin", () => {
+      showRetryErrorTooltip(item, text);
+    });
+    item.addEventListener("focusout", () => {
+      if (retryErrorTooltipTarget === item) {
+        hideRetryErrorTooltip();
+      }
+    });
+  }
+
+  function buildFailureItemsFromPayload(payload) {
+    const failures = [];
+    const results = Array.isArray(payload?.results) ? payload.results : [];
+    results.forEach((entry, index) => {
+      if (!entry || entry.success) {
+        return;
+      }
+      const name =
+        typeof entry.name === "string" && entry.name.trim()
+          ? entry.name.trim()
+          : typeof entry.display_name === "string" && entry.display_name.trim()
+            ? entry.display_name.trim()
+            : `Attachment ${index + 1}`;
+      const error = normalizeRetryFailureError(entry.error, name);
+      failures.push({ name, error });
+    });
+    if (failures.length) {
+      return failures;
+    }
+
+    const examples = Array.isArray(payload?.failure_examples) ? payload.failure_examples : [];
+    examples.forEach((entry, index) => {
+      if (typeof entry !== "string") {
+        return;
+      }
+      const sample = entry.trim();
+      if (!sample) {
+        return;
+      }
+      const dividerIndex = sample.indexOf(": ");
+      if (dividerIndex > 0) {
+        const failureName = sample.slice(0, dividerIndex).trim() || `Attachment ${index + 1}`;
+        failures.push({
+          name: failureName,
+          error: normalizeRetryFailureError(sample.slice(dividerIndex + 2).trim(), failureName),
+        });
+        return;
+      }
+      failures.push({ name: sample, error: normalizeRetryFailureError(sample, sample) });
+    });
+    return failures;
   }
 
   function buildLocalFileUrl(relativePath) {
@@ -213,6 +399,12 @@
     if (spinner instanceof HTMLElement) {
       spinner.hidden = visible;
     }
+    if (progressLine instanceof HTMLElement) {
+      progressLine.hidden = false;
+    }
+    if (progressPercent instanceof HTMLElement) {
+      progressPercent.hidden = visible;
+    }
     if (progressTrack instanceof HTMLElement) {
       progressTrack.hidden = visible;
     }
@@ -227,19 +419,27 @@
     }
   }
 
-  function setResultExamples(examples) {
+  function setResultFailures(failures) {
     if (!(resultExamples instanceof HTMLElement)) {
       return;
     }
+    hideRetryErrorTooltip();
     resultExamples.replaceChildren();
-    const normalized = Array.isArray(examples) ? examples.filter((value) => typeof value === "string" && value.trim()) : [];
+    const normalized = Array.isArray(failures)
+      ? failures.filter((entry) => entry && typeof entry.name === "string" && entry.name.trim())
+      : [];
     resultExamples.hidden = normalized.length === 0;
-    normalized.forEach((example) => {
+    normalized.forEach((entry) => {
       const item = document.createElement("li");
       item.className = "attachment-retry-result-example";
-      item.setAttribute("data-middle-ellipsis", "");
-      item.dataset.fullText = example;
-      item.textContent = example;
+      item.tabIndex = 0;
+      item.setAttribute("aria-label", `Failed attachment: ${entry.name.trim()}`);
+      const label = document.createElement("span");
+      label.className = "attachment-retry-result-name";
+      label.dataset.fullText = entry.name.trim();
+      label.textContent = entry.name.trim();
+      item.appendChild(label);
+      bindRetryFailureTooltip(item, entry.error);
       resultExamples.appendChild(item);
     });
     window.requestAnimationFrame(() => {
@@ -276,7 +476,7 @@
     updateDock(message, 0, 0, 0, 0);
     setResultVisible(false);
     setResultSummary("");
-    setResultExamples([]);
+    setResultFailures([]);
     overlay.hidden = false;
     document.body.classList.add("is-busy-overlay-open");
     setDockVisible(false);
@@ -288,7 +488,7 @@
     minimized = false;
     setResultVisible(false);
     setResultSummary("");
-    setResultExamples([]);
+    setResultFailures([]);
     overlay.hidden = true;
     document.body.classList.remove("is-busy-overlay-open");
     setDockVisible(false);
@@ -450,17 +650,19 @@
     const successes = Number(payload.success_count || 0);
     const attempted = Math.max(total, completed);
     const summary =
-      failures > 0
-        ? `${successes} succeeded, ${failures} failed, ${attempted} total.`
-        : attempted > 0
-          ? `${successes} succeeded, ${attempted} total.`
-          : "No missing attachments matched this retry.";
+      attempted <= 0
+        ? "No missing attachments matched this retry."
+        : failures <= 0
+          ? "All retries succeeded."
+          : successes <= 0
+            ? "All retries failed."
+            : "Retry finished with partial failures.";
     setOverlayMessage(options.failed ? "Retry stopped" : "Retry finished");
     setCurrentFile("");
     updateProgress(completed, total);
     updateFailureCount(failures);
     setResultSummary(summary);
-    setResultExamples(payload.failure_examples);
+    setResultFailures(buildFailureItemsFromPayload(payload));
     setResultVisible(true);
     window.requestAnimationFrame(() => {
       applyRetryResultMiddleEllipsis();
@@ -679,6 +881,7 @@
 
   window.addEventListener("resize", () => {
     applyRetryResultMiddleEllipsis();
+    hideRetryErrorTooltip();
   });
 
   setupPreviewLoading();

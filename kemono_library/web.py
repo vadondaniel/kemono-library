@@ -2566,6 +2566,8 @@ def _retry_missing_attachment_rows(
 
             retry_results[index] = {
                 "id": int(row["id"]),
+                "name": str(row["name"]),
+                "display_name": display_name,
                 "success": bool(result["success"]),
                 "error": result["error"],
                 "local_path": result["local_path"],

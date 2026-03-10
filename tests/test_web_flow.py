@@ -2993,6 +2993,8 @@ def test_attachment_retry_job_reports_live_progress_until_complete(tmp_path, mon
     results = final_status["results"]
     assert isinstance(results, list)
     assert len(results) == 2
+    assert all(isinstance(entry.get("name"), str) and entry["name"] for entry in results)
+    assert all(isinstance(entry.get("display_name"), str) and entry["display_name"] for entry in results)
     assert final_status["redirect_url"] == "/attachments"
 
 
