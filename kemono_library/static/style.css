@@ -2000,6 +2000,16 @@ small {
   color: var(--muted);
 }
 
+.creator-meta-pill-link {
+  text-decoration: none;
+}
+
+.creator-meta-pill-link:hover {
+  color: var(--accent-strong);
+  border-color: color-mix(in srgb, var(--accent) 44%, var(--border));
+  background: color-mix(in srgb, var(--accent-soft) 42%, var(--card-solid));
+}
+
 .creator-hero-actions {
   display: flex;
   gap: 0.5rem;

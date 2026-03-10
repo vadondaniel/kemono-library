@@ -31,12 +31,26 @@
       <div class="creator-hero-copy">
         <h1 class="creator-title">{{ creator['name'] }}</h1>
         <div class="creator-meta-row">
-          <span class="creator-meta-pill">
-            {% if creator['service'] %}{{ creator['service']|upper }}{% else %}UNLINKED{% endif %}
-          </span>
-          <span class="creator-meta-pill">
-            {% if creator['external_user_id'] %}User {{ creator['external_user_id'] }}{% else %}No external user{% endif %}
-          </span>
+          {% if creator['service'] and creator['external_user_id'] %}
+            <a
+              class="creator-meta-pill creator-meta-pill-link"
+              href="https://kemono.cr/{{ creator['service'] }}/user/{{ creator['external_user_id'] }}"
+              target="_blank"
+              rel="noopener noreferrer nofollow"
+            >
+              {{ creator['service']|upper }} · User {{ creator['external_user_id'] }}
+            </a>
+          {% else %}
+            <span class="creator-meta-pill">
+              {% if creator['service'] %}
+                {{ creator['service']|upper }} · No external user
+              {% elif creator['external_user_id'] %}
+                UNLINKED · User {{ creator['external_user_id'] }}
+              {% else %}
+                UNLINKED · No external user
+              {% endif %}
+            </span>
+          {% endif %}
         </div>
       </div>
       <div class="creator-hero-actions">
