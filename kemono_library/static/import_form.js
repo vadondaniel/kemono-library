@@ -8,6 +8,15 @@
   const panels = Array.from(root.querySelectorAll("[data-import-tab-panel]"));
   const triggerByTab = new Map();
   const panelByTab = new Map();
+  const titleSingle = root.getAttribute("data-import-title-single") || "";
+  const titleQuick = root.getAttribute("data-import-title-quick") || titleSingle;
+
+  function syncDocumentTitle(tab) {
+    const nextTitle = tab === "quick" ? titleQuick : titleSingle;
+    if (nextTitle) {
+      document.title = nextTitle;
+    }
+  }
 
   for (const trigger of triggers) {
     const tab = trigger.getAttribute("data-import-tab-trigger");
@@ -37,6 +46,7 @@
       panel.hidden = !active;
       panel.classList.toggle("is-active", active);
     }
+    syncDocumentTitle(resolved);
   }
 
   for (const trigger of triggers) {

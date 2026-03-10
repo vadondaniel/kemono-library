@@ -1,6 +1,12 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="panel import-form-shell" data-import-form-tabs data-import-default-tab="{{ prefill_import_tab or 'single' }}">
+<section
+  class="panel import-form-shell"
+  data-import-form-tabs
+  data-import-default-tab="{{ prefill_import_tab or 'single' }}"
+  data-import-title-single="{{ import_title_single }}"
+  data-import-title-quick="{{ import_title_quick }}"
+>
   <h1>Import Kemono Post</h1>
   <div class="import-form-tab-row" role="tablist" aria-label="Import mode">
     <button

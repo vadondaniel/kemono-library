@@ -10,6 +10,16 @@ from kemono_library.db import LibraryDB
 from kemono_library.web import _import_post_into_library, create_app
 
 
+def _page_title(response) -> str:
+    soup = BeautifulSoup(response.data, "html.parser")
+    node = soup.select_one("title")
+    return node.get_text(strip=True) if node is not None else ""
+
+
+def _expected_page_title(*parts: str) -> str:
+    return " \u00b7 ".join([*parts, "Kemono Library"])
+
+
 def test_import_and_resolve_flow(tmp_path, monkeypatch):
     app = create_app(
         {
@@ -84,6 +94,7 @@ def test_import_and_resolve_flow(tmp_path, monkeypatch):
     )
     assert preview.status_code == 200
     assert b"cover.jpg" in preview.data
+    assert _page_title(preview) == _expected_page_title("Post 100", "Import Preview")
 
     commit = client.post(
         "/import/commit",
@@ -123,6 +134,7 @@ def test_import_and_resolve_flow(tmp_path, monkeypatch):
     assert b"/links/resolve?service=fanbox&amp;post=101" in detail.data
     assert b"Published:" in detail.data
     assert b"2025-10-25T12:00:00" in detail.data
+    assert _page_title(detail) == _expected_page_title("Post 100", "Creator A")
 
     unresolved = client.get("/links/resolve?service=fanbox&post=100&user=70479526")
     assert unresolved.status_code == 302
@@ -301,12 +313,16 @@ def test_import_form_renders_tabbed_quick_import_ui(tmp_path):
     )
     creator_id = app.db.create_creator("Tabbed Import Creator")  # type: ignore[attr-defined]
 
-    response = app.test_client().get(f"/import?creator_id={creator_id}&tab=quick")
+    client = app.test_client()
+    response = client.get(f"/import?creator_id={creator_id}&tab=quick")
     assert response.status_code == 200
+    assert _page_title(response) == _expected_page_title("Quick Import")
     soup = BeautifulSoup(response.data, "html.parser")
     shell = soup.select_one("[data-import-form-tabs]")
     assert shell is not None
     assert shell.get("data-import-default-tab") == "quick"
+    assert shell.get("data-import-title-single") == _expected_page_title("Import Post")
+    assert shell.get("data-import-title-quick") == _expected_page_title("Quick Import")
     assert soup.select_one("[data-import-tab-trigger='single']") is not None
     assert soup.select_one("[data-import-tab-trigger='quick']") is not None
     assert soup.select_one("[data-quick-link-input]") is not None
@@ -314,6 +330,10 @@ def test_import_form_renders_tabbed_quick_import_ui(tmp_path):
     assert soup.select_one("[data-quick-link-list]") is not None
     assert soup.select_one("[data-quick-hidden-urls]") is not None
     assert b"/static/import_form.js" in response.data
+
+    single_response = client.get(f"/import?creator_id={creator_id}&tab=single")
+    assert single_response.status_code == 200
+    assert _page_title(single_response) == _expected_page_title("Import Post")
 
 
 def test_quick_import_multiple_posts_metadata_only_skips_downloads(tmp_path, monkeypatch):
@@ -2228,6 +2248,7 @@ def test_homepage_links_to_attachment_manager(tmp_path):
     assert response.status_code == 200
     assert b'href="/attachments"' in response.data
     assert b"Attachments" in response.data
+    assert _page_title(response) == _expected_page_title("Local Kemono Archive")
 
 
 def test_post_links_expose_creator_for_preferred_view_injection(tmp_path):
@@ -2317,6 +2338,7 @@ def test_attachment_manager_lists_grouped_inventory_with_sizes(tmp_path):
 
     response = app.test_client().get("/attachments")
     assert response.status_code == 200
+    assert _page_title(response) == _expected_page_title("Attachment Inventory")
     soup = BeautifulSoup(response.data, "html.parser")
     text = soup.get_text(" ", strip=True)
     assert "Inventory" in text
@@ -3197,6 +3219,7 @@ def test_edit_page_prettifies_html_content(tmp_path):
     response = client.get(f"/posts/{post_id}/edit")
 
     assert response.status_code == 200
+    assert _page_title(response) == _expected_page_title("Edit Me", "Edit Post")
     assert b"<textarea" in response.data
     assert b'id="content"' in response.data
     assert b'name="content"' in response.data
@@ -4068,6 +4091,7 @@ def test_creator_import_context_and_series_folder_metadata_mode(tmp_path):
 
     root = client.get(f"/creators/{creator_id}")
     assert root.status_code == 200
+    assert _page_title(root) == _expected_page_title("Context Creator")
     expected_root_import = f'href="/import?creator_id={creator_id}"'.encode()
     assert b'btn btn-link btn--ghost creator-import-action' in root.data
     assert expected_root_import in root.data
@@ -4076,6 +4100,7 @@ def test_creator_import_context_and_series_folder_metadata_mode(tmp_path):
 
     folder = client.get(f"/creators/{creator_id}?series_id={series_id}")
     assert folder.status_code == 200
+    assert _page_title(folder) == _expected_page_title("Folder A", "Context Creator")
     expected_import = f'href="/import?creator_id={creator_id}&amp;series_id={series_id}"'.encode()
     assert b'btn btn-link btn--ghost creator-import-action' in folder.data
     assert expected_import in folder.data
@@ -4138,6 +4163,7 @@ def test_creator_edit_flow_updates_metadata(tmp_path):
 
     edit_get = client.get(f"/creators/{creator_id}/edit")
     assert edit_get.status_code == 200
+    assert _page_title(edit_get) == _expected_page_title("Creator Before", "Edit Creator")
     assert b"Edit Creator" in edit_get.data
     assert b"Creator Before" in edit_get.data
 
@@ -4664,6 +4690,7 @@ def test_post_detail_uses_requested_version_id(tmp_path):
     detail = app.test_client().get(f"/posts/{post_id}?version_id={clone_id}")
     assert detail.status_code == 200
     assert b"English title" in detail.data
+    assert _page_title(detail) == _expected_page_title("English title", "Version Switch Creator")
 
 
 def test_list_post_versions_keeps_creation_order_when_editing_non_default(tmp_path):
@@ -5496,6 +5523,22 @@ def test_edit_version_reimport_link_only_for_non_manual_versions(tmp_path):
     manual_page = client.get(f"/posts/{post_id}/edit?version_id={manual_id}")
     assert manual_page.status_code == 200
     assert b"Reimport and overwrite this version" not in manual_page.data
+
+
+def test_resolve_link_missing_page_uses_dynamic_title(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+
+    response = app.test_client().get("/links/resolve?service=fanbox&post=404&user=700")
+    assert response.status_code == 200
+    assert _page_title(response) == _expected_page_title("fanbox/404", "Missing Local Post")
 
 
 def test_resolve_link_matches_version_source_tuple(tmp_path):
