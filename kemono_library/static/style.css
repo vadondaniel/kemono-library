@@ -3106,6 +3106,7 @@ button:disabled,
   transition: background-color 160ms ease;
   transform: none;
   filter: none;
+  border-radius: 0;
   appearance: none;
   -webkit-appearance: none;
 }
