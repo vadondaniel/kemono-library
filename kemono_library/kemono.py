@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -216,22 +218,124 @@ def sanitize_filename(filename: str) -> str:
 
 def download_attachment(remote_url: str, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with requests.get(
-        remote_url,
-        stream=True,
-        timeout=60,
-        headers={
-            "Accept": "*/*",
-            "User-Agent": KEMONO_API_HEADERS["User-Agent"],
+    parsed = urlparse(remote_url)
+    source_origin = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else ""
+    allow_insecure_retry = bool(parsed.netloc and not parsed.netloc.lower().endswith("kemono.cr"))
+    base_headers = {
+        "Accept": "*/*",
+        "User-Agent": KEMONO_API_HEADERS["User-Agent"],
+    }
+    header_profiles = [
+        {
+            **base_headers,
             "Referer": KEMONO_BASE + "/",
             "Origin": KEMONO_BASE,
         },
-    ) as response:
-        response.raise_for_status()
-        with destination.open("wb") as handle:
-            for chunk in response.iter_content(chunk_size=65536):
-                if chunk:
-                    handle.write(chunk)
+        dict(base_headers),
+    ]
+    if source_origin:
+        header_profiles.append(
+            {
+                **base_headers,
+                "Referer": source_origin + "/",
+                "Origin": source_origin,
+            }
+        )
+
+    temp_destination = destination.with_name(f".{destination.name}.part")
+    last_error: Exception | None = None
+
+    for headers in header_profiles:
+        try:
+            with requests.get(remote_url, stream=True, timeout=60, headers=headers, verify=True) as response:
+                response.raise_for_status()
+                with temp_destination.open("wb") as handle:
+                    for chunk in response.iter_content(chunk_size=65536):
+                        if chunk:
+                            handle.write(chunk)
+            temp_destination.replace(destination)
+            return
+        except requests.exceptions.SSLError as ssl_exc:
+            last_error = ssl_exc
+            if not allow_insecure_retry:
+                try:
+                    if temp_destination.exists():
+                        temp_destination.unlink()
+                except OSError:
+                    pass
+                continue
+            try:
+                with requests.get(remote_url, stream=True, timeout=60, headers=headers, verify=False) as response:
+                    response.raise_for_status()
+                    with temp_destination.open("wb") as handle:
+                        for chunk in response.iter_content(chunk_size=65536):
+                            if chunk:
+                                handle.write(chunk)
+                temp_destination.replace(destination)
+                return
+            except Exception as insecure_exc:  # noqa: BLE001
+                last_error = insecure_exc
+                try:
+                    if temp_destination.exists():
+                        temp_destination.unlink()
+                except OSError:
+                    pass
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+            try:
+                if temp_destination.exists():
+                    temp_destination.unlink()
+            except OSError:
+                pass
+
+    if _should_try_curl_fallback(remote_url, last_error):
+        _download_attachment_with_curl(remote_url, destination)
+        return
+
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("Attachment download failed.")
+
+
+def _should_try_curl_fallback(remote_url: str, error: Exception | None) -> bool:
+    if error is None:
+        return False
+    parsed = urlparse(remote_url)
+    host = parsed.netloc.lower().strip()
+    if not host or host.endswith("kemono.cr"):
+        return False
+    if not isinstance(error, requests.exceptions.HTTPError):
+        return False
+    response = getattr(error, "response", None)
+    status = getattr(response, "status_code", None)
+    return status in {403, 429}
+
+
+def _download_attachment_with_curl(remote_url: str, destination: Path) -> None:
+    curl_bin = shutil.which("curl") or shutil.which("curl.exe")
+    if not curl_bin:
+        raise RuntimeError("curl is not available for fallback download.")
+    temp_destination = destination.with_name(f".{destination.name}.curl.part")
+    command = [
+        curl_bin,
+        "--fail",
+        "--location",
+        "--silent",
+        "--show-error",
+        "--output",
+        str(temp_destination),
+        remote_url,
+    ]
+    try:
+        subprocess.run(command, check=True, timeout=90)
+        temp_destination.replace(destination)
+    except Exception:  # noqa: BLE001
+        try:
+            if temp_destination.exists():
+                temp_destination.unlink()
+        except OSError:
+            pass
+        raise
 
 
 def creator_icon_url(service: str, user_id: str) -> str:

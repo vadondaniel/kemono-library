@@ -2326,12 +2326,19 @@ def _download_with_fallback_remote_url(
     if fallback and fallback not in urls_to_try:
         urls_to_try.append(fallback)
 
+    error_messages: list[str] = []
     for candidate_url in urls_to_try:
         try:
             download_attachment(candidate_url, destination)
             return candidate_url
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            error_messages.append(f"{candidate_url}: {exc}")
             continue
+    if error_messages:
+        detail = "; ".join(error_messages[:2])
+        if len(error_messages) > 2:
+            detail += "; ..."
+        raise RuntimeError(detail)
     return None
 
 

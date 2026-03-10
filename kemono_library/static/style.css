@@ -1908,6 +1908,14 @@ button:disabled,
   overflow: auto;
 }
 
+.attachment-retry-result-example {
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .attachment-retry-dock {
   position: fixed;
   right: 1rem;

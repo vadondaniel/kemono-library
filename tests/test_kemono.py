@@ -1,5 +1,6 @@
 from kemono_library.kemono import (
     KemonoPostRef,
+    download_attachment,
     extract_attachments,
     fetch_post_json,
     normalize_post_payload,
@@ -296,3 +297,75 @@ def test_extract_attachments_uses_inline_query_format_hint_for_extension():
     assert len(matches) == 1
     assert matches[0].kind == "inline_only"
     assert matches[0].name.endswith(".gif")
+
+
+def test_download_attachment_retries_without_kemono_referer_for_external_hosts(tmp_path, monkeypatch):
+    call_headers = []
+
+    class FakeResponse:
+        def __init__(self, *, should_fail: bool, payload: bytes = b""):
+            self.should_fail = should_fail
+            self.payload = payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):  # noqa: ANN001
+            return False
+
+        def raise_for_status(self):
+            if self.should_fail:
+                raise RuntimeError("403 forbidden")
+
+        def iter_content(self, chunk_size=65536):  # noqa: ARG002
+            if self.payload:
+                yield self.payload
+
+    def fake_get(url, stream, timeout, headers, verify=True):  # noqa: ARG001
+        call_headers.append(dict(headers))
+        if len(call_headers) == 1:
+            return FakeResponse(should_fail=True)
+        return FakeResponse(should_fail=False, payload=b"image-bytes")
+
+    monkeypatch.setattr("kemono_library.kemono.requests.get", fake_get)
+
+    destination = tmp_path / "file.jpg"
+    download_attachment("https://cdn.example/path/file.jpg", destination)
+
+    assert destination.read_bytes() == b"image-bytes"
+    assert len(call_headers) >= 2
+    assert call_headers[0].get("Referer") == "https://kemono.cr/"
+    assert call_headers[1].get("Referer") != "https://kemono.cr/"
+
+
+def test_download_attachment_uses_curl_fallback_after_external_403(tmp_path, monkeypatch):
+    import requests
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):  # noqa: ANN001
+            return False
+
+        def raise_for_status(self):
+            response = requests.Response()
+            response.status_code = 403
+            response.url = "https://cdn.donmai.us/sample/example.jpg"
+            raise requests.exceptions.HTTPError("403", response=response)
+
+        def iter_content(self, chunk_size=65536):  # noqa: ARG002
+            yield b""
+
+    def fake_get(url, stream, timeout, headers, verify=True):  # noqa: ARG001
+        return FakeResponse()
+
+    def fake_curl(remote_url, destination):
+        destination.write_bytes(b"curl-bytes")
+
+    monkeypatch.setattr("kemono_library.kemono.requests.get", fake_get)
+    monkeypatch.setattr("kemono_library.kemono._download_attachment_with_curl", fake_curl)
+
+    destination = tmp_path / "file.jpg"
+    download_attachment("https://cdn.donmai.us/sample/example.jpg", destination)
+    assert destination.read_bytes() == b"curl-bytes"

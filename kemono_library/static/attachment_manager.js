@@ -28,6 +28,8 @@
   let minimized = false;
   let previewObserver = null;
   let filterSubmitTimer = null;
+  const measureCanvas = document.createElement("canvas");
+  const measureContext = measureCanvas.getContext("2d");
 
   function formatBytes(value) {
     const size = Number(value);
@@ -45,6 +47,86 @@
       scaled /= 1024;
     }
     return unit === "B" ? `${Math.round(scaled)} ${unit}` : `${scaled.toFixed(1)} ${unit}`;
+  }
+
+  function measureTextWidth(element, value) {
+    if (!(element instanceof HTMLElement) || !measureContext) {
+      return value.length * 8;
+    }
+    const style = window.getComputedStyle(element);
+    const font = style.font && style.font !== "normal normal normal normal 16px / normal sans-serif"
+      ? style.font
+      : `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+    measureContext.font = font;
+    return measureContext.measureText(value).width;
+  }
+
+  function middleEllipsizeToFit(element, value) {
+    const available = Math.max(0, Math.floor(element.clientWidth || element.getBoundingClientRect().width));
+    if (available <= 0 || !value) {
+      return value;
+    }
+    if (measureTextWidth(element, value) <= available) {
+      return value;
+    }
+
+    const dotIndex = value.lastIndexOf(".");
+    const likelyExtension =
+      dotIndex > 0 && dotIndex < value.length - 1 && value.length - dotIndex <= 9
+        ? value.slice(dotIndex)
+        : "";
+    const minRight = likelyExtension ? Math.max(8, likelyExtension.length + 5) : 8;
+
+    let low = 6;
+    let high = Math.max(6, value.length - 4);
+    let best = "";
+    while (low <= high) {
+      const keep = Math.floor((low + high) / 2);
+      let right = Math.max(minRight, Math.round(keep * 0.4));
+      right = Math.min(right, Math.max(4, value.length - 5));
+      let left = keep - right;
+      if (left < 3) {
+        left = 3;
+      }
+      if (left + right + 3 > value.length) {
+        right = Math.max(4, value.length - left - 3);
+      }
+      const candidate = `${value.slice(0, left)}...${value.slice(value.length - right)}`;
+      if (measureTextWidth(element, candidate) <= available) {
+        best = candidate;
+        low = keep + 1;
+      } else {
+        high = keep - 1;
+      }
+    }
+    if (best) {
+      return best;
+    }
+    return `${value.slice(0, 3)}...${value.slice(-Math.max(4, minRight))}`;
+  }
+
+  function applyMiddleEllipsis(element) {
+    if (!(element instanceof HTMLElement)) {
+      return;
+    }
+    const fullText = (element.dataset.fullText || element.textContent || "").trim();
+    if (!fullText) {
+      return;
+    }
+    element.dataset.fullText = fullText;
+    element.title = fullText;
+    element.textContent = middleEllipsizeToFit(element, fullText);
+  }
+
+  function applyRetryResultMiddleEllipsis() {
+    if (!(resultExamples instanceof HTMLElement)) {
+      return;
+    }
+    Array.from(resultExamples.querySelectorAll(".attachment-retry-result-example")).forEach((node) => {
+      if (node instanceof HTMLElement) {
+        applyMiddleEllipsis(node);
+      }
+    });
   }
 
   function buildLocalFileUrl(relativePath) {
@@ -154,8 +236,14 @@
     resultExamples.hidden = normalized.length === 0;
     normalized.forEach((example) => {
       const item = document.createElement("li");
+      item.className = "attachment-retry-result-example";
+      item.setAttribute("data-middle-ellipsis", "");
+      item.dataset.fullText = example;
       item.textContent = example;
       resultExamples.appendChild(item);
+    });
+    window.requestAnimationFrame(() => {
+      applyRetryResultMiddleEllipsis();
     });
   }
 
@@ -281,7 +369,7 @@
     }
     const openPostLink = actions.querySelector('a[href*="/posts/"]');
     const link = document.createElement("a");
-    link.className = "button-link button-ghost";
+    link.className = "btn btn-link btn--ghost";
     link.target = "_blank";
     link.rel = "noopener";
     link.href = buildLocalFileUrl(localPath);
@@ -374,6 +462,9 @@
     setResultSummary(summary);
     setResultExamples(payload.failure_examples);
     setResultVisible(true);
+    window.requestAnimationFrame(() => {
+      applyRetryResultMiddleEllipsis();
+    });
     updateDock(options.failed ? "Retry stopped" : "Retry finished", completed, total, failures, total > 0 ? Math.round((completed / total) * 100) : 0);
     if (minimized) {
       setDockVisible(true);
@@ -584,6 +675,10 @@
         }
       }
     });
+  });
+
+  window.addEventListener("resize", () => {
+    applyRetryResultMiddleEllipsis();
   });
 
   setupPreviewLoading();
