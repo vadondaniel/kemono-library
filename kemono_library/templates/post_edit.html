@@ -117,12 +117,12 @@
   <h2>Version Tools</h2>
   <div class="post-edit-tool-row">
     <a
-      class="button-link button-ghost"
+      class="btn btn-link btn--ghost"
       href="{{ url_for('import_form', creator_id=post['creator_id'], series_id=post['series_id'], import_target_mode='existing', target_post_id=post['id'], force_target_post_version='1', overwrite_matching_version='0', set_as_default='0', version_label='Imported version', version_language='') }}"
     >Import new version</a>
     {% if active_version['origin_kind'] == 'source' and active_version['source_url'] %}
       <a
-        class="button-link button-ghost"
+        class="btn btn-link btn--ghost"
         href="{{ url_for('import_form', url=active_version['source_url'], creator_id=post['creator_id'], series_id=post['series_id'], import_target_mode='existing', target_post_id=post['id'], force_overwrite_matching_version='1', overwrite_matching_version='1', set_as_default='1' if active_version['is_default'] else '0', version_label=active_version['label'], version_language=active_version['language'] or '') }}"
       >Reimport and overwrite this version</a>
     {% endif %}
@@ -131,16 +131,16 @@
       <input type="hidden" name="set_as_default" value="0">
       <input type="hidden" name="version_label" value="Manual translation">
       <input type="hidden" name="version_language" value="">
-      <button type="submit" class="button-ghost">Clone as manual version</button>
+      <button type="submit" class="btn btn--ghost">Clone as manual version</button>
     </form>
     {% if not active_version['is_default'] %}
       <form method="post" action="{{ url_for('set_default_post_version', post_id=post['id'], version_id=active_version['id']) }}" class="inline-form">
-        <button type="submit" class="button-ghost">Set as default</button>
+        <button type="submit" class="btn btn--ghost">Set as default</button>
       </form>
     {% endif %}
     {% if versions|length > 1 %}
       <form method="post" action="{{ url_for('delete_post_version', post_id=post['id'], version_id=active_version['id']) }}" class="inline-form" onsubmit="return confirm('Delete this version?');">
-        <button type="submit" class="button-ghost button-danger-quiet">Delete version</button>
+        <button type="submit" class="btn btn--ghost btn--danger-quiet">Delete version</button>
       </form>
     {% endif %}
   </div>
@@ -151,7 +151,7 @@
     <summary>Danger zone</summary>
     <p>Delete the entire post and all saved files from your local library.</p>
     <form method="post" action="{{ url_for('delete_post', post_id=post['id']) }}" class="inline-form" onsubmit="return confirm('Delete this post from your local library?');">
-      <button type="submit" class="button-ghost button-danger-quiet">Delete post</button>
+      <button type="submit" class="btn btn--ghost btn--danger-quiet">Delete post</button>
     </form>
   </details>
 </section>
@@ -196,13 +196,13 @@
       >
       <div class="post-edit-attachment-actions">
       {% if file['local_available'] %}
-        <a class="button-link button-ghost" href="{{ url_for('serve_file', relative_path=file['local_path']) }}" target="_blank" rel="noopener">Open local</a>
+        <a class="btn btn-link btn--ghost" href="{{ url_for('serve_file', relative_path=file['local_path']) }}" target="_blank" rel="noopener">Open local</a>
       {% else %}
-        <a class="button-link button-ghost" href="{{ file['remote_url_display'] }}" target="_blank" rel="noopener noreferrer">Open remote</a>
+        <a class="btn btn-link btn--ghost" href="{{ file['remote_url_display'] }}" target="_blank" rel="noopener noreferrer">Open remote</a>
         {% if file['id'] is not none %}
           <form method="post" action="{{ url_for('retry_attachment_download', post_id=post['id'], attachment_id=file['id'], version_id=active_version['id']) }}" class="inline-form">
             <input type="hidden" name="version_id" value="{{ active_version['id'] }}">
-            <button type="submit" class="button-ghost">Retry download</button>
+            <button type="submit" class="btn btn--ghost">Retry download</button>
           </form>
         {% endif %}
       {% endif %}
@@ -268,7 +268,7 @@
   {% endif %}
 </section>
 <div class="post-edit-floating-actions" aria-label="Post edit quick actions">
-  <a class="button-link button-ghost" href="{{ url_for('post_detail', post_id=post['id'], version_id=active_version['id']) }}">Back to post</a>
+  <a class="btn btn-link btn--ghost" href="{{ url_for('post_detail', post_id=post['id'], version_id=active_version['id']) }}">Back to post</a>
   <button type="submit" form="post-edit-main-form">Save Changes</button>
 </div>
 <div class="post-edit-lightbox" data-post-edit-lightbox hidden>
@@ -287,3 +287,5 @@
 </div>
 <script src="{{ url_for('static', filename='post_edit.js') }}"></script>
 {% endblock %}
+
+

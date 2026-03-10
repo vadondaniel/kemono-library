@@ -63,14 +63,14 @@
     <section class="panel post-reader-panel" data-post-reader-panel>
       <div class="post-reader-toolbar">
         <div class="post-reader-nav-controls">
-          <button type="button" class="button-link button-ghost" data-post-reader-prev disabled>Prev</button>
-          <button type="button" class="button-link button-ghost" data-post-reader-next disabled>Next</button>
+          <button type="button" class="btn btn-link btn--ghost" data-post-reader-prev disabled>Prev</button>
+          <button type="button" class="btn btn-link btn--ghost" data-post-reader-next disabled>Next</button>
         </div>
         <span class="post-reader-counter" data-post-reader-counter>0 / 0</span>
         <div class="post-reader-zoom-controls">
-          <button type="button" class="button-link button-ghost" data-post-reader-zoom-fit>Fit</button>
-          <button type="button" class="button-link button-ghost" data-post-reader-zoom-out>-</button>
-          <button type="button" class="button-link button-ghost" data-post-reader-zoom-in>+</button>
+          <button type="button" class="btn btn-link btn--ghost" data-post-reader-zoom-fit>Fit</button>
+          <button type="button" class="btn btn-link btn--ghost" data-post-reader-zoom-out>-</button>
+          <button type="button" class="btn btn-link btn--ghost" data-post-reader-zoom-in>+</button>
         </div>
       </div>
       <div class="post-reader-stage">
@@ -166,7 +166,7 @@
         {% if view_mode != 'reader' %}
           <div class="post-viewer-head-actions">
             <a
-              class="button-link button-ghost"
+              class="btn btn-link btn--ghost"
               href="{{ url_for('edit_post', post_id=post['id'], version_id=active_version['id'], view=view_mode) if include_view_in_urls else url_for('edit_post', post_id=post['id'], version_id=active_version['id']) }}"
             >
               {% if versions|length > 1 %}Edit Version{% else %}Edit Post{% endif %}
@@ -193,7 +193,7 @@
               <li>
                 <button
                   type="button"
-                  class="button-link button-ghost post-file-launcher-item"
+                  class="btn btn-link btn--ghost post-file-launcher-item"
                   data-post-reader-source-image
                   data-reader-image-src="{{ image_src }}"
                   data-reader-image-title="{{ file['name'] }}"
@@ -276,7 +276,7 @@
   <aside class="post-reader-nav-sheet" data-post-reader-nav-sheet aria-hidden="true">
     <header class="post-reader-nav-sheet-head">
       <strong>Navigator</strong>
-      <button type="button" class="button-link button-ghost" data-post-reader-nav-close>Close</button>
+      <button type="button" class="btn btn-link btn--ghost" data-post-reader-nav-close>Close</button>
     </header>
     <div class="post-reader-nav-sheet-body">
       {{ render_nav_panel(show_heading=false, use_panel_wrapper=false) }}
@@ -287,8 +287,8 @@
   <button type="button" class="post-lightbox-backdrop" data-post-lightbox-close aria-label="Close image preview"></button>
   <figure class="post-lightbox-dialog" role="dialog" aria-modal="true" aria-label="Image preview">
     <div class="post-lightbox-actions">
-      <a href="#" target="_blank" rel="noopener noreferrer" class="button-link button-ghost" data-post-lightbox-open-tab>Open in new tab</a>
-      <button type="button" class="post-lightbox-close button-link button-ghost" data-post-lightbox-close>Close</button>
+      <a href="#" target="_blank" rel="noopener noreferrer" class="btn btn-link btn--ghost" data-post-lightbox-open-tab>Open in new tab</a>
+      <button type="button" class="post-lightbox-close btn btn-link btn--ghost" data-post-lightbox-close>Close</button>
     </div>
     <img src="" alt="" data-post-lightbox-image>
     <figcaption data-post-lightbox-caption></figcaption>
@@ -296,3 +296,5 @@
 </div>
 <script src="{{ url_for('static', filename='post_detail.js') }}"></script>
 {% endblock %}
+
+

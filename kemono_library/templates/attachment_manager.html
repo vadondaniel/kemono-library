@@ -66,7 +66,7 @@
     </div>
 
     <div class="attachment-manager-filter-actions">
-      <a class="button-link button-ghost" href="{{ url_for('attachment_manager') }}">Reset</a>
+      <a class="btn btn-link btn--ghost" href="{{ url_for('attachment_manager') }}">Reset</a>
     </div>
   </form>
 </section>
@@ -172,9 +172,9 @@
                             <div class="attachment-file-url" title="{{ file['remote_url'] }}">{{ file['remote_url'] }}</div>
                             <div class="attachment-file-actions" data-attachment-file-actions>
                               {% if file['local_available'] and file['local_path'] %}
-                                <a class="button-link button-ghost" href="{{ url_for('serve_file', relative_path=file['local_path']) }}" target="_blank" rel="noopener" data-attachment-open-local>Open local</a>
+                                <a class="btn btn-link btn--ghost" href="{{ url_for('serve_file', relative_path=file['local_path']) }}" target="_blank" rel="noopener" data-attachment-open-local>Open local</a>
                               {% endif %}
-                              <a class="button-link button-ghost" href="{{ url_for('post_detail', post_id=file['post_id']) }}" data-post-detail-link data-post-creator-id="{{ creator['id'] }}">Open post</a>
+                              <a class="btn btn-link btn--ghost" href="{{ url_for('post_detail', post_id=file['post_id']) }}" data-post-detail-link data-post-creator-id="{{ creator['id'] }}">Open post</a>
                               {% if not file['local_available'] %}
                                 <form method="post" action="{{ url_for('retry_missing_attachments') }}" class="inline-form" data-attachment-retry-form data-attachment-retry-inline data-retry-start-url="{{ url_for('start_retry_missing_attachments') }}" data-retry-message="Retrying {{ file['name'] }}...">
                                   <input type="hidden" name="scope" value="attachment">
@@ -208,7 +208,7 @@
     <div class="import-submit-head">
       <span class="import-submit-spinner" data-attachment-retry-spinner aria-hidden="true"></span>
       <p data-attachment-retry-message>Retrying missing attachments...</p>
-      <button type="button" class="button-link button-ghost import-submit-minimize" data-attachment-retry-close>Close</button>
+      <button type="button" class="btn btn-link btn--ghost import-submit-minimize" data-attachment-retry-close>Close</button>
     </div>
     <div class="import-submit-progress-line">
       <span><strong data-attachment-retry-progress-current>0</strong> / <strong data-attachment-retry-progress-total>0</strong> files</span>
@@ -232,15 +232,15 @@
     <strong data-attachment-retry-dock-message>Retrying missing attachments...</strong>
     <small data-attachment-retry-dock-meta>0 / 0 files</small>
   </div>
-  <button type="button" class="button-link button-ghost" data-attachment-retry-restore>Show</button>
+  <button type="button" class="btn btn-link btn--ghost" data-attachment-retry-restore>Show</button>
 </div>
 
 <div class="post-lightbox" data-post-lightbox hidden>
   <button type="button" class="post-lightbox-backdrop" data-post-lightbox-close aria-label="Close image preview"></button>
   <figure class="post-lightbox-dialog" role="dialog" aria-modal="true" aria-label="Image preview">
     <div class="post-lightbox-actions">
-      <a href="#" target="_blank" rel="noopener noreferrer" class="button-link button-ghost" data-post-lightbox-open-tab>Open in new tab</a>
-      <button type="button" class="post-lightbox-close button-link button-ghost" data-post-lightbox-close>Close</button>
+      <a href="#" target="_blank" rel="noopener noreferrer" class="btn btn-link btn--ghost" data-post-lightbox-open-tab>Open in new tab</a>
+      <button type="button" class="post-lightbox-close btn btn-link btn--ghost" data-post-lightbox-close>Close</button>
     </div>
     <img src="" alt="" data-post-lightbox-image>
     <figcaption data-post-lightbox-caption></figcaption>
@@ -249,3 +249,5 @@
 <script src="{{ url_for('static', filename='post_detail.js') }}"></script>
 <script src="{{ url_for('static', filename='attachment_manager.js') }}"></script>
 {% endblock %}
+
+

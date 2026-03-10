@@ -3762,7 +3762,7 @@ def test_creator_import_context_and_series_folder_metadata_mode(tmp_path):
     root = client.get(f"/creators/{creator_id}")
     assert root.status_code == 200
     expected_root_import = f'href="/import?creator_id={creator_id}"'.encode()
-    assert b'class="button-link button-ghost creator-import-action"' in root.data
+    assert b'btn btn-link btn--ghost creator-import-action' in root.data
     assert expected_root_import in root.data
     assert b"Import here" not in root.data
     assert b'class="folder-explorer-grid"' in root.data
@@ -3770,7 +3770,7 @@ def test_creator_import_context_and_series_folder_metadata_mode(tmp_path):
     folder = client.get(f"/creators/{creator_id}?series_id={series_id}")
     assert folder.status_code == 200
     expected_import = f'href="/import?creator_id={creator_id}&amp;series_id={series_id}"'.encode()
-    assert b'class="button-link button-ghost creator-import-action"' in folder.data
+    assert b'btn btn-link btn--ghost creator-import-action' in folder.data
     assert expected_import in folder.data
     assert b'class="series-meta-title"' in folder.data
     assert b'Folder A' in folder.data

@@ -19,7 +19,7 @@
       </div>
       <div class="import-preview-head-actions">
         <details class="series-create-disclosure import-meta-disclosure">
-          <summary class="button-link button-ghost series-create-toggle">Post metadata</summary>
+          <summary class="btn btn-link btn--ghost series-create-toggle">Post metadata</summary>
           <div class="series-create-popover import-meta-popover">
             <div class="import-meta-grid">
               <div class="import-meta-field import-meta-span-full">
@@ -164,9 +164,9 @@
       <div class="import-toolbar">
         <input id="file-search" type="search" placeholder="Filter files by name or URL">
         <div class="import-toolbar-buttons">
-          <button type="button" class="button-ghost" data-select-action="all">Select all</button>
-          <button type="button" class="button-ghost" data-select-action="visible">Select visible</button>
-          <button type="button" class="button-ghost" data-select-action="none">Clear all</button>
+          <button type="button" class="btn btn--ghost" data-select-action="all">Select all</button>
+          <button type="button" class="btn btn--ghost" data-select-action="visible">Select visible</button>
+          <button type="button" class="btn btn--ghost" data-select-action="none">Clear all</button>
         </div>
       </div>
 
@@ -259,3 +259,5 @@
 <script id="target-attachment-index" type="application/json">{{ target_attachment_index|tojson }}</script>
 <script src="{{ url_for('static', filename='import_preview.js') }}"></script>
 {% endblock %}
+
+

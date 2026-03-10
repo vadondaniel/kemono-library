@@ -20,7 +20,9 @@
 <section class="panel">
   <h2>Danger zone</h2>
   <form method="post" action="{{ url_for('delete_creator', creator_id=creator['id']) }}" class="inline-form" onsubmit="return confirm('Delete this creator and all imported posts?');">
-    <button type="submit" class="button-ghost button-danger-quiet">Delete creator</button>
+    <button type="submit" class="btn btn--ghost btn--danger-quiet">Delete creator</button>
   </form>
 </section>
 {% endblock %}
+
+

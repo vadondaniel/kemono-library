@@ -55,7 +55,7 @@
         </div>
       </div>
       <div class="creator-hero-actions">
-        <a class="button-link button-ghost" href="{{ url_for('edit_creator', creator_id=creator['id']) }}">Edit</a>
+        <a class="btn btn-link btn--ghost" href="{{ url_for('edit_creator', creator_id=creator['id']) }}">Edit</a>
       </div>
     </div>
     {% if creator['description'] or creator['tags_text'] %}
@@ -85,7 +85,7 @@
         <h2 class="series-meta-title">{{ selected_series['name'] }}</h2>
         <div class="series-meta-actions">
           <details class="series-edit-disclosure">
-            <summary class="button-link button-ghost series-edit-toggle">Edit</summary>
+            <summary class="btn btn-link btn--ghost series-edit-toggle">Edit</summary>
             <div class="series-edit-popover">
               <form method="post" action="{{ url_for('update_series', creator_id=creator['id'], series_id=selected_series['id']) }}" class="form series-edit-form">
                 <label for="series-name">Folder name</label>
@@ -125,7 +125,7 @@
               </form>
             </div>
           </details>
-          <a class="button-link button-ghost creator-import-action" href="{{ import_post_url }}">Import</a>
+          <a class="btn btn-link btn--ghost creator-import-action" href="{{ import_post_url }}">Import</a>
         </div>
       </div>
       {% if selected_series['description'] %}
@@ -149,7 +149,7 @@
         </div>
         <div class="section-head-actions">
           <details class="series-create-disclosure">
-            <summary class="button-link button-ghost series-create-toggle">New</summary>
+            <summary class="btn btn-link btn--ghost series-create-toggle">New</summary>
             <div class="series-create-popover">
               <form method="post" action="{{ url_for('create_series', creator_id=creator['id']) }}" class="form series-create-form">
                 <label for="series-name">Series name</label>
@@ -164,7 +164,7 @@
               </form>
             </div>
           </details>
-          <a class="button-link button-ghost creator-import-action" href="{{ import_post_url }}">Import</a>
+          <a class="btn btn-link btn--ghost creator-import-action" href="{{ import_post_url }}">Import</a>
         </div>
       </div>
 
@@ -266,7 +266,7 @@
           </div>
           <button
             type="submit"
-            class="button-link button-ghost creator-toolbar-icon-button"
+            class="btn btn-link btn--ghost creator-toolbar-icon-button"
             aria-label="Search posts"
             title="Search posts"
           >
@@ -279,7 +279,7 @@
         </form>
         <details class="creator-sort-popover post-content-settings-popover">
           <summary
-            class="button-link button-ghost creator-sort-toggle creator-toolbar-icon-button"
+            class="btn btn-link btn--ghost creator-sort-toggle creator-toolbar-icon-button"
             aria-label="Filter and sort options"
             title="Filter and sort options"
           >
@@ -367,3 +367,5 @@
   </article>
 </section>
 {% endblock %}
+
+

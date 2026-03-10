@@ -521,7 +521,7 @@ input[type="range"] {
 }
 
 button,
-.button-link {
+.btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -543,28 +543,32 @@ button,
 }
 
 button:hover,
-.button-link:hover {
+.btn:hover {
   border-color: color-mix(in srgb, var(--accent) 84%, var(--accent-strong));
   background: var(--button-primary-bg-hover);
 }
 
 button:active,
-.button-link:active {
+.btn:active {
   transform: translateY(1px);
 }
 
 button:focus-visible,
-.button-link:focus-visible {
+.btn:focus-visible {
   outline: none;
   box-shadow: var(--button-focus-ring), var(--shadow-control);
 }
 
 button:disabled,
-.button-link[aria-disabled="true"] {
+.btn[aria-disabled="true"] {
   opacity: 0.58;
   cursor: not-allowed;
   pointer-events: none;
   box-shadow: none;
+}
+
+.btn-link {
+  text-decoration: none;
 }
 
 .inline-form {
@@ -606,18 +610,18 @@ button:disabled,
   z-index: var(--z-popover);
 }
 
-.button-danger {
+.btn--danger {
   border-color: var(--danger-strong);
   background: linear-gradient(180deg, var(--danger), var(--danger-strong));
   color: var(--text-inverse-soft);
 }
 
-.button-danger:hover {
+.btn--danger:hover {
   border-color: color-mix(in srgb, var(--danger-strong) 88%, black 12%);
   background: linear-gradient(180deg, color-mix(in srgb, var(--danger) 88%, white 12%), color-mix(in srgb, var(--danger-strong) 90%, black 10%));
 }
 
-.button-danger-quiet {
+.btn--danger-quiet {
   border-color: color-mix(in srgb, var(--danger-accent) 40%, var(--border));
   background: color-mix(in srgb, var(--danger-accent) 10%, var(--card-solid));
   color: color-mix(in srgb, var(--danger-accent) 86%, var(--text));
@@ -626,7 +630,7 @@ button:disabled,
   box-shadow: none;
 }
 
-.button-danger-quiet:hover {
+.btn--danger-quiet:hover {
   border-color: color-mix(in srgb, var(--danger-accent) 62%, var(--border));
   background: color-mix(in srgb, var(--danger-accent) 12%, var(--card-solid));
   color: color-mix(in srgb, var(--danger-accent) 94%, var(--text));
@@ -1424,7 +1428,7 @@ small {
   flex-wrap: wrap;
 }
 
-.button-ghost {
+.btn--ghost {
   border: 1px solid var(--button-ghost-border);
   background: var(--button-ghost-bg);
   color: var(--text);
@@ -1432,7 +1436,7 @@ small {
   box-shadow: none;
 }
 
-.button-ghost:hover {
+.btn--ghost:hover {
   border-color: color-mix(in srgb, var(--accent) 56%, var(--border));
   background: var(--button-ghost-bg-hover);
   color: var(--accent-strong);
@@ -1774,7 +1778,7 @@ small {
   color: var(--muted);
 }
 
-.attachment-retry-dock .button-link {
+.attachment-retry-dock .btn {
   padding: 0.38rem 0.68rem;
   min-height: 2.2rem;
 }
@@ -1986,7 +1990,7 @@ small {
   flex-wrap: wrap;
 }
 
-.attachment-manager-filter-actions .button-link,
+.attachment-manager-filter-actions .btn,
 .attachment-manager-filter-actions button {
   min-height: 2.8rem;
   min-width: 5.6rem;
@@ -2581,7 +2585,7 @@ small {
   padding-right: 2rem;
 }
 
-.creator-post-search .button-link {
+.creator-post-search .btn {
   white-space: nowrap;
 }
 
@@ -3258,9 +3262,9 @@ body.is-busy-overlay-open {
   margin-left: auto;
 }
 
-.post-edit-tool-row .button-danger-quiet,
-.post-edit-danger .button-danger-quiet,
-.post-edit-attachment-actions .button-danger-quiet {
+.post-edit-tool-row .btn--danger-quiet,
+.post-edit-danger .btn--danger-quiet,
+.post-edit-attachment-actions .btn--danger-quiet {
   width: fit-content;
   justify-content: center;
 }
@@ -3322,7 +3326,7 @@ body.is-busy-overlay-open {
   text-align: center;
 }
 
-.post-reader-toolbar .button-link:disabled {
+.post-reader-toolbar .btn:disabled {
   opacity: 0.46;
   color: var(--muted);
   border-color: color-mix(in srgb, var(--border) 88%, transparent);
@@ -4247,7 +4251,7 @@ body.is-post-reader-page .site-header {
     padding: 0.42rem;
   }
 
-  .post-edit-floating-actions .button-link,
+  .post-edit-floating-actions .btn,
   .post-edit-floating-actions button {
     flex: 1;
     text-align: center;
@@ -4426,7 +4430,7 @@ body.is-post-reader-page .site-header {
     align-items: stretch;
   }
 
-  .attachment-manager-filter-actions .button-link,
+  .attachment-manager-filter-actions .btn,
   .attachment-manager-filter-actions button,
   .attachment-retry-result button {
     width: 100%;
