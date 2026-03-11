@@ -2365,6 +2365,7 @@ def test_gallery_fit_button_cycle_labels_exist_in_js():
     assert "canPanHorizontallyAtCoverZoom() ? \"Scroll\" : \"Column\"" in js
     assert "zoomFitButton.textContent = \"Pan\";" in js
     assert "zoomFitButton.textContent = \"Fit\";" in js
+    assert "if (isGalleryView && !isPageAtBottom() && !allowWheelControl)" in js
 
 
 def test_post_detail_reader_mode_propagates_view_and_renders_left_viewer_layout(tmp_path):

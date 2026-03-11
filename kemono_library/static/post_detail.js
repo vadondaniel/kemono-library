@@ -1287,7 +1287,7 @@
           return;
         }
         const allowWheelControl = event.ctrlKey;
-        if (!isPageAtBottom() && !allowWheelControl) {
+        if (isGalleryView && !isPageAtBottom() && !allowWheelControl) {
           return;
         }
         const deltaPixels = normalizedWheelDeltaPixels(event);
