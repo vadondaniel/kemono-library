@@ -2501,6 +2501,9 @@ def test_post_detail_gallery_mode_renders_post_header_then_viewer_with_image_lau
     assert soup.select_one("[data-post-reader-source-image]") is None
     assert soup.select_one("[data-post-gallery-picker-drawer]") is not None
     assert soup.select_one("[data-post-gallery-picker-overlay]") is not None
+    assert soup.select_one("[data-post-gallery-picker-scope-tab='images']") is not None
+    assert soup.select_one("[data-post-gallery-picker-scope-tab='content']") is not None
+    assert soup.select_one("[data-post-gallery-picker-close]") is None
     assert soup.select_one("[data-post-gallery-picker-view-toggle]") is not None
     assert soup.select_one("[data-post-gallery-picker-pin-toggle]") is not None
     assert len(soup.select("[data-post-gallery-picker-open]")) >= 2
@@ -2509,8 +2512,14 @@ def test_post_detail_gallery_mode_renders_post_header_then_viewer_with_image_lau
     assert soup.select_one("[data-post-gallery-picker-panel='list'] .post-file-retry-link") is not None
     assert soup.select_one("[data-post-gallery-picker-panel='grid'] .post-gallery-picker-grid") is not None
     assert soup.select_one("[data-post-gallery-picker-panel='grid'] .post-file-retry-link") is None
-    assert soup.select_one(".post-content") is None
-    assert soup.select_one(".post-content-source[data-post-content]") is not None
+    content_panel = soup.select_one("[data-post-gallery-picker-scope-panel='content'] .post-gallery-picker-content")
+    assert content_panel is not None
+    assert content_panel.has_attr("data-post-content")
+    assert content_panel.get_text(strip=True) or content_panel.select_one("img, a.post-image-link") is not None
+    gallery_main = soup.select_one(".post-view-main.is-gallery")
+    assert gallery_main is not None
+    assert gallery_main.select_one(".post-content") is None
+    assert soup.select_one(".post-content-source[data-post-content]") is None
     assert soup.select_one(".post-embed-list-shell") is None
     assert soup.select_one(".post-view-sidebar") is None
     assert soup.select_one(".header-actions [data-post-reader-nav-open]") is None
@@ -2522,8 +2531,6 @@ def test_post_detail_gallery_mode_renders_post_header_then_viewer_with_image_lau
     assert body is not None
     assert "is-post-gallery-page" in (body.get("class") or [])
 
-    gallery_main = soup.select_one(".post-view-main.is-gallery")
-    assert gallery_main is not None
     assert gallery_main.select_one(".post-file-list") is None
     gallery_blocks = [child for child in gallery_main.children if getattr(child, "name", None)]
     assert gallery_blocks

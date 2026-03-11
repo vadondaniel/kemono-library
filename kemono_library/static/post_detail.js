@@ -291,17 +291,24 @@
     const pinToggle = drawer.querySelector("[data-post-gallery-picker-pin-toggle]");
     const viewToggleButton = drawer.querySelector("[data-post-gallery-picker-view-toggle]");
     const viewToggleIcon = drawer.querySelector("[data-post-gallery-picker-view-icon]");
+    const scopeTabs = Array.from(drawer.querySelectorAll("[data-post-gallery-picker-scope-tab]")).filter(
+      (node) => node instanceof HTMLElement
+    );
+    const scopePanels = Array.from(drawer.querySelectorAll("[data-post-gallery-picker-scope-panel]")).filter(
+      (node) => node instanceof HTMLElement
+    );
+    const imagesScopePanel = drawer.querySelector("[data-post-gallery-picker-scope-panel='images']");
     const openTriggers = Array.from(document.querySelectorAll("[data-post-gallery-picker-open]")).filter(
       (node) => node instanceof HTMLElement
     );
-    const closeTriggers = Array.from(document.querySelectorAll("[data-post-gallery-picker-close]")).filter(
-      (node) => node instanceof HTMLElement
+    const tabPanels = Array.from((imagesScopePanel instanceof HTMLElement ? imagesScopePanel : drawer).querySelectorAll(
+      "[data-post-gallery-picker-panel]"
+    )).filter((node) => node instanceof HTMLElement);
+    const gridPanel = (imagesScopePanel instanceof HTMLElement ? imagesScopePanel : drawer).querySelector(
+      "[data-post-gallery-picker-panel='grid']"
     );
-    const tabPanels = Array.from(drawer.querySelectorAll("[data-post-gallery-picker-panel]")).filter(
-      (node) => node instanceof HTMLElement
-    );
-    const gridPanel = drawer.querySelector("[data-post-gallery-picker-panel='grid']");
     const gridList = gridPanel instanceof HTMLElement ? gridPanel.querySelector(".post-gallery-picker-grid") : null;
+    let activeScope = "images";
     let activeTab = "list";
     let lastOpenTrigger = null;
     let pinned = false;
@@ -346,6 +353,12 @@
       if (!(viewToggleButton instanceof HTMLButtonElement)) {
         return;
       }
+      const showViewToggle = activeScope === "images";
+      viewToggleButton.hidden = !showViewToggle;
+      viewToggleButton.disabled = !showViewToggle;
+      if (!showViewToggle) {
+        return;
+      }
       const nextTab = activeTab === "grid" ? "list" : "grid";
       const label = nextTab === "grid" ? "Switch to grid view" : "Switch to list view";
       viewToggleButton.setAttribute("aria-label", label);
@@ -353,6 +366,21 @@
       if (viewToggleIcon instanceof HTMLElement) {
         viewToggleIcon.innerHTML = nextTab === "grid" ? GRID_VIEW_ICON : LIST_VIEW_ICON;
       }
+    };
+
+    const setActiveScope = (nextScope) => {
+      const normalized = nextScope === "content" ? "content" : "images";
+      activeScope = normalized;
+      scopePanels.forEach((panel) => {
+        panel.hidden = panel.dataset.postGalleryPickerScopePanel !== normalized;
+      });
+      scopeTabs.forEach((tab) => {
+        const selected = tab.dataset.postGalleryPickerScopeTab === normalized;
+        tab.classList.toggle("is-active", selected);
+        tab.setAttribute("aria-selected", selected ? "true" : "false");
+        tab.tabIndex = selected ? 0 : -1;
+      });
+      syncViewToggle();
     };
 
     const setExpandedState = (open) => {
@@ -469,7 +497,9 @@
         drawer.classList.add("is-open");
         drawer.setAttribute("aria-hidden", "false");
         syncDrawerState();
-        const focusTarget = drawer.querySelector("[data-post-gallery-picker-close], [data-post-gallery-picker-view-toggle]");
+        const focusTarget = drawer.querySelector(
+          "[data-post-gallery-picker-scope-tab].is-active, [data-post-gallery-picker-view-toggle], [data-post-gallery-picker-pin-toggle]"
+        );
         if (focusTarget instanceof HTMLElement) {
           window.requestAnimationFrame(() => {
             focusTarget.focus();
@@ -498,9 +528,9 @@
       });
     });
 
-    closeTriggers.forEach((trigger) => {
-      trigger.addEventListener("click", () => {
-        setOpen(false);
+    scopeTabs.forEach((tab) => {
+      tab.addEventListener("click", () => {
+        setActiveScope(tab.dataset.postGalleryPickerScopeTab || "images");
       });
     });
 
@@ -530,6 +560,7 @@
     });
 
     setActiveTab(activeTab);
+    setActiveScope(activeScope);
     syncDrawerState();
 
     return {

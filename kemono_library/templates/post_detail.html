@@ -201,10 +201,6 @@
       <section class="panel post-content" data-post-content>
         {{ rendered_content | safe }}
       </section>
-    {% else %}
-      <div class="post-content-source" data-post-content hidden aria-hidden="true">
-        {{ rendered_content | safe }}
-      </div>
     {% endif %}
 
     {% if embed_cards and not is_gallery_mode %}
@@ -426,80 +422,107 @@
       aria-hidden="true"
     >
       <header class="post-gallery-picker-head">
-        <div class="post-gallery-picker-title-row">
-          <strong>Saved Files ({{ image_files|length }})</strong>
+        <div class="post-gallery-picker-scope-tabs" role="tablist" aria-label="Gallery drawer tabs">
           <button
             type="button"
-            class="btn btn-link btn--ghost"
-            data-post-gallery-picker-close
-            aria-label="Close gallery file picker"
-          >Close</button>
+            class="btn btn-link btn--ghost post-gallery-picker-scope-tab is-active"
+            data-post-gallery-picker-scope-tab="images"
+            role="tab"
+            aria-selected="true"
+            aria-controls="post-gallery-picker-scope-images"
+          >Images</button>
+          <button
+            type="button"
+            class="btn btn-link btn--ghost post-gallery-picker-scope-tab"
+            data-post-gallery-picker-scope-tab="content"
+            role="tab"
+            aria-selected="false"
+            aria-controls="post-gallery-picker-scope-content"
+          >Content</button>
         </div>
       </header>
       <div class="post-gallery-picker-body">
-        <section class="post-gallery-picker-panel" data-post-gallery-picker-panel="list">
-          {% if image_files %}
-            <ul class="list post-file-list post-gallery-picker-list">
-              {% for file in image_files %}
-                {% set image_src = url_for('serve_file', relative_path=file['local_path']) if file['local_available'] else file['remote_url_display'] %}
-                <li>
-                  <a
-                    class="post-file-link post-file-image-trigger"
-                    href="{{ image_src }}"
-                    data-post-file-image-trigger
-                    data-lightbox-src="{{ image_src }}"
-                    data-lightbox-title="{{ file['name'] }}"
-                    data-middle-ellipsis
-                    title="{{ file['name'] }}"
-                  >{{ file['name'] }}</a>
-                  <small class="post-file-kind">{{ file['kind'] }}</small>
-                  {% if not file['local_available'] %}
-                    <form
-                      method="post"
-                      action="{{ url_for('retry_attachment_download', post_id=post['id'], attachment_id=file['id'], version_id=active_version['id'], view=view_mode) if include_view_in_urls else url_for('retry_attachment_download', post_id=post['id'], attachment_id=file['id'], version_id=active_version['id']) }}"
-                      class="inline-form post-file-retry-form"
+        <section
+          class="post-gallery-picker-panel post-gallery-picker-scope-panel"
+          id="post-gallery-picker-scope-images"
+          data-post-gallery-picker-scope-panel="images"
+          role="tabpanel"
+        >
+          <section class="post-gallery-picker-panel" data-post-gallery-picker-panel="list">
+            {% if image_files %}
+              <ul class="list post-file-list post-gallery-picker-list">
+                {% for file in image_files %}
+                  {% set image_src = url_for('serve_file', relative_path=file['local_path']) if file['local_available'] else file['remote_url_display'] %}
+                  <li>
+                    <a
+                      class="post-file-link post-file-image-trigger"
+                      href="{{ image_src }}"
+                      data-post-file-image-trigger
+                      data-lightbox-src="{{ image_src }}"
+                      data-lightbox-title="{{ file['name'] }}"
+                      data-middle-ellipsis
+                      title="{{ file['name'] }}"
+                    >{{ file['name'] }}</a>
+                    <small class="post-file-kind">{{ file['kind'] }}</small>
+                    {% if not file['local_available'] %}
+                      <form
+                        method="post"
+                        action="{{ url_for('retry_attachment_download', post_id=post['id'], attachment_id=file['id'], version_id=active_version['id'], view=view_mode) if include_view_in_urls else url_for('retry_attachment_download', post_id=post['id'], attachment_id=file['id'], version_id=active_version['id']) }}"
+                        class="inline-form post-file-retry-form"
+                      >
+                        <input type="hidden" name="version_id" value="{{ active_version['id'] }}">
+                        {% if include_view_in_urls %}
+                          <input type="hidden" name="view" value="{{ view_mode }}">
+                        {% endif %}
+                        <a
+                          href="{{ url_for('retry_attachment_download', post_id=post['id'], attachment_id=file['id'], version_id=active_version['id'], view=view_mode) if include_view_in_urls else url_for('retry_attachment_download', post_id=post['id'], attachment_id=file['id'], version_id=active_version['id']) }}"
+                          class="post-file-retry-link"
+                          onclick="event.preventDefault(); this.closest('form').submit();"
+                        >retry</a>
+                      </form>
+                    {% endif %}
+                  </li>
+                {% endfor %}
+              </ul>
+            {% else %}
+              <p class="post-nav-empty">No saved image attachments for this post.</p>
+            {% endif %}
+          </section>
+          <section class="post-gallery-picker-panel" data-post-gallery-picker-panel="grid" hidden>
+            {% if image_files %}
+              <ul class="post-gallery-picker-grid">
+                {% for file in image_files %}
+                  {% set image_src = url_for('serve_file', relative_path=file['local_path']) if file['local_available'] else file['remote_url_display'] %}
+                  <li>
+                    <button
+                      type="button"
+                      class="post-gallery-picker-grid-item post-file-image-trigger"
+                      data-post-file-image-trigger
+                      data-lightbox-src="{{ image_src }}"
+                      data-lightbox-title="{{ file['name'] }}"
+                      title="{{ file['name'] }}"
                     >
-                      <input type="hidden" name="version_id" value="{{ active_version['id'] }}">
-                      {% if include_view_in_urls %}
-                        <input type="hidden" name="view" value="{{ view_mode }}">
-                      {% endif %}
-                      <a
-                        href="{{ url_for('retry_attachment_download', post_id=post['id'], attachment_id=file['id'], version_id=active_version['id'], view=view_mode) if include_view_in_urls else url_for('retry_attachment_download', post_id=post['id'], attachment_id=file['id'], version_id=active_version['id']) }}"
-                        class="post-file-retry-link"
-                        onclick="event.preventDefault(); this.closest('form').submit();"
-                      >retry</a>
-                    </form>
-                  {% endif %}
-                </li>
-              {% endfor %}
-            </ul>
-          {% else %}
-            <p class="post-nav-empty">No saved image attachments for this post.</p>
-          {% endif %}
+                      <img src="{{ image_src }}" alt="{{ file['name'] }}" loading="lazy" referrerpolicy="no-referrer">
+                      <span data-middle-ellipsis title="{{ file['name'] }}">{{ file['name'] }}</span>
+                    </button>
+                  </li>
+                {% endfor %}
+              </ul>
+            {% else %}
+              <p class="post-nav-empty">No saved image attachments for this post.</p>
+            {% endif %}
+          </section>
         </section>
-        <section class="post-gallery-picker-panel" data-post-gallery-picker-panel="grid" hidden>
-          {% if image_files %}
-            <ul class="post-gallery-picker-grid">
-              {% for file in image_files %}
-                {% set image_src = url_for('serve_file', relative_path=file['local_path']) if file['local_available'] else file['remote_url_display'] %}
-                <li>
-                  <button
-                    type="button"
-                    class="post-gallery-picker-grid-item post-file-image-trigger"
-                    data-post-file-image-trigger
-                    data-lightbox-src="{{ image_src }}"
-                    data-lightbox-title="{{ file['name'] }}"
-                    title="{{ file['name'] }}"
-                  >
-                    <img src="{{ image_src }}" alt="{{ file['name'] }}" loading="lazy" referrerpolicy="no-referrer">
-                    <span data-middle-ellipsis title="{{ file['name'] }}">{{ file['name'] }}</span>
-                  </button>
-                </li>
-              {% endfor %}
-            </ul>
-          {% else %}
-            <p class="post-nav-empty">No saved image attachments for this post.</p>
-          {% endif %}
+        <section
+          class="post-gallery-picker-panel post-gallery-picker-scope-panel"
+          id="post-gallery-picker-scope-content"
+          data-post-gallery-picker-scope-panel="content"
+          role="tabpanel"
+          hidden
+        >
+          <article class="post-content post-gallery-picker-content" data-post-content>
+            {{ rendered_content | safe }}
+          </article>
         </section>
       </div>
       <footer class="post-gallery-picker-foot">

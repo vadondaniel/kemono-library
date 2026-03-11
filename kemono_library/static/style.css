@@ -4393,20 +4393,28 @@ body.is-gallery-picker-open {
 
 .post-gallery-picker-head {
   display: grid;
-  padding: 0.72rem 0.82rem;
+  padding: 0.6rem 0.72rem;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
 }
 
-.post-gallery-picker-title-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-md);
+.post-gallery-picker-scope-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.34rem;
 }
 
-.post-gallery-picker-title-row strong {
-  font-family: var(--font-head);
-  font-size: 1.02rem;
+.post-gallery-picker-scope-tab {
+  width: 100%;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--card-solid) 96%, transparent);
+}
+
+.post-gallery-picker-scope-tab.is-active {
+  border-color: color-mix(in srgb, var(--accent) 52%, var(--border));
+  background: color-mix(in srgb, var(--accent-soft) 40%, var(--card-solid));
+  color: var(--accent-strong);
 }
 
 .post-gallery-picker-controls {
@@ -4497,6 +4505,11 @@ body.is-gallery-picker-open {
 
 .post-gallery-picker-panel[hidden] {
   display: none;
+}
+
+.post-gallery-picker-content {
+  margin: 0;
+  padding: 0.2rem 0.14rem 0.34rem;
 }
 
 .post-gallery-picker-list {
