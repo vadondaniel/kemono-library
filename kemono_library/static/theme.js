@@ -126,7 +126,7 @@
 })();
 
 (() => {
-  const isKnownMode = (value) => value === "classic" || value === "reader";
+  const isKnownMode = (value) => value === "classic" || value === "reader" || value === "gallery";
   const postLinkSelector = "a[data-post-detail-link]";
 
   const readPreferredPostMode = (creatorId) => {
@@ -148,7 +148,7 @@
       return href;
     }
     const preferredMode = readPreferredPostMode(creatorId);
-    if (preferredMode !== "reader") {
+    if (!preferredMode || preferredMode === "classic") {
       return href;
     }
     try {
@@ -159,7 +159,7 @@
       if (url.searchParams.has("view")) {
         return href;
       }
-      url.searchParams.set("view", "reader");
+      url.searchParams.set("view", preferredMode);
       return url.origin === window.location.origin ? `${url.pathname}${url.search}${url.hash}` : url.toString();
     } catch {
       return href;

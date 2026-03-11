@@ -2380,6 +2380,14 @@ def test_gallery_fit_button_cycle_labels_exist_in_js():
     assert "post-gallery-grid-aspect-ratio" in js
 
 
+def test_theme_post_link_preferred_mode_includes_gallery():
+    js_path = Path(__file__).resolve().parents[1] / "kemono_library" / "static" / "theme.js"
+    js = js_path.read_text(encoding="utf-8")
+    assert 'value === "gallery"' in js
+    assert "if (!preferredMode || preferredMode === \"classic\")" in js
+    assert "url.searchParams.set(\"view\", preferredMode);" in js
+
+
 def test_post_detail_reader_mode_propagates_view_and_renders_left_viewer_layout(tmp_path):
     app = create_app(
         {
