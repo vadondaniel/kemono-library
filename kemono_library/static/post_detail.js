@@ -278,6 +278,163 @@
   }
   initializeContentSettings();
 
+  function initializeGalleryPicker() {
+    if (!isGalleryView) {
+      return null;
+    }
+    const drawer = document.querySelector("[data-post-gallery-picker-drawer]");
+    const overlay = document.querySelector("[data-post-gallery-picker-overlay]");
+    if (!(drawer instanceof HTMLElement) || !(overlay instanceof HTMLElement)) {
+      return null;
+    }
+    const openTriggers = Array.from(document.querySelectorAll("[data-post-gallery-picker-open]")).filter(
+      (node) => node instanceof HTMLElement
+    );
+    const closeTriggers = Array.from(document.querySelectorAll("[data-post-gallery-picker-close]")).filter(
+      (node) => node instanceof HTMLElement
+    );
+    const tabButtons = Array.from(drawer.querySelectorAll("[data-post-gallery-picker-tab]")).filter(
+      (node) => node instanceof HTMLButtonElement
+    );
+    const tabPanels = Array.from(drawer.querySelectorAll("[data-post-gallery-picker-panel]")).filter(
+      (node) => node instanceof HTMLElement
+    );
+    let activeTab = "list";
+    let lastOpenTrigger = null;
+
+    const isOpen = () => drawer.classList.contains("is-open");
+
+    const setExpandedState = (open) => {
+      openTriggers.forEach((trigger) => {
+        trigger.setAttribute("aria-expanded", open ? "true" : "false");
+      });
+    };
+
+    const setActiveTab = (nextTab) => {
+      const normalized = nextTab === "grid" ? "grid" : "list";
+      activeTab = normalized;
+      tabButtons.forEach((button) => {
+        const isActive = button.dataset.pickerTab === normalized;
+        button.classList.toggle("is-active", isActive);
+        button.setAttribute("aria-selected", isActive ? "true" : "false");
+        button.tabIndex = isActive ? 0 : -1;
+      });
+      tabPanels.forEach((panel) => {
+        panel.hidden = panel.dataset.postGalleryPickerPanel !== normalized;
+      });
+    };
+
+    const setOpen = (open, options = {}) => {
+      const opts = options && typeof options === "object" ? options : {};
+      const restoreFocus = opts.restoreFocus !== false;
+      const trigger = opts.trigger instanceof HTMLElement ? opts.trigger : null;
+      if (open) {
+        if (trigger instanceof HTMLElement) {
+          lastOpenTrigger = trigger;
+        }
+        drawer.classList.add("is-open");
+        drawer.setAttribute("aria-hidden", "false");
+        overlay.hidden = false;
+        document.body.classList.add("is-gallery-picker-open");
+        setExpandedState(true);
+        const focusTarget = drawer.querySelector("[data-post-gallery-picker-close], [data-post-gallery-picker-tab].is-active");
+        if (focusTarget instanceof HTMLElement) {
+          window.requestAnimationFrame(() => {
+            focusTarget.focus();
+          });
+        }
+      } else {
+        drawer.classList.remove("is-open");
+        drawer.setAttribute("aria-hidden", "true");
+        overlay.hidden = true;
+        document.body.classList.remove("is-gallery-picker-open");
+        setExpandedState(false);
+        if (restoreFocus && lastOpenTrigger instanceof HTMLElement && lastOpenTrigger.isConnected) {
+          window.requestAnimationFrame(() => {
+            lastOpenTrigger.focus();
+          });
+        }
+      }
+    };
+
+    openTriggers.forEach((trigger) => {
+      trigger.addEventListener("click", (event) => {
+        event.preventDefault();
+        if (isOpen()) {
+          setOpen(false, { restoreFocus: false });
+          return;
+        }
+        setOpen(true, { trigger });
+      });
+    });
+
+    closeTriggers.forEach((trigger) => {
+      trigger.addEventListener("click", () => {
+        setOpen(false);
+      });
+    });
+
+    overlay.addEventListener("click", () => {
+      setOpen(false);
+    });
+
+    tabButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        setActiveTab(button.dataset.pickerTab || "list");
+      });
+      button.addEventListener("keydown", (event) => {
+        if (event.key !== "ArrowLeft" && event.key !== "ArrowRight" && event.key !== "Home" && event.key !== "End") {
+          return;
+        }
+        event.preventDefault();
+        if (!tabButtons.length) {
+          return;
+        }
+        const currentIndex = tabButtons.indexOf(button);
+        if (currentIndex < 0) {
+          return;
+        }
+        let nextIndex = currentIndex;
+        if (event.key === "Home") {
+          nextIndex = 0;
+        } else if (event.key === "End") {
+          nextIndex = tabButtons.length - 1;
+        } else if (event.key === "ArrowRight") {
+          nextIndex = (currentIndex + 1) % tabButtons.length;
+        } else if (event.key === "ArrowLeft") {
+          nextIndex = (currentIndex - 1 + tabButtons.length) % tabButtons.length;
+        }
+        const nextButton = tabButtons[nextIndex];
+        if (!(nextButton instanceof HTMLButtonElement)) {
+          return;
+        }
+        setActiveTab(nextButton.dataset.pickerTab || "list");
+        nextButton.focus();
+      });
+    });
+
+    window.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && isOpen()) {
+        event.preventDefault();
+        setOpen(false);
+      }
+    });
+
+    setActiveTab(activeTab);
+    setExpandedState(false);
+
+    return {
+      contains(node) {
+        return node instanceof Node && drawer.contains(node);
+      },
+      isOpen,
+      close(options = {}) {
+        setOpen(false, options);
+      },
+    };
+  }
+  const galleryPicker = initializeGalleryPicker();
+
   const setReaderNavOpen = (open) => {
     if (!(readerNavSheet instanceof HTMLElement) || !(readerNavOverlay instanceof HTMLElement)) {
       return;
@@ -1621,6 +1778,9 @@
     }
     if (isImageFocusView && readerView && readerView.openByTrigger(trigger)) {
       event.preventDefault();
+      if (isGalleryView && galleryPicker && galleryPicker.isOpen() && galleryPicker.contains(trigger)) {
+        galleryPicker.close({ restoreFocus: false });
+      }
       return;
     }
     event.preventDefault();

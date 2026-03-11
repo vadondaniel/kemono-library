@@ -2350,6 +2350,8 @@ def test_gallery_column_mode_css_rule_exists():
     assert ".post-reader-stage.is-column-width" in css
     assert ".post-reader-canvas" in css
     assert "width: min(100%, 840px);" in css
+    assert ".post-gallery-picker-drawer" in css
+    assert ".post-gallery-picker-grid" in css
 
 
 def test_gallery_fit_button_cycle_labels_exist_in_js():
@@ -2366,6 +2368,8 @@ def test_gallery_fit_button_cycle_labels_exist_in_js():
     assert "zoomFitButton.textContent = \"Pan\";" in js
     assert "zoomFitButton.textContent = \"Fit\";" in js
     assert "if (isGalleryView && !isPageAtBottom() && !allowWheelControl)" in js
+    assert "function initializeGalleryPicker()" in js
+    assert "data-post-gallery-picker-tab" in js
 
 
 def test_post_detail_reader_mode_propagates_view_and_renders_left_viewer_layout(tmp_path):
@@ -2491,8 +2495,14 @@ def test_post_detail_gallery_mode_renders_post_header_then_viewer_with_image_lau
     assert soup.select_one("[data-post-reader-panel]") is not None
     assert soup.select_one("[data-post-file-launcher]") is None
     assert soup.select_one("[data-post-reader-source-image]") is None
-    assert soup.select_one(".post-file-list") is not None
-    assert soup.select_one(".post-file-image-trigger") is not None
+    assert soup.select_one("[data-post-gallery-picker-drawer]") is not None
+    assert soup.select_one("[data-post-gallery-picker-overlay]") is not None
+    assert len(soup.select("[data-post-gallery-picker-open]")) >= 2
+    assert soup.select_one("[data-post-gallery-picker-panel='list'] .post-file-list") is not None
+    assert soup.select_one("[data-post-gallery-picker-panel='list'] .post-file-image-trigger") is not None
+    assert soup.select_one("[data-post-gallery-picker-panel='list'] .post-file-retry-link") is not None
+    assert soup.select_one("[data-post-gallery-picker-panel='grid'] .post-gallery-picker-grid") is not None
+    assert soup.select_one("[data-post-gallery-picker-panel='grid'] .post-file-retry-link") is None
     assert soup.select_one(".post-content") is None
     assert soup.select_one(".post-content-source[data-post-content]") is not None
     assert soup.select_one(".post-embed-list-shell") is None
@@ -2508,6 +2518,7 @@ def test_post_detail_gallery_mode_renders_post_header_then_viewer_with_image_lau
 
     gallery_main = soup.select_one(".post-view-main.is-gallery")
     assert gallery_main is not None
+    assert gallery_main.select_one(".post-file-list") is None
     gallery_blocks = [child for child in gallery_main.children if getattr(child, "name", None)]
     assert gallery_blocks
     assert "post-viewer-info" in (gallery_blocks[0].get("class") or [])
