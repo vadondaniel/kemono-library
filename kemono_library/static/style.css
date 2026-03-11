@@ -4430,6 +4430,19 @@ body.is-gallery-picker-open {
   color: var(--accent-strong);
 }
 
+.post-gallery-picker-scope-tab:active {
+  transform: none;
+}
+
+.post-gallery-picker-scope-tab-label {
+  display: inline-block;
+  transition: transform 120ms ease;
+}
+
+.post-gallery-picker-scope-tab:active .post-gallery-picker-scope-tab-label {
+  transform: translateY(1px);
+}
+
 .post-gallery-picker-controls {
   display: inline-flex;
   align-items: center;
