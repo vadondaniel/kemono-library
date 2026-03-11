@@ -4352,9 +4352,43 @@ body.is-gallery-picker-open {
   transform: translateX(0);
 }
 
+.container.is-post-gallery-layout .post-view-shell.is-gallery.has-pinned-picker {
+  grid-template-columns: minmax(260px, min(430px, 34vw)) minmax(0, 1fr);
+  grid-template-rows: auto auto;
+}
+
+.container.is-post-gallery-layout .post-view-shell.is-gallery.has-pinned-picker > .post-view-main.is-gallery {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+
 .container.is-post-gallery-layout .post-view-shell.is-gallery.has-pinned-picker > .post-reader-panel.post-reader-panel-gallery {
-  margin-left: min(430px, 92vw);
-  width: calc(100% - min(430px, 92vw));
+  grid-column: 2;
+  grid-row: 2;
+  margin-left: 0;
+  width: auto;
+}
+
+.container.is-post-gallery-layout .post-view-shell.is-gallery.has-pinned-picker > .post-gallery-picker-drawer.is-pinned {
+  position: sticky;
+  top: 0;
+  left: auto;
+  transform: none;
+  width: 100%;
+  max-width: none;
+  height: 100dvh;
+  grid-column: 1;
+  grid-row: 2;
+  align-self: start;
+  z-index: var(--z-local);
+  border-top: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-right: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-bottom: 0;
+  border-left: 0;
+  border-radius: 0;
+  background: color-mix(in srgb, var(--card-solid) 95%, transparent);
+  box-shadow: none;
+  backdrop-filter: none;
 }
 
 .post-gallery-picker-head {
