@@ -4426,6 +4426,7 @@ body.is-gallery-picker-open {
 }
 
 .post-gallery-picker-grid {
+  --post-gallery-grid-aspect-ratio: 1.3333;
   list-style: none;
   margin: 0;
   padding: 0;
@@ -4460,7 +4461,7 @@ body.is-gallery-picker-open {
 
 .post-gallery-picker-grid-item img {
   width: 100%;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: var(--post-gallery-grid-aspect-ratio);
   object-fit: cover;
   display: block;
   border-radius: var(--radius-xs);

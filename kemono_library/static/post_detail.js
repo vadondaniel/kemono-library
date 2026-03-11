@@ -301,12 +301,33 @@
     const tabPanels = Array.from(drawer.querySelectorAll("[data-post-gallery-picker-panel]")).filter(
       (node) => node instanceof HTMLElement
     );
+    const gridPanel = drawer.querySelector("[data-post-gallery-picker-panel='grid']");
+    const gridList = gridPanel instanceof HTMLElement ? gridPanel.querySelector(".post-gallery-picker-grid") : null;
     let activeTab = "list";
     let lastOpenTrigger = null;
     let pinned = false;
+    let gridAspectFrame = null;
+    let gridAspectComputed = false;
+    let gridAspectListenersBound = false;
+    const GRID_RATIO_MIN = 0.66;
+    const GRID_RATIO_MAX = 1.8;
+    const GRID_RATIO_FALLBACK = 4 / 3;
+    const GRID_RATIO_SAMPLE_LIMIT = 120;
 
     const isOpen = () => drawer.classList.contains("is-open");
     const isPinned = () => pinned;
+    const clampGridRatio = (value) => Math.min(GRID_RATIO_MAX, Math.max(GRID_RATIO_MIN, value));
+    const getMedian = (values) => {
+      if (!Array.isArray(values) || values.length === 0) {
+        return GRID_RATIO_FALLBACK;
+      }
+      const sorted = values.slice().sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      if (sorted.length % 2 === 1) {
+        return sorted[mid];
+      }
+      return (sorted[mid - 1] + sorted[mid]) / 2;
+    };
 
     const setExpandedState = (open) => {
       openTriggers.forEach((trigger) => {
@@ -333,6 +354,70 @@
       }
     };
 
+    const collectGridRatios = () => {
+      if (!(gridList instanceof HTMLElement)) {
+        return [];
+      }
+      const imageNodes = Array.from(gridList.querySelectorAll("img"));
+      if (!imageNodes.length) {
+        return [];
+      }
+      const ratios = [];
+      const step = Math.max(1, Math.floor(imageNodes.length / GRID_RATIO_SAMPLE_LIMIT));
+      for (let i = 0; i < imageNodes.length; i += step) {
+        const imageNode = imageNodes[i];
+        if (!(imageNode instanceof HTMLImageElement)) {
+          continue;
+        }
+        if (imageNode.naturalWidth <= 0 || imageNode.naturalHeight <= 0) {
+          continue;
+        }
+        const ratio = imageNode.naturalWidth / imageNode.naturalHeight;
+        if (Number.isFinite(ratio) && ratio > 0) {
+          ratios.push(ratio);
+        }
+      }
+      return ratios;
+    };
+
+    const applyGridAspectRatio = () => {
+      if (!(gridList instanceof HTMLElement)) {
+        return;
+      }
+      const ratios = collectGridRatios();
+      if (!ratios.length) {
+        return;
+      }
+      const medianRatio = getMedian(ratios);
+      const clampedRatio = clampGridRatio(medianRatio);
+      gridList.style.setProperty("--post-gallery-grid-aspect-ratio", clampedRatio.toFixed(4));
+      gridAspectComputed = true;
+    };
+
+    const scheduleGridAspectRatio = () => {
+      if (gridAspectFrame !== null) {
+        window.cancelAnimationFrame(gridAspectFrame);
+      }
+      gridAspectFrame = window.requestAnimationFrame(() => {
+        gridAspectFrame = null;
+        applyGridAspectRatio();
+      });
+    };
+
+    const bindGridAspectListeners = () => {
+      if (gridAspectListenersBound || !(gridList instanceof HTMLElement)) {
+        return;
+      }
+      gridAspectListenersBound = true;
+      Array.from(gridList.querySelectorAll("img")).forEach((imageNode) => {
+        if (!(imageNode instanceof HTMLImageElement)) {
+          return;
+        }
+        imageNode.addEventListener("load", scheduleGridAspectRatio);
+        imageNode.addEventListener("error", scheduleGridAspectRatio);
+      });
+    };
+
     const setActiveTab = (nextTab) => {
       const normalized = nextTab === "grid" ? "grid" : "list";
       activeTab = normalized;
@@ -345,6 +430,12 @@
       tabPanels.forEach((panel) => {
         panel.hidden = panel.dataset.postGalleryPickerPanel !== normalized;
       });
+      if (normalized === "grid") {
+        bindGridAspectListeners();
+        if (!gridAspectComputed) {
+          scheduleGridAspectRatio();
+        }
+      }
     };
 
     const setOpen = (open, options = {}) => {

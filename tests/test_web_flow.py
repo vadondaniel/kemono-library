@@ -2353,6 +2353,7 @@ def test_gallery_column_mode_css_rule_exists():
     assert ".post-gallery-picker-drawer" in css
     assert ".post-gallery-picker-grid" in css
     assert ".post-view-shell.is-gallery.has-pinned-picker" in css
+    assert "--post-gallery-grid-aspect-ratio" in css
 
 
 def test_gallery_fit_button_cycle_labels_exist_in_js():
@@ -2371,6 +2372,8 @@ def test_gallery_fit_button_cycle_labels_exist_in_js():
     assert "if (isGalleryView && !isPageAtBottom() && !allowWheelControl)" in js
     assert "function initializeGalleryPicker()" in js
     assert "data-post-gallery-picker-tab" in js
+    assert "const getMedian = (values) => {" in js
+    assert "post-gallery-grid-aspect-ratio" in js
 
 
 def test_post_detail_reader_mode_propagates_view_and_renders_left_viewer_layout(tmp_path):
