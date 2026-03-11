@@ -3902,6 +3902,25 @@ body.is-busy-overlay-open {
   right: min(calc(var(--space-2xl) * 10), 22vw);
 }
 
+.post-view-shell.is-reader .post-reader-float-nav-btn {
+  width: 2.8rem;
+  height: 2.8rem;
+  min-width: 2.8rem;
+  font-size: 1.12rem;
+}
+
+.post-view-shell.is-reader .post-reader-float-nav-btn-prev {
+  left: var(--space-sm);
+}
+
+.post-view-shell.is-reader .post-reader-float-nav-btn-next {
+  right: var(--space-sm);
+}
+
+.post-view-shell.is-reader .post-reader-stage.has-vertical-scrollbar .post-reader-float-nav-btn-next {
+  right: calc(var(--space-sm) + 1.5rem);
+}
+
 .post-reader-float-nav-btn:disabled {
   opacity: 0.36;
   cursor: not-allowed;

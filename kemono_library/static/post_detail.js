@@ -838,6 +838,7 @@
     const updateScrollBars = () => {
       const hasImages = catalog.length > 0 && currentIndex >= 0;
       const { maxX, maxY } = getPanBounds();
+      let verticalScrollVisible = false;
 
       if (scrollBar instanceof HTMLInputElement) {
         const usableMaxY = Math.max(0, maxY);
@@ -848,6 +849,7 @@
         const thumbPx = Math.round(Math.max(18, Math.min(railHeight * 0.92, railHeight * viewportRatio)));
         scrollBar.style.setProperty("--post-reader-scroll-thumb-size", `${thumbPx}px`);
         const activeY = hasImages && scrollModeActive && usableMaxY > ZOOM_EPSILON;
+        verticalScrollVisible = activeY;
         scrollBar.hidden = !activeY;
         scrollBar.disabled = !activeY;
         if (!activeY) {
@@ -857,6 +859,10 @@
           const clampedY = Math.max(0, Math.min(1, progressY));
           scrollBar.value = String(Math.round(clampedY * 100));
         }
+      }
+
+      if (stage instanceof HTMLElement) {
+        stage.classList.toggle("has-vertical-scrollbar", verticalScrollVisible);
       }
 
       if (scrollBarHorizontal instanceof HTMLInputElement) {
