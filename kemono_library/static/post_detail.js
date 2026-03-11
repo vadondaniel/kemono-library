@@ -287,6 +287,8 @@
     if (!(drawer instanceof HTMLElement) || !(overlay instanceof HTMLElement)) {
       return null;
     }
+    const shell = drawer.closest(".post-view-shell.is-gallery");
+    const pinToggle = drawer.querySelector("[data-post-gallery-picker-pin-toggle]");
     const openTriggers = Array.from(document.querySelectorAll("[data-post-gallery-picker-open]")).filter(
       (node) => node instanceof HTMLElement
     );
@@ -301,13 +303,34 @@
     );
     let activeTab = "list";
     let lastOpenTrigger = null;
+    let pinned = false;
 
     const isOpen = () => drawer.classList.contains("is-open");
+    const isPinned = () => pinned;
 
     const setExpandedState = (open) => {
       openTriggers.forEach((trigger) => {
         trigger.setAttribute("aria-expanded", open ? "true" : "false");
       });
+    };
+
+    const syncDrawerState = () => {
+      const open = isOpen();
+      const docked = open && pinned;
+      drawer.classList.toggle("is-pinned", docked);
+      if (shell instanceof HTMLElement) {
+        shell.classList.toggle("has-pinned-picker", docked);
+      }
+      overlay.hidden = !(open && !docked);
+      document.body.classList.toggle("is-gallery-picker-open", open && !docked);
+      document.body.classList.toggle("is-gallery-picker-pinned", docked);
+      setExpandedState(open);
+      if (pinToggle instanceof HTMLButtonElement) {
+        pinToggle.setAttribute("aria-pressed", pinned ? "true" : "false");
+        pinToggle.textContent = pinned ? "Unpin" : "Pin";
+        pinToggle.setAttribute("aria-label", pinned ? "Unpin gallery file picker" : "Pin gallery file picker");
+        pinToggle.title = pinned ? "Unpin panel" : "Pin panel";
+      }
     };
 
     const setActiveTab = (nextTab) => {
@@ -334,9 +357,7 @@
         }
         drawer.classList.add("is-open");
         drawer.setAttribute("aria-hidden", "false");
-        overlay.hidden = false;
-        document.body.classList.add("is-gallery-picker-open");
-        setExpandedState(true);
+        syncDrawerState();
         const focusTarget = drawer.querySelector("[data-post-gallery-picker-close], [data-post-gallery-picker-tab].is-active");
         if (focusTarget instanceof HTMLElement) {
           window.requestAnimationFrame(() => {
@@ -346,9 +367,7 @@
       } else {
         drawer.classList.remove("is-open");
         drawer.setAttribute("aria-hidden", "true");
-        overlay.hidden = true;
-        document.body.classList.remove("is-gallery-picker-open");
-        setExpandedState(false);
+        syncDrawerState();
         if (restoreFocus && lastOpenTrigger instanceof HTMLElement && lastOpenTrigger.isConnected) {
           window.requestAnimationFrame(() => {
             lastOpenTrigger.focus();
@@ -377,6 +396,14 @@
     overlay.addEventListener("click", () => {
       setOpen(false);
     });
+
+    if (pinToggle instanceof HTMLButtonElement) {
+      pinToggle.addEventListener("click", (event) => {
+        event.preventDefault();
+        pinned = !pinned;
+        syncDrawerState();
+      });
+    }
 
     tabButtons.forEach((button) => {
       button.addEventListener("click", () => {
@@ -421,13 +448,14 @@
     });
 
     setActiveTab(activeTab);
-    setExpandedState(false);
+    syncDrawerState();
 
     return {
       contains(node) {
         return node instanceof Node && drawer.contains(node);
       },
       isOpen,
+      isPinned,
       close(options = {}) {
         setOpen(false, options);
       },
@@ -1778,7 +1806,13 @@
     }
     if (isImageFocusView && readerView && readerView.openByTrigger(trigger)) {
       event.preventDefault();
-      if (isGalleryView && galleryPicker && galleryPicker.isOpen() && galleryPicker.contains(trigger)) {
+      if (
+        isGalleryView &&
+        galleryPicker &&
+        galleryPicker.isOpen() &&
+        !galleryPicker.isPinned() &&
+        galleryPicker.contains(trigger)
+      ) {
         galleryPicker.close({ restoreFocus: false });
       }
       return;

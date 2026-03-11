@@ -2352,6 +2352,7 @@ def test_gallery_column_mode_css_rule_exists():
     assert "width: min(100%, 840px);" in css
     assert ".post-gallery-picker-drawer" in css
     assert ".post-gallery-picker-grid" in css
+    assert ".post-view-shell.is-gallery.has-pinned-picker" in css
 
 
 def test_gallery_fit_button_cycle_labels_exist_in_js():
@@ -2497,6 +2498,7 @@ def test_post_detail_gallery_mode_renders_post_header_then_viewer_with_image_lau
     assert soup.select_one("[data-post-reader-source-image]") is None
     assert soup.select_one("[data-post-gallery-picker-drawer]") is not None
     assert soup.select_one("[data-post-gallery-picker-overlay]") is not None
+    assert soup.select_one("[data-post-gallery-picker-pin-toggle]") is not None
     assert len(soup.select("[data-post-gallery-picker-open]")) >= 2
     assert soup.select_one("[data-post-gallery-picker-panel='list'] .post-file-list") is not None
     assert soup.select_one("[data-post-gallery-picker-panel='list'] .post-file-image-trigger") is not None

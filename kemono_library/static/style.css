@@ -4330,10 +4330,11 @@ body.is-gallery-picker-open {
 }
 
 .post-gallery-picker-drawer {
+  --post-gallery-picker-drawer-width: min(430px, 92vw);
   position: fixed;
   top: 0;
   left: 0;
-  width: min(430px, 92vw);
+  width: var(--post-gallery-picker-drawer-width);
   max-width: calc(100vw - 0.8rem);
   height: 100dvh;
   z-index: var(--z-reader-sheet);
@@ -4349,6 +4350,11 @@ body.is-gallery-picker-open {
 
 .post-gallery-picker-drawer.is-open {
   transform: translateX(0);
+}
+
+.container.is-post-gallery-layout .post-view-shell.is-gallery.has-pinned-picker > .post-reader-panel.post-reader-panel-gallery {
+  margin-left: min(430px, 92vw);
+  width: calc(100% - min(430px, 92vw));
 }
 
 .post-gallery-picker-head {
@@ -4391,7 +4397,19 @@ body.is-gallery-picker-open {
   padding: 0.62rem 0.82rem;
   border-top: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
   display: flex;
-  justify-content: flex-start;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.post-gallery-picker-pin-toggle {
+  min-width: 4.25rem;
+}
+
+.post-gallery-picker-drawer.is-pinned .post-gallery-picker-pin-toggle {
+  border-color: color-mix(in srgb, var(--accent) 52%, var(--border));
+  background: color-mix(in srgb, var(--accent-soft) 42%, var(--card-solid));
+  color: var(--accent-strong);
 }
 
 .post-gallery-picker-panel {
