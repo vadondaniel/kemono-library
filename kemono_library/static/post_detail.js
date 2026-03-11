@@ -18,7 +18,7 @@
     const viewParamPresent = modeSwitcher.dataset.viewParamPresent === "1";
     const storageKey = creatorId ? `kemono-post-view-mode:creator:${creatorId}` : "";
 
-    const isKnownMode = (value) => value === "classic" || value === "reader";
+    const isKnownMode = (value) => value === "classic" || value === "reader" || value === "gallery";
     const savePreferredMode = (value) => {
       if (!storageKey || !isKnownMode(value)) {
         return;
@@ -100,7 +100,9 @@
   }
 
   const pageRoot = document.querySelector("[data-post-view-root]");
-  const isReaderView = pageRoot instanceof HTMLElement && pageRoot.dataset.postViewMode === "reader";
+  const viewMode = pageRoot instanceof HTMLElement ? pageRoot.dataset.postViewMode || "classic" : "classic";
+  const isReaderView = viewMode === "reader";
+  const isImageFocusView = isReaderView || viewMode === "gallery";
   const contentRoot = document.querySelector("[data-post-content]");
   const contentSettingsRoot = document.querySelector("[data-post-content-settings]");
   const readerNavOpenButton = document.querySelector("[data-post-reader-nav-open]");
@@ -609,7 +611,7 @@
   });
 
   function initializeReaderView() {
-    if (!isReaderView || !(contentRoot instanceof HTMLElement)) {
+    if (!isImageFocusView || !(contentRoot instanceof HTMLElement)) {
       return null;
     }
     const panel = document.querySelector("[data-post-reader-panel]");
@@ -1516,7 +1518,7 @@
     if (!(trigger instanceof HTMLElement)) {
       return;
     }
-    if (isReaderView && readerView && readerView.openByTrigger(trigger)) {
+    if (isImageFocusView && readerView && readerView.openByTrigger(trigger)) {
       event.preventDefault();
       return;
     }
@@ -1524,7 +1526,7 @@
     openLightbox(trigger.dataset.lightboxSrc || "", trigger.dataset.lightboxTitle || "");
   });
 
-  if (contentRoot instanceof HTMLElement && !isReaderView) {
+  if (contentRoot instanceof HTMLElement && !isImageFocusView) {
     contentRoot.addEventListener("click", (event) => {
       const target = event.target;
       if (!(target instanceof HTMLElement)) {

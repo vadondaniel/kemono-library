@@ -1781,21 +1781,23 @@ def test_post_detail_navigator_endpoint_returns_scope_payload_without_reloading_
         published_at="2025-02-01T00:00:00",
     )
 
-    response = app.test_client().get(f"/posts/{post_id}/navigator?nav_scope=all&view=reader")
-    assert response.status_code == 200
-    payload = response.get_json()
-    assert isinstance(payload, dict)
-    assert payload["scope"] == "all"
-    assert "view=reader" in payload["series_scope_url"]
-    assert "view=reader" in payload["all_scope_url"]
-    assert "nav_scope=all" in payload["all_scope_url"]
-    entries = payload["entries"]
-    assert isinstance(entries, list)
-    assert len(entries) == 3
-    hrefs = [str(entry["href"]) for entry in entries]
-    assert all("nav_scope=all" in href for href in hrefs)
-    assert any(bool(entry["is_current"]) for entry in entries)
-    assert all(isinstance(entry["published_at_display"], str) for entry in entries)
+    for mode in ("reader", "gallery"):
+        response = app.test_client().get(f"/posts/{post_id}/navigator?nav_scope=all&view={mode}")
+        assert response.status_code == 200
+        payload = response.get_json()
+        assert isinstance(payload, dict)
+        assert payload["scope"] == "all"
+        assert f"view={mode}" in payload["series_scope_url"]
+        assert f"view={mode}" in payload["all_scope_url"]
+        assert "nav_scope=all" in payload["all_scope_url"]
+        entries = payload["entries"]
+        assert isinstance(entries, list)
+        assert len(entries) == 3
+        hrefs = [str(entry["href"]) for entry in entries]
+        assert all("nav_scope=all" in href for href in hrefs)
+        assert all(f"view={mode}" in href for href in hrefs)
+        assert any(bool(entry["is_current"]) for entry in entries)
+        assert all(isinstance(entry["published_at_display"], str) for entry in entries)
 
 
 def test_post_detail_prefers_attachment_over_inline_same_name(tmp_path):
@@ -2319,6 +2321,19 @@ def test_post_detail_renders_content_view_settings_controls(tmp_path):
     assert soup.select_one("[data-post-content-text-align]") is not None
     assert soup.select_one("[data-post-content-settings-reset]") is not None
 
+    gallery = app.test_client().get(f"/posts/{post_id}?view=gallery")
+    assert gallery.status_code == 200
+    gallery_soup = BeautifulSoup(gallery.data, "html.parser")
+    assert gallery_soup.select_one("[data-post-content-settings]") is not None
+    assert gallery_soup.select_one("[data-theme-toggle-radio][value='auto']") is not None
+    assert gallery_soup.select_one("[data-theme-toggle-radio][value='light']") is not None
+    assert gallery_soup.select_one("[data-theme-toggle-radio][value='dark']") is not None
+    assert gallery_soup.select_one("[data-post-content-font-size]") is None
+    assert gallery_soup.select_one("[data-post-content-line-height]") is None
+    assert gallery_soup.select_one("[data-post-content-font-family]") is None
+    assert gallery_soup.select_one("[data-post-content-text-align]") is None
+    assert gallery_soup.select_one("[data-post-content-settings-reset]") is None
+
 
 def test_post_content_settings_css_overrides_global_typography_rules():
     css_path = Path(__file__).resolve().parents[1] / "kemono_library" / "static" / "style.css"
@@ -2399,6 +2414,84 @@ def test_post_detail_reader_mode_propagates_view_and_renders_left_viewer_layout(
     assert direct_children
     first = direct_children[0]
     assert getattr(first, "attrs", {}).get("data-post-reader-panel") == ""
+
+
+def test_post_detail_gallery_mode_renders_post_header_then_viewer_with_image_launcher(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Gallery Layout Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="gallery-user",
+        external_post_id="5005",
+        title="Gallery Post",
+        content='<p><img src="https://n1.kemono.cr/aa/bb/gallery-inline.jpg" alt="inline"></p>',
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/gallery-user/post/5005",
+    )
+    db.replace_attachments(
+        post_id,
+        [
+            {
+                "name": "gallery-page-01.jpg",
+                "remote_url": "https://n1.kemono.cr/aa/bb/gallery-page-01.jpg",
+                "local_path": None,
+                "kind": "attachment",
+            },
+            {
+                "name": "gallery-notes.txt",
+                "remote_url": "https://n1.kemono.cr/aa/bb/gallery-notes.txt",
+                "local_path": None,
+                "kind": "attachment",
+            },
+        ],
+    )
+
+    response = app.test_client().get(f"/posts/{post_id}?view=gallery")
+    assert response.status_code == 200
+    soup = BeautifulSoup(response.data, "html.parser")
+    shell = soup.select_one(".post-view-shell.is-gallery")
+    assert shell is not None
+    assert "is-reader" not in (shell.get("class") or [])
+    assert shell.get("data-post-view-mode") == "gallery"
+    assert soup.select_one("[data-post-reader-panel]") is not None
+    assert soup.select_one("[data-post-file-launcher]") is None
+    assert soup.select_one("[data-post-reader-source-image]") is None
+    assert soup.select_one(".post-file-list") is not None
+    assert soup.select_one(".post-file-image-trigger") is not None
+    assert soup.select_one(".post-content") is None
+    assert soup.select_one(".post-content-source[data-post-content]") is not None
+    assert soup.select_one(".post-embed-list-shell") is None
+    assert soup.select_one(".post-view-sidebar") is None
+    assert soup.select_one(".header-actions [data-post-reader-nav-open]") is None
+    assert soup.select_one("[data-post-reader-nav-sheet]") is None
+    main = soup.select_one("main.container")
+    assert main is not None
+    assert "is-post-gallery-layout" in (main.get("class") or [])
+    body = soup.select_one("body")
+    assert body is not None
+    assert "is-post-gallery-page" in (body.get("class") or [])
+
+    gallery_main = soup.select_one(".post-view-main.is-gallery")
+    assert gallery_main is not None
+    gallery_blocks = [child for child in gallery_main.children if getattr(child, "name", None)]
+    assert gallery_blocks
+    assert "post-viewer-info" in (gallery_blocks[0].get("class") or [])
+
+    shell_blocks = [child for child in shell.children if getattr(child, "name", None)]
+    assert shell_blocks
+    assert "post-view-main" in (shell_blocks[0].get("class") or [])
+    assert shell_blocks[1].get("data-post-reader-panel") == ""
 
 
 def test_post_detail_invalid_view_falls_back_to_classic(tmp_path):
@@ -2616,6 +2709,61 @@ def test_retry_attachment_redirect_preserves_reader_view(tmp_path, monkeypatch):
     location = response.headers["Location"]
     assert location.startswith(f"/posts/{post_id}?")
     assert "view=reader" in location
+
+
+def test_retry_attachment_redirect_preserves_gallery_view(tmp_path, monkeypatch):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Retry Gallery View Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="retry-gallery-view",
+        external_post_id="5006",
+        title="Retry Gallery View Post",
+        content="<p>body</p>",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/retry-gallery-view/post/5006",
+    )
+    db.replace_attachments(
+        post_id,
+        [
+            {
+                "name": "missing-gallery.png",
+                "remote_url": "https://n1.kemono.cr/path/missing-gallery.png",
+                "local_path": None,
+                "kind": "attachment",
+            }
+        ],
+    )
+
+    def fake_download(remote_url, destination):  # noqa: ARG001
+        Path(destination).parent.mkdir(parents=True, exist_ok=True)
+        Path(destination).write_bytes(b"ok")
+
+    monkeypatch.setattr("kemono_library.web.download_attachment", fake_download)
+    version = db.get_post_version(post_id)
+    assert version is not None
+    version_id = int(version["id"])
+    attachment_id = int(db.list_attachments(post_id, version_id=version_id)[0]["id"])
+
+    response = app.test_client().post(
+        f"/posts/{post_id}/attachments/{attachment_id}/retry?version_id={version_id}&view=gallery",
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    location = response.headers["Location"]
+    assert location.startswith(f"/posts/{post_id}?")
+    assert "view=gallery" in location
 
 
 def test_retry_attachment_uses_kemono_data_url_fallback(tmp_path, monkeypatch):

@@ -391,7 +391,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     def _normalize_post_view_mode_from_request() -> tuple[str, bool, bool]:
         view_param_present = "view" in request.args
         raw_view_mode = request.args.get("view", "").strip().lower() if view_param_present else ""
-        view_mode = raw_view_mode if raw_view_mode in {"classic", "reader"} else "classic"
+        view_mode = raw_view_mode if raw_view_mode in {"classic", "reader", "gallery"} else "classic"
         include_view_in_urls = view_param_present or view_mode != "classic"
         return view_mode, view_param_present, include_view_in_urls
 
@@ -1813,6 +1813,19 @@ def create_app(test_config: dict | None = None) -> Flask:
                         force_include_view=True,
                     ),
                 },
+                {
+                    "id": "gallery",
+                    "label": "Gallery",
+                    "href": _build_post_detail_href_for_context(
+                        post_id,
+                        nav_scope_value=nav_scope,
+                        view_mode=view_mode,
+                        include_view_in_urls=include_view_in_urls,
+                        version_id_value=active_version_query_id,
+                        force_view_mode="gallery",
+                        force_include_view=True,
+                    ),
+                },
             ],
         }
         creator_name = _optional_str(post["creator_name"]) or "Creator"
@@ -1837,8 +1850,20 @@ def create_app(test_config: dict | None = None) -> Flask:
             navigator_series_url=navigator_context["series_scope_url"],
             navigator_all_url=navigator_context["all_scope_url"],
             embed_cards=embed_cards,
-            main_class="is-post-reader-layout" if view_mode == "reader" else None,
-            body_class="is-post-reader-page" if view_mode == "reader" else None,
+            main_class=(
+                "is-post-reader-layout"
+                if view_mode == "reader"
+                else "is-post-gallery-layout"
+                if view_mode == "gallery"
+                else None
+            ),
+            body_class=(
+                "is-post-reader-page"
+                if view_mode == "reader"
+                else "is-post-gallery-page"
+                if view_mode == "gallery"
+                else None
+            ),
             title=_build_page_title(post_title, creator_name),
         )
 
@@ -1897,7 +1922,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         active_version_id = int(active_version["id"])
         raw_view_mode = _optional_str(request.args.get("view")) or _optional_str(request.form.get("view"))
         normalized_view_mode = raw_view_mode.strip().lower() if raw_view_mode else ""
-        include_view = normalized_view_mode in {"classic", "reader"}
+        include_view = normalized_view_mode in {"classic", "reader", "gallery"}
         detail_query: dict[str, Any] = {"post_id": post_id}
         if not bool(active_version["is_default"]):
             detail_query["version_id"] = active_version_id

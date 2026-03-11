@@ -51,15 +51,19 @@
   {% endif %}
 {% endmacro %}
 {% block content %}
+{% set is_reader_mode = view_mode == 'reader' %}
+{% set is_gallery_mode = view_mode == 'gallery' %}
+{% set is_image_focus_mode = is_reader_mode or is_gallery_mode %}
+{% set image_files = attachments|selectattr('is_image')|list if attachments else [] %}
 <div
-  class="post-view-shell {% if view_mode == 'reader' %}is-reader{% endif %}"
+  class="post-view-shell {% if is_reader_mode %}is-reader{% endif %}{% if is_gallery_mode %} is-gallery{% endif %}"
   data-post-view-root
   data-post-view-mode="{{ view_mode }}"
   data-post-id="{{ post['id'] }}"
   data-post-creator-id="{{ post['creator_id'] }}"
   data-post-navigator-url="{{ url_for('post_navigator_data', post_id=post['id']) }}"
 >
-  {% if view_mode == 'reader' %}
+  {% if is_reader_mode %}
     <section class="panel post-reader-panel" data-post-reader-panel>
       <div class="post-reader-toolbar">
         <div class="post-reader-nav-controls">
@@ -105,7 +109,7 @@
     </section>
   {% endif %}
 
-  <div class="post-view-main {% if view_mode == 'reader' %}is-reader{% endif %}">
+  <div class="post-view-main {% if is_reader_mode %}is-reader{% endif %}{% if is_gallery_mode %} is-gallery{% endif %}">
     <section class="panel post-viewer-info">
       <div class="post-viewer-head">
         <div class="post-viewer-title-wrap">
@@ -177,11 +181,17 @@
       </div>
     </section>
 
-    <section class="panel post-content" data-post-content>
-      {{ rendered_content | safe }}
-    </section>
+    {% if not is_gallery_mode %}
+      <section class="panel post-content" data-post-content>
+        {{ rendered_content | safe }}
+      </section>
+    {% else %}
+      <div class="post-content-source" data-post-content hidden aria-hidden="true">
+        {{ rendered_content | safe }}
+      </div>
+    {% endif %}
 
-    {% if embed_cards %}
+    {% if embed_cards and not is_gallery_mode %}
       <section class="panel post-embed-list-shell">
         <h2>Embeds</h2>
         <div class="post-embed-list">
@@ -225,9 +235,8 @@
       </section>
     {% endif %}
 
-    {% if view_mode == 'reader' %}
-        {% set image_files = attachments|selectattr('is_image')|list if attachments else [] %}
-        <details class="panel post-file-launcher" data-post-file-launcher>
+    {% if is_reader_mode %}
+      <details class="panel post-file-launcher" data-post-file-launcher>
         <summary>
           <h2>Saved Files ({{ image_files|length }})</h2>
         </summary>
@@ -252,7 +261,49 @@
           <p class="post-nav-empty">No saved image attachments for this post.</p>
         {% endif %}
       </details>
-    {% else %}
+    {% elif is_gallery_mode %}
+      <section class="panel">
+        <h2>Saved Files ({{ image_files|length }})</h2>
+        {% if image_files %}
+          <ul class="list post-file-list">
+            {% for file in image_files %}
+              {% set image_src = url_for('serve_file', relative_path=file['local_path']) if file['local_available'] else file['remote_url_display'] %}
+              <li>
+                <a
+                  class="post-file-link post-file-image-trigger"
+                  href="{{ image_src }}"
+                  data-post-file-image-trigger
+                  data-lightbox-src="{{ image_src }}"
+                  data-lightbox-title="{{ file['name'] }}"
+                  data-middle-ellipsis
+                  title="{{ file['name'] }}"
+                >{{ file['name'] }}</a>
+                <small class="post-file-kind">{{ file['kind'] }}</small>
+                {% if not file['local_available'] %}
+                  <form
+                    method="post"
+                    action="{{ url_for('retry_attachment_download', post_id=post['id'], attachment_id=file['id'], version_id=active_version['id'], view=view_mode) if include_view_in_urls else url_for('retry_attachment_download', post_id=post['id'], attachment_id=file['id'], version_id=active_version['id']) }}"
+                    class="inline-form post-file-retry-form"
+                  >
+                    <input type="hidden" name="version_id" value="{{ active_version['id'] }}">
+                    {% if include_view_in_urls %}
+                      <input type="hidden" name="view" value="{{ view_mode }}">
+                    {% endif %}
+                    <a
+                      href="{{ url_for('retry_attachment_download', post_id=post['id'], attachment_id=file['id'], version_id=active_version['id'], view=view_mode) if include_view_in_urls else url_for('retry_attachment_download', post_id=post['id'], attachment_id=file['id'], version_id=active_version['id']) }}"
+                      class="post-file-retry-link"
+                      onclick="event.preventDefault(); this.closest('form').submit();"
+                    >retry</a>
+                  </form>
+                {% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="post-nav-empty">No saved image attachments for this post.</p>
+        {% endif %}
+      </section>
+    {% elif not is_gallery_mode %}
       <section class="panel">
         <h2>Saved Files</h2>
         {% if attachments %}
@@ -315,13 +366,60 @@
     {% endif %}
   </div>
 
-  {% if view_mode != 'reader' %}
+  {% if is_gallery_mode %}
+    <section class="panel post-reader-panel post-reader-panel-gallery" data-post-reader-panel>
+      <div class="post-reader-toolbar">
+        <div class="post-reader-nav-controls">
+          <button type="button" class="btn btn-link btn--ghost" data-post-reader-prev disabled>Prev</button>
+          <button type="button" class="btn btn-link btn--ghost" data-post-reader-next disabled>Next</button>
+        </div>
+        <span class="post-reader-counter" data-post-reader-counter>0 / 0</span>
+        <div class="post-reader-zoom-controls">
+          <button type="button" class="btn btn-link btn--ghost" data-post-reader-zoom-fit>Fit</button>
+          <button type="button" class="btn btn-link btn--ghost" data-post-reader-zoom-out>-</button>
+          <button type="button" class="btn btn-link btn--ghost" data-post-reader-zoom-in>+</button>
+        </div>
+      </div>
+      <div class="post-reader-stage">
+        <div class="post-reader-canvas" data-post-reader-canvas>
+          <img class="post-reader-image" data-post-reader-image alt="" hidden draggable="false">
+          <p class="post-reader-stage-empty" data-post-reader-empty>No images available in this post.</p>
+        </div>
+        <input
+          class="post-reader-scrollbar"
+          type="range"
+          min="0"
+          max="100"
+          step="1"
+          value="0"
+          aria-label="Reader scroll position"
+          data-post-reader-scrollbar
+          hidden
+        >
+        <input
+          class="post-reader-scrollbar post-reader-scrollbar-horizontal"
+          type="range"
+          min="0"
+          max="100"
+          step="1"
+          value="0"
+          aria-label="Reader horizontal scroll position"
+          data-post-reader-scrollbar-horizontal
+          hidden
+        >
+      </div>
+      <p class="post-reader-caption" data-post-reader-caption></p>
+    </section>
+
+  {% endif %}
+
+  {% if view_mode == 'classic' %}
     <aside class="post-view-sidebar">
       {{ render_nav_panel() }}
     </aside>
   {% endif %}
 </div>
-{% if view_mode == 'reader' %}
+{% if is_reader_mode %}
   <div class="post-reader-nav-overlay" data-post-reader-nav-overlay hidden></div>
   <aside class="post-reader-nav-sheet" data-post-reader-nav-sheet aria-hidden="true">
     <header class="post-reader-nav-sheet-head">
