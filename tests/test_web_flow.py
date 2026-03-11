@@ -2320,6 +2320,15 @@ def test_post_detail_renders_content_view_settings_controls(tmp_path):
     assert soup.select_one("[data-post-content-settings-reset]") is not None
 
 
+def test_post_content_settings_css_overrides_global_typography_rules():
+    css_path = Path(__file__).resolve().parents[1] / "kemono_library" / "static" / "style.css"
+    css = css_path.read_text(encoding="utf-8")
+    assert ".post-content :is(p, li, blockquote, table, thead, tbody, tr, td, th)" in css
+    assert ".post-content :is(h1, h2, h3, h4, h5, h6)" in css
+    assert ".post-content h1 {" in css
+    assert ".post-content h6 {" in css
+
+
 def test_post_detail_reader_mode_propagates_view_and_renders_left_viewer_layout(tmp_path):
     app = create_app(
         {

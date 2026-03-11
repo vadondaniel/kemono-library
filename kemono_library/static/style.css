@@ -1084,6 +1084,43 @@ button:disabled,
   text-align: var(--post-content-text-align);
 }
 
+.post-content :is(p, li, blockquote, table, thead, tbody, tr, td, th) {
+  font-size: inherit;
+  line-height: inherit;
+  font-family: inherit;
+}
+
+.post-content :is(h1, h2, h3, h4, h5, h6) {
+  margin: 0 0 0.72rem;
+  font-family: inherit;
+  line-height: inherit;
+  color: inherit;
+}
+
+.post-content h1 {
+  font-size: 1.85em;
+}
+
+.post-content h2 {
+  font-size: 1.58em;
+}
+
+.post-content h3 {
+  font-size: 1.36em;
+}
+
+.post-content h4 {
+  font-size: 1.22em;
+}
+
+.post-content h5 {
+  font-size: 1.1em;
+}
+
+.post-content h6 {
+  font-size: 1em;
+}
+
 .post-content img {
   display: block;
   max-width: 100%;
@@ -1115,6 +1152,7 @@ button:disabled,
 .post-content pre {
   white-space: pre-wrap;
   font-family: "Cascadia Mono", "Consolas", "Courier New", monospace;
+  line-height: inherit;
   border: 1px solid var(--border);
   background: color-mix(in srgb, var(--card-solid) 94%, transparent);
   border-radius: var(--radius-sm);
