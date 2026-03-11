@@ -435,26 +435,6 @@
             aria-label="Close gallery file picker"
           >Close</button>
         </div>
-        <div class="post-gallery-picker-tabs" role="tablist" aria-label="Gallery file picker display mode">
-          <button
-            type="button"
-            class="btn btn-link btn--ghost post-gallery-picker-tab is-active"
-            data-post-gallery-picker-tab
-            data-picker-tab="list"
-            role="tab"
-            aria-selected="true"
-            tabindex="0"
-          >List</button>
-          <button
-            type="button"
-            class="btn btn-link btn--ghost post-gallery-picker-tab"
-            data-post-gallery-picker-tab
-            data-picker-tab="grid"
-            role="tab"
-            aria-selected="false"
-            tabindex="-1"
-          >Grid</button>
-        </div>
       </header>
       <div class="post-gallery-picker-body">
         <section class="post-gallery-picker-panel" data-post-gallery-picker-panel="list" role="tabpanel">
@@ -522,6 +502,28 @@
           {% endif %}
         </section>
       </div>
+      <footer class="post-gallery-picker-foot">
+        <div class="post-gallery-picker-tabs" role="tablist" aria-label="Gallery file picker display mode">
+          <button
+            type="button"
+            class="btn btn-link btn--ghost post-gallery-picker-tab is-active"
+            data-post-gallery-picker-tab
+            data-picker-tab="list"
+            role="tab"
+            aria-selected="true"
+            tabindex="0"
+          >List</button>
+          <button
+            type="button"
+            class="btn btn-link btn--ghost post-gallery-picker-tab"
+            data-post-gallery-picker-tab
+            data-picker-tab="grid"
+            role="tab"
+            aria-selected="false"
+            tabindex="-1"
+          >Grid</button>
+        </div>
+      </footer>
     </aside>
 
   {% endif %}
