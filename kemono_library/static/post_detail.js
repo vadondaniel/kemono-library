@@ -986,9 +986,12 @@
 
     const updateButtons = () => {
       const hasImages = catalog.length > 0 && currentIndex >= 0;
+      const showNavigation = hasImages && catalog.length > 1;
       const maxZoom = getDynamicMaxZoom();
       const canZoomIn = hasImages && zoomLevel < maxZoom - ZOOM_EPSILON;
       const canZoomOut = hasImages && zoomLevel > MIN_ZOOM + ZOOM_EPSILON;
+      prevButton.hidden = !showNavigation;
+      nextButton.hidden = !showNavigation;
       prevButton.disabled = !hasImages || currentIndex <= 0;
       nextButton.disabled = !hasImages || currentIndex >= catalog.length - 1;
       zoomInButton.disabled = !canZoomIn;

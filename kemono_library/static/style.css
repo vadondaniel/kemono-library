@@ -3908,6 +3908,10 @@ body.is-busy-overlay-open {
   pointer-events: none;
 }
 
+.post-reader-float-nav-btn[hidden] {
+  display: none !important;
+}
+
 .post-reader-scrollbar {
   position: absolute;
   top: 0.6rem;
