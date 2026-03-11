@@ -1389,7 +1389,62 @@
       }
     };
 
-    const renderActive = () => {
+    const captureViewerModeState = () => {
+      if (isGalleryView) {
+        if (galleryModeState === "column") {
+          return "column";
+        }
+        if (galleryModeState === "pan") {
+          return "pan";
+        }
+        return "fit";
+      }
+      return scrollModeActive ? "scroll" : "fit";
+    };
+
+    const applyViewerModeState = (modeState) => {
+      if (isGalleryView) {
+        if (modeState === "column") {
+          galleryModeState = "column";
+          enterColumnMode();
+          return;
+        }
+        if (modeState === "pan") {
+          galleryModeState = "pan";
+          enterScrollMode();
+          return;
+        }
+        galleryModeState = "fit";
+        fitView();
+        return;
+      }
+      if (modeState === "scroll") {
+        enterScrollMode();
+        return;
+      }
+      fitView();
+    };
+
+    const applyViewerModeWhenImageReady = (modeState, expectedSrc) => {
+      const ready = image.complete && image.naturalWidth > 0 && image.naturalHeight > 0;
+      if (ready) {
+        applyViewerModeState(modeState);
+        return;
+      }
+      const handleReady = () => {
+        const currentSrc = normalizeSource(image.currentSrc || image.src || "");
+        if (currentSrc !== expectedSrc) {
+          return;
+        }
+        applyViewerModeState(modeState);
+      };
+      image.addEventListener("load", handleReady, { once: true });
+      image.addEventListener("error", handleReady, { once: true });
+    };
+
+    const renderActive = (options = {}) => {
+      const opts = options && typeof options === "object" ? options : {};
+      const modeState = typeof opts.modeState === "string" ? opts.modeState : "fit";
       const hasImages = catalog.length > 0 && currentIndex >= 0;
       if (!hasImages) {
         image.hidden = true;
@@ -1417,20 +1472,23 @@
         openTabLink.href = item.src;
         openTabLink.hidden = false;
       }
-      galleryModeState = "fit";
-      fitView();
-      updateButtons();
+      const expectedSrc = normalizeSource(item.src);
+      applyViewerModeWhenImageReady(modeState, expectedSrc);
     };
 
     const selectImage = (index, options = {}) => {
       const preserveScroll = Boolean(options && typeof options === "object" && "preserveScroll" in options && options.preserveScroll);
+      const preserveMode =
+        !(options && typeof options === "object" && "preserveModeState" in options) ||
+        Boolean(options && typeof options === "object" && options.preserveModeState);
       if (!Number.isInteger(index) || index < 0 || index >= catalog.length) {
         return;
       }
       const prevScrollX = preserveScroll ? window.scrollX : 0;
       const prevScrollY = preserveScroll ? window.scrollY : 0;
+      const nextModeState = preserveMode ? captureViewerModeState() : "fit";
       currentIndex = index;
-      renderActive();
+      renderActive({ modeState: nextModeState });
       saveImageIndex(index);
       if (preserveScroll) {
         window.requestAnimationFrame(() => {
@@ -1706,9 +1764,9 @@
     if (catalog.length > 0) {
       const savedIndex = readSavedImageIndex();
       if (savedIndex !== null && savedIndex >= 0 && savedIndex < catalog.length) {
-        selectImage(savedIndex);
+        selectImage(savedIndex, { preserveModeState: false });
       } else {
-        selectImage(0);
+        selectImage(0, { preserveModeState: false });
       }
     } else {
       renderActive();

@@ -2375,6 +2375,11 @@ def test_gallery_fit_button_cycle_labels_exist_in_js():
     assert "const syncDrawerScrollGate = () => {" in js
     assert 'drawer.classList.toggle("is-scroll-gated", gated);' in js
     assert 'window.addEventListener("scroll", syncDrawerScrollGate, { passive: true });' in js
+    assert "const captureViewerModeState = () => {" in js
+    assert "const applyViewerModeState = (modeState) => {" in js
+    assert "const applyViewerModeWhenImageReady = (modeState, expectedSrc) => {" in js
+    assert "renderActive({ modeState: nextModeState });" in js
+    assert "selectImage(savedIndex, { preserveModeState: false });" in js
     assert "data-post-gallery-picker-view-toggle" in js
     assert "const getMedian = (values) => {" in js
     assert "post-gallery-grid-aspect-ratio" in js
