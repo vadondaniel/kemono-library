@@ -4896,6 +4896,8 @@ body.is-gallery-picker-open {
   align-items: flex-start;
   gap: var(--space-xl);
   flex-wrap: wrap;
+  position: relative;
+  padding-right: 2.6rem;
 }
 
 .post-viewer-title-wrap {
@@ -4946,8 +4948,33 @@ body.is-gallery-picker-open {
 }
 
 .post-viewer-head-actions {
+  position: absolute;
+  top: 0;
+  right: 0;
   display: inline-flex;
   align-items: center;
+  z-index: var(--z-local);
+}
+
+.post-viewer-edit-btn {
+  width: 2.05rem;
+  min-width: 2.05rem;
+  height: 2.05rem;
+  min-height: 2.05rem;
+  padding: 0;
+}
+
+.post-viewer-edit-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.post-viewer-edit-icon svg {
+  width: 1.02rem;
+  height: 1.02rem;
+  display: block;
 }
 
 .post-viewer-version-menu {

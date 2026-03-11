@@ -53,6 +53,7 @@
 {% block content %}
 {% set is_reader_mode = view_mode == 'reader' %}
 {% set is_gallery_mode = view_mode == 'gallery' %}
+{% set edit_post_label = 'Edit Version' if versions|length > 1 else 'Edit Post' %}
 {% set is_image_focus_mode = is_reader_mode or is_gallery_mode %}
 {% set image_files = attachments|selectattr('is_image')|list if attachments else [] %}
 <div
@@ -183,17 +184,25 @@
             {% endif %}
           </div>
         </div>
-        {% if view_mode != 'reader' %}
-          <div class="post-viewer-head-actions">
-            <a
-              class="btn btn-link btn--ghost"
-              href="{{ url_for('edit_post', post_id=post['id'], version_id=active_version['id'], view=view_mode) if include_view_in_urls else url_for('edit_post', post_id=post['id'], version_id=active_version['id']) }}"
-              data-nav-replace-href
-            >
-              {% if versions|length > 1 %}Edit Version{% else %}Edit Post{% endif %}
-            </a>
-          </div>
-        {% endif %}
+        <div class="post-viewer-head-actions">
+          <a
+            class="btn btn-link btn--ghost post-viewer-edit-btn"
+            href="{{ url_for('edit_post', post_id=post['id'], version_id=active_version['id'], view=view_mode) if include_view_in_urls else url_for('edit_post', post_id=post['id'], version_id=active_version['id']) }}"
+            data-nav-replace-href
+            aria-label="{{ edit_post_label }}"
+            title="{{ edit_post_label }}"
+          >
+            <span class="post-viewer-edit-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+                <path
+                  d="M4.5 16.6V19.5h2.9L17.8 9.1l-2.9-2.9L4.5 16.6Zm14.7-9.2a1.03 1.03 0 0 0 0-1.45l-1.2-1.2a1.03 1.03 0 0 0-1.45 0l-1.1 1.1 2.9 2.9 1.1-1.4Z"
+                  fill="currentColor"
+                />
+              </svg>
+            </span>
+            <span class="sr-only">{{ edit_post_label }}</span>
+          </a>
+        </div>
       </div>
     </section>
 

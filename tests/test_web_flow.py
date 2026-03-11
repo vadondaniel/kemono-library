@@ -2445,7 +2445,7 @@ def test_post_detail_reader_mode_propagates_view_and_renders_left_viewer_layout(
     assert soup.select_one("[data-post-file-launcher]") is not None
     assert soup.select_one("[data-post-reader-source-image]") is not None
     assert soup.select_one("[data-post-view-mode-switcher]") is not None
-    assert soup.select_one(".post-viewer-head-actions a[href*='/edit']") is None
+    assert soup.select_one(".post-viewer-head-actions .post-viewer-edit-btn[href*='/edit']") is not None
     main = soup.select_one("main.container")
     assert main is not None
     assert "is-post-reader-layout" in (main.get("class") or [])
@@ -2524,6 +2524,7 @@ def test_post_detail_gallery_mode_renders_post_header_then_viewer_with_image_lau
     assert soup.select_one("[data-post-gallery-picker-panel='list'] .post-file-retry-link") is not None
     assert soup.select_one("[data-post-gallery-picker-panel='grid'] .post-gallery-picker-grid") is not None
     assert soup.select_one("[data-post-gallery-picker-panel='grid'] .post-file-retry-link") is None
+    assert soup.select_one(".post-viewer-head-actions .post-viewer-edit-btn[href*='/edit']") is not None
     content_panel = soup.select_one("[data-post-gallery-picker-scope-panel='content'] .post-gallery-picker-content")
     assert content_panel is not None
     assert content_panel.has_attr("data-post-content")
