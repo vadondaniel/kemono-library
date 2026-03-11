@@ -66,10 +66,6 @@
   {% if is_reader_mode %}
     <section class="panel post-reader-panel" data-post-reader-panel>
       <div class="post-reader-toolbar">
-        <div class="post-reader-nav-controls">
-          <button type="button" class="btn btn-link btn--ghost" data-post-reader-prev disabled>Prev</button>
-          <button type="button" class="btn btn-link btn--ghost" data-post-reader-next disabled>Next</button>
-        </div>
         <span class="post-reader-counter" data-post-reader-counter>0 / 0</span>
         <div class="post-reader-zoom-controls">
           <button type="button" class="btn btn-link btn--ghost" data-post-reader-zoom-fit>Fit</button>
@@ -78,6 +74,24 @@
         </div>
       </div>
       <div class="post-reader-stage">
+        <button
+          type="button"
+          class="post-reader-float-nav-btn post-reader-float-nav-btn-prev"
+          data-post-reader-prev
+          aria-label="Previous image"
+          disabled
+        >
+          <span aria-hidden="true">&#10094;</span>
+        </button>
+        <button
+          type="button"
+          class="post-reader-float-nav-btn post-reader-float-nav-btn-next"
+          data-post-reader-next
+          aria-label="Next image"
+          disabled
+        >
+          <span aria-hidden="true">&#10095;</span>
+        </button>
         <div class="post-reader-canvas" data-post-reader-canvas>
           <img class="post-reader-image" data-post-reader-image alt="" hidden draggable="false">
           <p class="post-reader-stage-empty" data-post-reader-empty>No images available in this post.</p>
@@ -369,10 +383,6 @@
   {% if is_gallery_mode %}
     <section class="panel post-reader-panel post-reader-panel-gallery" data-post-reader-panel>
       <div class="post-reader-toolbar">
-        <div class="post-reader-nav-controls">
-          <button type="button" class="btn btn-link btn--ghost" data-post-reader-prev disabled>Prev</button>
-          <button type="button" class="btn btn-link btn--ghost" data-post-reader-next disabled>Next</button>
-        </div>
         <span class="post-reader-counter" data-post-reader-counter>0 / 0</span>
         <div class="post-reader-zoom-controls">
           <button type="button" class="btn btn-link btn--ghost" data-post-reader-zoom-fit>Fit</button>
@@ -381,6 +391,24 @@
         </div>
       </div>
       <div class="post-reader-stage">
+        <button
+          type="button"
+          class="post-reader-float-nav-btn post-reader-float-nav-btn-prev"
+          data-post-reader-prev
+          aria-label="Previous image"
+          disabled
+        >
+          <span aria-hidden="true">&#10094;</span>
+        </button>
+        <button
+          type="button"
+          class="post-reader-float-nav-btn post-reader-float-nav-btn-next"
+          data-post-reader-next
+          aria-label="Next image"
+          disabled
+        >
+          <span aria-hidden="true">&#10095;</span>
+        </button>
         <div class="post-reader-canvas" data-post-reader-canvas>
           <img class="post-reader-image" data-post-reader-image alt="" hidden draggable="false">
           <p class="post-reader-stage-empty" data-post-reader-empty>No images available in this post.</p>
