@@ -1873,6 +1873,7 @@ button:disabled,
   font-weight: 650;
   overflow-wrap: anywhere;
   display: -webkit-box;
+  line-clamp: 2;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
@@ -1884,6 +1885,7 @@ button:disabled,
   font-size: 0.82rem;
   overflow-wrap: anywhere;
   display: -webkit-box;
+  line-clamp: 2;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
@@ -2143,6 +2145,7 @@ button:disabled,
   color: var(--muted);
   font-size: 0.76rem;
   display: -webkit-box;
+  line-clamp: 4;
   -webkit-line-clamp: 4;
   -webkit-box-orient: vertical;
   overflow: hidden;
@@ -3340,7 +3343,6 @@ button:disabled,
   aspect-ratio: 40 / 21;
   object-fit: cover;
   display: block;
-  vertical-align: top;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: color-mix(in srgb, var(--card-solid) 90%, transparent);
