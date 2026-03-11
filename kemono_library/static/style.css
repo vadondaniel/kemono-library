@@ -3793,15 +3793,24 @@ body.is-busy-overlay-open {
   grid-area: toolbar;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: center;
   gap: var(--space-md);
   flex-wrap: wrap;
 }
 
 .post-reader-counter {
-  margin-right: auto;
   font-size: 0.82rem;
   color: var(--muted);
+  margin-left: var(--space-md);
+  white-space: nowrap;
+}
+
+.post-reader-meta {
+  grid-area: caption;
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  min-width: 0;
 }
 
 .post-reader-stage {
@@ -4050,11 +4059,12 @@ body.is-busy-overlay-open {
 }
 
 .post-reader-caption {
-  grid-area: caption;
   margin: 0;
   color: var(--muted);
   font-size: 0.82rem;
   overflow-wrap: anywhere;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .post-reader-inline-trigger {
