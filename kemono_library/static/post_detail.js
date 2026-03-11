@@ -652,6 +652,7 @@
       pageRoot instanceof HTMLElement ? `kemono-reader-image-index:${pageRoot.dataset.postId || "unknown"}` : "";
     let currentIndex = -1;
     const MIN_ZOOM = 1;
+    const DENSITY_MAX_ZOOM_MULTIPLIER = 2;
     const ZOOM_EPSILON = 0.0001;
     const BUTTON_ZOOM_STEP = 0.2;
     const WHEEL_ZOOM_PER_PIXEL = 0.0014;
@@ -763,7 +764,8 @@
       if (!Number.isFinite(densityLimitedMax) || densityLimitedMax <= 0) {
         return MIN_ZOOM;
       }
-      return Math.max(MIN_ZOOM, densityLimitedMax);
+      const boostedDensityMax = densityLimitedMax * DENSITY_MAX_ZOOM_MULTIPLIER;
+      return Math.max(MIN_ZOOM, boostedDensityMax);
     };
 
     const clampZoom = (value) => {
