@@ -4393,27 +4393,40 @@ body.is-gallery-picker-open {
 
 .post-gallery-picker-head {
   display: grid;
-  padding: 0.6rem 0.72rem;
+  padding: 0.46rem 0.72rem 0;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
 }
 
 .post-gallery-picker-scope-tabs {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.34rem;
+  display: flex;
+  align-items: flex-end;
+  gap: 0;
+  margin: 0 -0.72rem;
+  padding: 0 0.72rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
 }
 
 .post-gallery-picker-scope-tab {
-  width: 100%;
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
   justify-content: center;
-  border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--card-solid) 96%, transparent);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 0.56rem 0.4rem 0.48rem;
+  background: transparent;
+  color: color-mix(in srgb, var(--muted) 82%, var(--text));
+}
+
+.post-gallery-picker-scope-tab:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--card-solid) 88%, transparent);
 }
 
 .post-gallery-picker-scope-tab.is-active {
-  border-color: color-mix(in srgb, var(--accent) 52%, var(--border));
-  background: color-mix(in srgb, var(--accent-soft) 40%, var(--card-solid));
+  border-bottom-color: color-mix(in srgb, var(--accent) 60%, var(--border));
+  background: transparent;
   color: var(--accent-strong);
 }
 
