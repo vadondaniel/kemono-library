@@ -2352,6 +2352,7 @@ def test_gallery_column_mode_css_rule_exists():
     assert "width: min(100%, 840px);" in css
     assert ".post-gallery-picker-drawer" in css
     assert ".post-gallery-picker-grid" in css
+    assert ".post-gallery-picker-drawer.is-scroll-gated .post-gallery-picker-body" in css
     assert ".post-view-shell.is-gallery.has-pinned-picker" in css
     assert "--post-gallery-grid-aspect-ratio" in css
 
@@ -2371,6 +2372,9 @@ def test_gallery_fit_button_cycle_labels_exist_in_js():
     assert "zoomFitButton.textContent = \"Fit\";" in js
     assert "if (isGalleryView && !isPageAtBottom() && !allowWheelControl)" in js
     assert "function initializeGalleryPicker()" in js
+    assert "const syncDrawerScrollGate = () => {" in js
+    assert 'drawer.classList.toggle("is-scroll-gated", gated);' in js
+    assert 'window.addEventListener("scroll", syncDrawerScrollGate, { passive: true });' in js
     assert "data-post-gallery-picker-view-toggle" in js
     assert "const getMedian = (values) => {" in js
     assert "post-gallery-grid-aspect-ratio" in js

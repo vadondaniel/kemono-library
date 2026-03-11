@@ -104,6 +104,14 @@
   const isReaderView = viewMode === "reader";
   const isGalleryView = viewMode === "gallery";
   const isImageFocusView = isReaderView || isGalleryView;
+  const isPageAtBottom = () => {
+    const scrollingElement = document.scrollingElement;
+    if (!(scrollingElement instanceof HTMLElement)) {
+      return true;
+    }
+    const remaining = scrollingElement.scrollHeight - scrollingElement.clientHeight - scrollingElement.scrollTop;
+    return remaining <= 2;
+  };
   const contentRoot = document.querySelector("[data-post-content]");
   const contentSettingsRoot = document.querySelector("[data-post-content-settings]");
   const readerNavOpenButton = document.querySelector("[data-post-reader-nav-open]");
@@ -389,6 +397,11 @@
       });
     };
 
+    const syncDrawerScrollGate = () => {
+      const gated = isOpen() && !isPageAtBottom();
+      drawer.classList.toggle("is-scroll-gated", gated);
+    };
+
     const syncDrawerState = () => {
       const open = isOpen();
       const docked = open && pinned;
@@ -400,6 +413,7 @@
       document.body.classList.toggle("is-gallery-picker-open", open && !docked);
       document.body.classList.toggle("is-gallery-picker-pinned", docked);
       setExpandedState(open);
+      syncDrawerScrollGate();
       if (pinToggle instanceof HTMLButtonElement) {
         pinToggle.setAttribute("aria-pressed", pinned ? "true" : "false");
         pinToggle.setAttribute("aria-label", pinned ? "Unpin gallery file picker" : "Pin gallery file picker");
@@ -551,6 +565,9 @@
         setActiveTab(activeTab === "grid" ? "list" : "grid");
       });
     }
+
+    window.addEventListener("scroll", syncDrawerScrollGate, { passive: true });
+    window.addEventListener("resize", syncDrawerScrollGate);
 
     window.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && isOpen()) {
@@ -967,15 +984,6 @@
     let dragPanX = 0;
     let dragPanY = 0;
     let scrollActivityTimer = null;
-
-    const isPageAtBottom = () => {
-      const scrollingElement = document.scrollingElement;
-      if (!(scrollingElement instanceof HTMLElement)) {
-        return true;
-      }
-      const remaining = scrollingElement.scrollHeight - scrollingElement.clientHeight - scrollingElement.scrollTop;
-      return remaining <= 2;
-    };
 
     const readSavedImageIndex = () => {
       if (!imageStateStorageKey) {
