@@ -1197,7 +1197,8 @@
         if (catalog.length === 0) {
           return;
         }
-        if (!isPageAtBottom()) {
+        const allowWheelControl = event.ctrlKey;
+        if (!isPageAtBottom() && !allowWheelControl) {
           return;
         }
         const deltaPixels = normalizedWheelDeltaPixels(event);
