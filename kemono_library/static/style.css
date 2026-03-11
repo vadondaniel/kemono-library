@@ -4208,6 +4208,15 @@ body.is-post-gallery-page .site-header {
   box-shadow: none;
 }
 
+.container.is-post-gallery-layout
+  .post-view-shell.is-gallery
+  > .post-reader-panel.post-reader-panel-gallery
+  .post-reader-stage.is-column-width
+  .post-reader-canvas {
+  width: min(100%, 840px);
+  margin: 0 auto;
+}
+
 .container.is-post-gallery-layout .post-view-shell.is-gallery > .post-reader-panel.post-reader-panel-gallery .post-reader-toolbar {
   padding: 0.42rem 0.36rem;
   margin-bottom: var(--space-sm);

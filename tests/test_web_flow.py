@@ -2344,6 +2344,29 @@ def test_post_content_settings_css_overrides_global_typography_rules():
     assert ".post-content h6 {" in css
 
 
+def test_gallery_column_mode_css_rule_exists():
+    css_path = Path(__file__).resolve().parents[1] / "kemono_library" / "static" / "style.css"
+    css = css_path.read_text(encoding="utf-8")
+    assert ".post-reader-stage.is-column-width" in css
+    assert ".post-reader-canvas" in css
+    assert "width: min(100%, 840px);" in css
+
+
+def test_gallery_fit_button_cycle_labels_exist_in_js():
+    js_path = Path(__file__).resolve().parents[1] / "kemono_library" / "static" / "post_detail.js"
+    js = js_path.read_text(encoding="utf-8")
+    assert "galleryModeState = \"fit\"" in js
+    assert "galleryModeState === \"fit\"" in js
+    assert "galleryModeState === \"column\"" in js
+    assert "galleryModeState = \"pan\"" in js
+    assert "const enterColumnMode = () => {" in js
+    assert "scrollModeActive = true;" in js
+    assert "zoomFitButton.textContent = \"Column\";" in js
+    assert "canPanHorizontallyAtCoverZoom() ? \"Scroll\" : \"Column\"" in js
+    assert "zoomFitButton.textContent = \"Pan\";" in js
+    assert "zoomFitButton.textContent = \"Fit\";" in js
+
+
 def test_post_detail_reader_mode_propagates_view_and_renders_left_viewer_layout(tmp_path):
     app = create_app(
         {

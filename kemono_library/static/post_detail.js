@@ -102,7 +102,8 @@
   const pageRoot = document.querySelector("[data-post-view-root]");
   const viewMode = pageRoot instanceof HTMLElement ? pageRoot.dataset.postViewMode || "classic" : "classic";
   const isReaderView = viewMode === "reader";
-  const isImageFocusView = isReaderView || viewMode === "gallery";
+  const isGalleryView = viewMode === "gallery";
+  const isImageFocusView = isReaderView || isGalleryView;
   const contentRoot = document.querySelector("[data-post-content]");
   const contentSettingsRoot = document.querySelector("[data-post-content-settings]");
   const readerNavOpenButton = document.querySelector("[data-post-reader-nav-open]");
@@ -661,6 +662,7 @@
     let panX = 0;
     let panY = 0;
     let scrollModeActive = false;
+    let galleryModeState = "fit";
     let dragPointerId = null;
     let dragStartX = 0;
     let dragStartY = 0;
@@ -803,6 +805,16 @@
       return clampZoom(Math.max(MIN_ZOOM, coverZoom));
     };
 
+    const canPanHorizontallyAtCoverZoom = () => {
+      const { canvasWidth, fittedWidth } = getFittedSize();
+      if (canvasWidth <= 0 || fittedWidth <= 0) {
+        return false;
+      }
+      const coverZoom = computeCoverZoom();
+      const scaledWidth = fittedWidth * coverZoom;
+      return scaledWidth - canvasWidth > ZOOM_EPSILON;
+    };
+
     const clampPan = () => {
       const { maxX, maxY } = getPanBounds();
       if (panX > maxX) {
@@ -899,11 +911,36 @@
       zoomLevel = 1;
       panX = 0;
       panY = 0;
+      if (stage instanceof HTMLElement) {
+        stage.classList.remove("is-column-width");
+      }
       setTransforms();
       updateButtons();
     };
 
+    const enterColumnMode = () => {
+      if (!(stage instanceof HTMLElement)) {
+        fitView();
+        return;
+      }
+      stage.classList.add("is-column-width");
+      scrollModeActive = true;
+      zoomLevel = computeCoverZoom();
+      panX = 0;
+      panY = 0;
+      setTransforms();
+      const { maxX, maxY } = getPanBounds();
+      panX = maxX;
+      panY = maxY;
+      setTransforms();
+      markScrollActivity();
+      updateButtons();
+    };
+
     const enterScrollMode = () => {
+      if (stage instanceof HTMLElement) {
+        stage.classList.remove("is-column-width");
+      }
       scrollModeActive = true;
       zoomLevel = computeCoverZoom();
       panX = 0;
@@ -918,6 +955,30 @@
     };
 
     const toggleFitMode = () => {
+      if (isGalleryView) {
+        if (galleryModeState === "fit") {
+          if (!isDefaultView()) {
+            fitView();
+            return;
+          }
+          if (canPanHorizontallyAtCoverZoom()) {
+            galleryModeState = "pan";
+            enterScrollMode();
+            return;
+          }
+          galleryModeState = "column";
+          enterColumnMode();
+          return;
+        }
+        if (galleryModeState === "column") {
+          galleryModeState = "pan";
+          enterScrollMode();
+          return;
+        }
+        galleryModeState = "fit";
+        fitView();
+        return;
+      }
       if (isDefaultView()) {
         enterScrollMode();
         return;
@@ -997,7 +1058,23 @@
       zoomInButton.disabled = !canZoomIn;
       zoomOutButton.disabled = !canZoomOut;
       zoomFitButton.disabled = !hasImages;
-      zoomFitButton.textContent = hasImages && isDefaultView() ? "Scroll" : "Fit";
+      if (isGalleryView) {
+        if (!hasImages) {
+          zoomFitButton.textContent = "Column";
+        } else if (galleryModeState === "fit") {
+          if (!isDefaultView()) {
+            zoomFitButton.textContent = "Fit";
+          } else {
+            zoomFitButton.textContent = canPanHorizontallyAtCoverZoom() ? "Scroll" : "Column";
+          }
+        } else if (galleryModeState === "column") {
+          zoomFitButton.textContent = "Pan";
+        } else {
+          zoomFitButton.textContent = "Fit";
+        }
+      } else {
+        zoomFitButton.textContent = hasImages && isDefaultView() ? "Scroll" : "Fit";
+      }
     };
 
     const renderActive = () => {
@@ -1028,6 +1105,7 @@
         openTabLink.href = item.src;
         openTabLink.hidden = false;
       }
+      galleryModeState = "fit";
       fitView();
       updateButtons();
     };
