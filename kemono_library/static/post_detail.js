@@ -667,6 +667,15 @@
     let dragPanY = 0;
     let scrollActivityTimer = null;
 
+    const isPageAtBottom = () => {
+      const scrollingElement = document.scrollingElement;
+      if (!(scrollingElement instanceof HTMLElement)) {
+        return true;
+      }
+      const remaining = scrollingElement.scrollHeight - scrollingElement.clientHeight - scrollingElement.scrollTop;
+      return remaining <= 2;
+    };
+
     const readSavedImageIndex = () => {
       if (!imageStateStorageKey) {
         return null;
@@ -1182,11 +1191,13 @@
         markScrollActivity();
       });
     }
-
     canvas.addEventListener(
       "wheel",
       (event) => {
         if (catalog.length === 0) {
+          return;
+        }
+        if (!isPageAtBottom()) {
           return;
         }
         const deltaPixels = normalizedWheelDeltaPixels(event);
