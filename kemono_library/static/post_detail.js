@@ -289,14 +289,13 @@
     }
     const shell = drawer.closest(".post-view-shell.is-gallery");
     const pinToggle = drawer.querySelector("[data-post-gallery-picker-pin-toggle]");
+    const viewToggleButton = drawer.querySelector("[data-post-gallery-picker-view-toggle]");
+    const viewToggleIcon = drawer.querySelector("[data-post-gallery-picker-view-icon]");
     const openTriggers = Array.from(document.querySelectorAll("[data-post-gallery-picker-open]")).filter(
       (node) => node instanceof HTMLElement
     );
     const closeTriggers = Array.from(document.querySelectorAll("[data-post-gallery-picker-close]")).filter(
       (node) => node instanceof HTMLElement
-    );
-    const tabButtons = Array.from(drawer.querySelectorAll("[data-post-gallery-picker-tab]")).filter(
-      (node) => node instanceof HTMLButtonElement
     );
     const tabPanels = Array.from(drawer.querySelectorAll("[data-post-gallery-picker-panel]")).filter(
       (node) => node instanceof HTMLElement
@@ -313,6 +312,20 @@
     const GRID_RATIO_MAX = 1.8;
     const GRID_RATIO_FALLBACK = 4 / 3;
     const GRID_RATIO_SAMPLE_LIMIT = 120;
+    const GRID_VIEW_ICON =
+      '<svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">' +
+      '<rect x="4.5" y="4.5" width="6" height="6" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.7" />' +
+      '<rect x="13.5" y="4.5" width="6" height="6" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.7" />' +
+      '<rect x="4.5" y="13.5" width="6" height="6" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.7" />' +
+      '<rect x="13.5" y="13.5" width="6" height="6" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.7" />' +
+      "</svg>";
+    const LIST_VIEW_ICON =
+      '<svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">' +
+      '<path d="M8 7h11M8 12h11M8 17h11" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />' +
+      '<circle cx="5.2" cy="7" r="1.1" fill="currentColor" />' +
+      '<circle cx="5.2" cy="12" r="1.1" fill="currentColor" />' +
+      '<circle cx="5.2" cy="17" r="1.1" fill="currentColor" />' +
+      "</svg>";
 
     const isOpen = () => drawer.classList.contains("is-open");
     const isPinned = () => pinned;
@@ -327,6 +340,19 @@
         return sorted[mid];
       }
       return (sorted[mid - 1] + sorted[mid]) / 2;
+    };
+
+    const syncViewToggle = () => {
+      if (!(viewToggleButton instanceof HTMLButtonElement)) {
+        return;
+      }
+      const nextTab = activeTab === "grid" ? "list" : "grid";
+      const label = nextTab === "grid" ? "Switch to grid view" : "Switch to list view";
+      viewToggleButton.setAttribute("aria-label", label);
+      viewToggleButton.title = label;
+      if (viewToggleIcon instanceof HTMLElement) {
+        viewToggleIcon.innerHTML = nextTab === "grid" ? GRID_VIEW_ICON : LIST_VIEW_ICON;
+      }
     };
 
     const setExpandedState = (open) => {
@@ -348,7 +374,6 @@
       setExpandedState(open);
       if (pinToggle instanceof HTMLButtonElement) {
         pinToggle.setAttribute("aria-pressed", pinned ? "true" : "false");
-        pinToggle.textContent = pinned ? "Unpin" : "Pin";
         pinToggle.setAttribute("aria-label", pinned ? "Unpin gallery file picker" : "Pin gallery file picker");
         pinToggle.title = pinned ? "Unpin panel" : "Pin panel";
       }
@@ -421,12 +446,6 @@
     const setActiveTab = (nextTab) => {
       const normalized = nextTab === "grid" ? "grid" : "list";
       activeTab = normalized;
-      tabButtons.forEach((button) => {
-        const isActive = button.dataset.pickerTab === normalized;
-        button.classList.toggle("is-active", isActive);
-        button.setAttribute("aria-selected", isActive ? "true" : "false");
-        button.tabIndex = isActive ? 0 : -1;
-      });
       tabPanels.forEach((panel) => {
         panel.hidden = panel.dataset.postGalleryPickerPanel !== normalized;
       });
@@ -436,6 +455,7 @@
           scheduleGridAspectRatio();
         }
       }
+      syncViewToggle();
     };
 
     const setOpen = (open, options = {}) => {
@@ -449,7 +469,7 @@
         drawer.classList.add("is-open");
         drawer.setAttribute("aria-hidden", "false");
         syncDrawerState();
-        const focusTarget = drawer.querySelector("[data-post-gallery-picker-close], [data-post-gallery-picker-tab].is-active");
+        const focusTarget = drawer.querySelector("[data-post-gallery-picker-close], [data-post-gallery-picker-view-toggle]");
         if (focusTarget instanceof HTMLElement) {
           window.requestAnimationFrame(() => {
             focusTarget.focus();
@@ -496,40 +516,11 @@
       });
     }
 
-    tabButtons.forEach((button) => {
-      button.addEventListener("click", () => {
-        setActiveTab(button.dataset.pickerTab || "list");
+    if (viewToggleButton instanceof HTMLButtonElement) {
+      viewToggleButton.addEventListener("click", () => {
+        setActiveTab(activeTab === "grid" ? "list" : "grid");
       });
-      button.addEventListener("keydown", (event) => {
-        if (event.key !== "ArrowLeft" && event.key !== "ArrowRight" && event.key !== "Home" && event.key !== "End") {
-          return;
-        }
-        event.preventDefault();
-        if (!tabButtons.length) {
-          return;
-        }
-        const currentIndex = tabButtons.indexOf(button);
-        if (currentIndex < 0) {
-          return;
-        }
-        let nextIndex = currentIndex;
-        if (event.key === "Home") {
-          nextIndex = 0;
-        } else if (event.key === "End") {
-          nextIndex = tabButtons.length - 1;
-        } else if (event.key === "ArrowRight") {
-          nextIndex = (currentIndex + 1) % tabButtons.length;
-        } else if (event.key === "ArrowLeft") {
-          nextIndex = (currentIndex - 1 + tabButtons.length) % tabButtons.length;
-        }
-        const nextButton = tabButtons[nextIndex];
-        if (!(nextButton instanceof HTMLButtonElement)) {
-          return;
-        }
-        setActiveTab(nextButton.dataset.pickerTab || "list");
-        nextButton.focus();
-      });
-    });
+    }
 
     window.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && isOpen()) {

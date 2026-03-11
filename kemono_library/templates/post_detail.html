@@ -437,7 +437,7 @@
         </div>
       </header>
       <div class="post-gallery-picker-body">
-        <section class="post-gallery-picker-panel" data-post-gallery-picker-panel="list" role="tabpanel">
+        <section class="post-gallery-picker-panel" data-post-gallery-picker-panel="list">
           {% if image_files %}
             <ul class="list post-file-list post-gallery-picker-list">
               {% for file in image_files %}
@@ -477,7 +477,7 @@
             <p class="post-nav-empty">No saved image attachments for this post.</p>
           {% endif %}
         </section>
-        <section class="post-gallery-picker-panel" data-post-gallery-picker-panel="grid" role="tabpanel" hidden>
+        <section class="post-gallery-picker-panel" data-post-gallery-picker-panel="grid" hidden>
           {% if image_files %}
             <ul class="post-gallery-picker-grid">
               {% for file in image_files %}
@@ -503,25 +503,23 @@
         </section>
       </div>
       <footer class="post-gallery-picker-foot">
-        <div class="post-gallery-picker-tabs" role="tablist" aria-label="Gallery file picker display mode">
+        <div class="post-gallery-picker-controls">
           <button
             type="button"
-            class="btn btn-link btn--ghost post-gallery-picker-tab is-active"
-            data-post-gallery-picker-tab
-            data-picker-tab="list"
-            role="tab"
-            aria-selected="true"
-            tabindex="0"
-          >List</button>
-          <button
-            type="button"
-            class="btn btn-link btn--ghost post-gallery-picker-tab"
-            data-post-gallery-picker-tab
-            data-picker-tab="grid"
-            role="tab"
-            aria-selected="false"
-            tabindex="-1"
-          >Grid</button>
+            class="btn btn-link btn--ghost post-gallery-picker-view-toggle"
+            data-post-gallery-picker-view-toggle
+            aria-label="Switch to grid view"
+            title="Switch to grid view"
+          >
+            <span class="post-gallery-picker-view-icon" data-post-gallery-picker-view-icon aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+                <rect x="4.5" y="4.5" width="6" height="6" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.7" />
+                <rect x="13.5" y="4.5" width="6" height="6" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.7" />
+                <rect x="4.5" y="13.5" width="6" height="6" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.7" />
+                <rect x="13.5" y="13.5" width="6" height="6" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.7" />
+              </svg>
+            </span>
+          </button>
         </div>
         <button
           type="button"
@@ -529,7 +527,21 @@
           data-post-gallery-picker-pin-toggle
           aria-pressed="false"
           aria-label="Pin gallery file picker"
-        >Pin</button>
+          title="Pin panel"
+        >
+          <span class="post-gallery-picker-pin-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+              <path
+                d="M8.5 3h7l-.7 4.1 2.9 2.9v1.5H6.3V10l2.9-2.9L8.5 3Zm3.5 9.7v6.8M10.8 19.5h2.4"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </span>
+        </button>
       </footer>
     </aside>
 

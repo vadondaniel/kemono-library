@@ -4409,17 +4409,11 @@ body.is-gallery-picker-open {
   font-size: 1.02rem;
 }
 
-.post-gallery-picker-tabs {
+.post-gallery-picker-controls {
   display: inline-flex;
   align-items: center;
   justify-content: flex-start;
   gap: var(--space-xs);
-}
-
-.post-gallery-picker-tab.is-active {
-  border-color: color-mix(in srgb, var(--accent) 52%, var(--border));
-  background: color-mix(in srgb, var(--accent-soft) 42%, var(--card-solid));
-  color: var(--accent-strong);
 }
 
 .post-gallery-picker-body {
@@ -4437,7 +4431,57 @@ body.is-gallery-picker-open {
 }
 
 .post-gallery-picker-pin-toggle {
-  min-width: 4.25rem;
+  width: 2.2rem;
+  min-width: 2.2rem;
+  height: 2.2rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.post-gallery-picker-view-toggle {
+  width: 2.2rem;
+  min-width: 2.2rem;
+  height: 2.2rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.post-gallery-picker-view-icon,
+.post-gallery-picker-pin-icon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.post-gallery-picker-view-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.post-gallery-picker-view-icon svg {
+  width: 1.04rem;
+  height: 1.04rem;
+  display: block;
+}
+
+.post-gallery-picker-view-icon svg rect {
+  vector-effect: non-scaling-stroke;
+}
+
+.post-gallery-picker-pin-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.post-gallery-picker-pin-icon svg {
+  width: 1.02rem;
+  height: 1.02rem;
+  display: block;
 }
 
 .post-gallery-picker-drawer.is-pinned .post-gallery-picker-pin-toggle {

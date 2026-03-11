@@ -2371,7 +2371,7 @@ def test_gallery_fit_button_cycle_labels_exist_in_js():
     assert "zoomFitButton.textContent = \"Fit\";" in js
     assert "if (isGalleryView && !isPageAtBottom() && !allowWheelControl)" in js
     assert "function initializeGalleryPicker()" in js
-    assert "data-post-gallery-picker-tab" in js
+    assert "data-post-gallery-picker-view-toggle" in js
     assert "const getMedian = (values) => {" in js
     assert "post-gallery-grid-aspect-ratio" in js
 
@@ -2501,6 +2501,7 @@ def test_post_detail_gallery_mode_renders_post_header_then_viewer_with_image_lau
     assert soup.select_one("[data-post-reader-source-image]") is None
     assert soup.select_one("[data-post-gallery-picker-drawer]") is not None
     assert soup.select_one("[data-post-gallery-picker-overlay]") is not None
+    assert soup.select_one("[data-post-gallery-picker-view-toggle]") is not None
     assert soup.select_one("[data-post-gallery-picker-pin-toggle]") is not None
     assert len(soup.select("[data-post-gallery-picker-open]")) >= 2
     assert soup.select_one("[data-post-gallery-picker-panel='list'] .post-file-list") is not None
