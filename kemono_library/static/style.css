@@ -4229,6 +4229,11 @@ body.is-post-gallery-page .site-header {
 .container.is-post-gallery-layout .post-view-shell.is-gallery > .post-reader-panel.post-reader-panel-gallery {
   z-index: var(--z-local);
   margin: 0;
+  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "stage"
+    "caption";
+  gap: var(--space-sm);
   border-top: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
   border-right: 0;
   border-bottom: 0;
@@ -4246,12 +4251,26 @@ body.is-post-gallery-page .site-header {
   margin: 0 auto;
 }
 
-.container.is-post-gallery-layout .post-view-shell.is-gallery > .post-reader-panel.post-reader-panel-gallery .post-reader-toolbar {
-  padding: 0.42rem 0.36rem;
-  margin-bottom: var(--space-sm);
-  border: 0;
-  border-radius: 0;
-  background: transparent;
+.container.is-post-gallery-layout .post-view-shell.is-gallery > .post-reader-panel.post-reader-panel-gallery .post-reader-meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.container.is-post-gallery-layout .post-view-shell.is-gallery > .post-reader-panel.post-reader-panel-gallery .post-reader-caption {
+  grid-column: 1;
+}
+
+.container.is-post-gallery-layout .post-view-shell.is-gallery > .post-reader-panel.post-reader-panel-gallery .post-reader-zoom-controls {
+  grid-column: 2;
+  justify-self: center;
+}
+
+.container.is-post-gallery-layout .post-view-shell.is-gallery > .post-reader-panel.post-reader-panel-gallery .post-reader-counter {
+  grid-column: 3;
+  justify-self: end;
+  margin-left: 0;
 }
 
 .container.is-post-gallery-layout .post-view-shell.is-gallery > .post-file-launcher {
