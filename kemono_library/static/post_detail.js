@@ -4,11 +4,16 @@
     if (!(header instanceof HTMLElement)) {
       return;
     }
-    const height = Math.max(0, Math.round(header.getBoundingClientRect().height));
-    document.documentElement.style.setProperty("--site-header-height", `${height}px`);
+    const rect = header.getBoundingClientRect();
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+    const visibleTop = Math.max(0, rect.top);
+    const visibleBottom = Math.min(viewportHeight, rect.bottom);
+    const visibleHeight = Math.max(0, Math.round(visibleBottom - visibleTop));
+    document.documentElement.style.setProperty("--site-header-height", `${visibleHeight}px`);
   };
   syncSiteHeaderHeight();
   window.addEventListener("resize", syncSiteHeaderHeight);
+  window.addEventListener("scroll", syncSiteHeaderHeight, { passive: true });
   window.requestAnimationFrame(syncSiteHeaderHeight);
 
   const modeSwitcher = document.querySelector("[data-post-view-mode-switcher]");
@@ -114,11 +119,16 @@
   };
   const contentRoot = document.querySelector("[data-post-content]");
   const contentSettingsRoot = document.querySelector("[data-post-content-settings]");
-  const readerNavOpenButton = document.querySelector("[data-post-reader-nav-open]");
+  const readerNavOpenButtons = Array.from(document.querySelectorAll("[data-post-reader-nav-open]")).filter(
+    (node) => node instanceof HTMLElement
+  );
   const readerNavCloseButton = document.querySelector("[data-post-reader-nav-close]");
+  const readerNavPinButton = document.querySelector("[data-post-reader-nav-pin]");
   const readerNavOverlay = document.querySelector("[data-post-reader-nav-overlay]");
   const readerNavSheet = document.querySelector("[data-post-reader-nav-sheet]");
+  const postViewShell = pageRoot instanceof HTMLElement ? pageRoot.closest(".post-view-shell") : null;
   const readerNavStateKey = "kemono-reader-nav-open";
+  const readerNavPinnedStateKey = "kemono-reader-nav-pinned";
   const readReaderNavState = () => {
     try {
       return window.sessionStorage.getItem(readerNavStateKey) === "1";
@@ -131,6 +141,20 @@
       window.sessionStorage.setItem(readerNavStateKey, open ? "1" : "0");
     } catch {
       // Ignore session storage failures.
+    }
+  };
+  const readReaderNavPinnedState = () => {
+    try {
+      return window.localStorage.getItem(readerNavPinnedStateKey) === "1";
+    } catch {
+      return false;
+    }
+  };
+  const writeReaderNavPinnedState = (pinned) => {
+    try {
+      window.localStorage.setItem(readerNavPinnedStateKey, pinned ? "1" : "0");
+    } catch {
+      // Ignore storage failures.
     }
   };
 
@@ -593,66 +617,124 @@
   }
   const galleryPicker = initializeGalleryPicker();
 
-  const setReaderNavOpen = (open) => {
+  let readerNavPinned = readReaderNavPinnedState();
+  const setReaderNavExpandedState = (open) => {
+    readerNavOpenButtons.forEach((trigger) => {
+      trigger.setAttribute("aria-expanded", open ? "true" : "false");
+    });
+  };
+  const syncReaderNavState = () => {
     if (!(readerNavSheet instanceof HTMLElement) || !(readerNavOverlay instanceof HTMLElement)) {
       return;
     }
-    if (open) {
-      readerNavSheet.classList.add("is-open");
-      readerNavSheet.setAttribute("aria-hidden", "false");
-      readerNavOverlay.hidden = false;
-      document.body.classList.add("is-reader-nav-open");
-    } else {
-      readerNavSheet.classList.remove("is-open");
-      readerNavSheet.setAttribute("aria-hidden", "true");
-      readerNavOverlay.hidden = true;
-      document.body.classList.remove("is-reader-nav-open");
+    const open = readerNavSheet.classList.contains("is-open");
+    const docked = open && readerNavPinned;
+    readerNavSheet.classList.toggle("is-pinned", docked);
+    readerNavOverlay.hidden = !(open && !docked);
+    document.body.classList.toggle("is-post-nav-open", open);
+    document.body.classList.toggle("is-reader-nav-open", open && !docked);
+    document.body.classList.toggle("is-post-nav-pinned", docked);
+    if (postViewShell instanceof HTMLElement) {
+      postViewShell.classList.toggle("has-pinned-nav", docked);
     }
+    if (readerNavPinButton instanceof HTMLButtonElement) {
+      readerNavPinButton.setAttribute("aria-pressed", readerNavPinned ? "true" : "false");
+      readerNavPinButton.setAttribute("aria-label", readerNavPinned ? "Unpin navigation" : "Pin navigation");
+      readerNavPinButton.title = readerNavPinned ? "Unpin navigation" : "Pin navigation";
+    }
+    setReaderNavExpandedState(open);
+  };
+  const withReaderNavTransitionSuppressed = (callback) => {
+    if (!(readerNavSheet instanceof HTMLElement)) {
+      callback();
+      return;
+    }
+    readerNavSheet.classList.add("is-restoring");
+    callback();
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        readerNavSheet.classList.remove("is-restoring");
+      });
+    });
+  };
+
+  const setReaderNavOpen = (open, options = {}) => {
+    const instant = options.instant === true;
+    if (!(readerNavSheet instanceof HTMLElement) || !(readerNavOverlay instanceof HTMLElement)) {
+      return;
+    }
+    const applyOpenState = () => {
+      if (open) {
+        readerNavSheet.classList.add("is-open");
+        readerNavSheet.setAttribute("aria-hidden", "false");
+      } else {
+        readerNavSheet.classList.remove("is-open");
+        readerNavSheet.setAttribute("aria-hidden", "true");
+      }
+    };
+    if (instant) {
+      withReaderNavTransitionSuppressed(applyOpenState);
+    } else {
+      applyOpenState();
+    }
+    syncReaderNavState();
     writeReaderNavState(open);
   };
 
-  if (isReaderView) {
-    if (readReaderNavState()) {
+  if (readReaderNavState()) {
+    setReaderNavOpen(true, { instant: true });
+  }
+  readerNavOpenButtons.forEach((trigger) => {
+    trigger.addEventListener("click", (event) => {
+      event.preventDefault();
+      if (!(readerNavSheet instanceof HTMLElement) || readerNavSheet.classList.contains("is-open")) {
+        setReaderNavOpen(false);
+        return;
+      }
       setReaderNavOpen(true);
-    }
-    if (readerNavOpenButton instanceof HTMLButtonElement) {
-      readerNavOpenButton.addEventListener("click", () => {
-        setReaderNavOpen(true);
-      });
-    }
-    if (readerNavCloseButton instanceof HTMLButtonElement) {
-      readerNavCloseButton.addEventListener("click", () => {
-        setReaderNavOpen(false);
-      });
-    }
-    if (readerNavOverlay instanceof HTMLElement) {
-      readerNavOverlay.addEventListener("click", () => {
-        setReaderNavOpen(false);
-      });
-    }
-    if (readerNavSheet instanceof HTMLElement) {
-      readerNavSheet.addEventListener("click", (event) => {
-        const target = event.target;
-        if (!(target instanceof HTMLElement)) {
-          return;
-        }
-        const anchor = target.closest("a");
-        if (!(anchor instanceof HTMLAnchorElement)) {
-          return;
-        }
-        const opensNewContext =
-          anchor.target === "_blank" || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;
-        if (!opensNewContext) {
-          writeReaderNavState(true);
-        }
-      });
-    }
-    window.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") {
-        setReaderNavOpen(false);
+    });
+  });
+  if (readerNavCloseButton instanceof HTMLButtonElement) {
+    readerNavCloseButton.addEventListener("click", () => {
+      setReaderNavOpen(false);
+    });
+  }
+  if (readerNavPinButton instanceof HTMLButtonElement) {
+    readerNavPinButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      readerNavPinned = !readerNavPinned;
+      writeReaderNavPinnedState(readerNavPinned);
+      syncReaderNavState();
+    });
+  }
+  if (readerNavOverlay instanceof HTMLElement) {
+    readerNavOverlay.addEventListener("click", () => {
+      setReaderNavOpen(false);
+    });
+  }
+  if (readerNavSheet instanceof HTMLElement) {
+    readerNavSheet.addEventListener("click", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+      const anchor = target.closest("a");
+      if (!(anchor instanceof HTMLAnchorElement)) {
+        return;
+      }
+      const opensNewContext =
+        anchor.target === "_blank" || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;
+      if (!opensNewContext) {
+        writeReaderNavState(true);
       }
     });
   }
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      setReaderNavOpen(false);
+    }
+  });
+  syncReaderNavState();
 
   const navigatorEndpoint = pageRoot instanceof HTMLElement ? pageRoot.dataset.postNavigatorUrl || "" : "";
 

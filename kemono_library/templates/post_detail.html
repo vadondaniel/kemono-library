@@ -8,13 +8,36 @@
     <div class="post-nav-head {% if not show_heading %}is-scope-only{% endif %}">
       {% if show_heading %}
         <div>
-          <h2>Navigator</h2>
+          <h2>Navigation</h2>
           <small>{{ navigator_title }}</small>
         </div>
       {% endif %}
-      <div class="post-nav-scope-toggle">
-        <a class="chip chip-link post-nav-scope-chip {% if navigator_scope == 'series' %}is-active{% endif %}" href="{{ navigator_series_url }}" data-post-nav-scope-chip data-nav-scope="series">Series</a>
-        <a class="chip chip-link post-nav-scope-chip {% if navigator_scope == 'all' %}is-active{% endif %}" href="{{ navigator_all_url }}" data-post-nav-scope-chip data-nav-scope="all">All</a>
+      <div class="post-nav-head-tools">
+        <button
+          type="button"
+          class="post-reader-nav-pin-toggle btn btn-link btn--ghost"
+          data-post-reader-nav-pin
+          aria-pressed="false"
+          aria-label="Pin navigation"
+          title="Pin navigation"
+        >
+          <span class="post-reader-nav-pin-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+              <path
+                d="M8.5 3h7l-.7 4.1 2.9 2.9v1.5H6.3V10l2.9-2.9L8.5 3Zm3.5 9.7v6.8M10.8 19.5h2.4"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </span>
+        </button>
+        <div class="post-nav-scope-toggle">
+          <a class="chip chip-link post-nav-scope-chip {% if navigator_scope == 'series' %}is-active{% endif %}" href="{{ navigator_series_url }}" data-post-nav-scope-chip data-nav-scope="series">Series</a>
+          <a class="chip chip-link post-nav-scope-chip {% if navigator_scope == 'all' %}is-active{% endif %}" href="{{ navigator_all_url }}" data-post-nav-scope-chip data-nav-scope="all">All</a>
+        </div>
       </div>
     </div>
     {% if navigator_entries %}
@@ -579,24 +602,24 @@
 
   {% endif %}
 
-  {% if view_mode == 'classic' %}
-    <aside class="post-view-sidebar">
-      {{ render_nav_panel() }}
-    </aside>
-  {% endif %}
 </div>
-{% if is_reader_mode %}
-  <div class="post-reader-nav-overlay" data-post-reader-nav-overlay hidden></div>
-  <aside class="post-reader-nav-sheet" data-post-reader-nav-sheet aria-hidden="true">
-    <header class="post-reader-nav-sheet-head">
-      <strong>Navigator</strong>
-      <button type="button" class="btn btn-link btn--ghost" data-post-reader-nav-close>Close</button>
-    </header>
-    <div class="post-reader-nav-sheet-body">
-      {{ render_nav_panel(show_heading=false, use_panel_wrapper=false) }}
-    </div>
-  </aside>
-{% endif %}
+<button
+  type="button"
+  class="btn btn-link btn--ghost post-nav-edge-toggle"
+  data-post-reader-nav-open
+  aria-label="Open navigation"
+  aria-controls="post-reader-nav-sheet"
+  aria-expanded="false"
+>
+  <span class="post-nav-edge-toggle-icon" aria-hidden="true">&#9776;</span>
+  <span class="post-nav-edge-toggle-label">Nav</span>
+</button>
+<div class="post-reader-nav-overlay" data-post-reader-nav-overlay hidden></div>
+<aside class="post-reader-nav-sheet" id="post-reader-nav-sheet" data-post-reader-nav-sheet aria-hidden="true">
+  <div class="post-reader-nav-sheet-body">
+    {{ render_nav_panel(show_heading=true, use_panel_wrapper=false) }}
+  </div>
+</aside>
 <div class="post-lightbox" data-post-lightbox hidden>
   <button type="button" class="post-lightbox-backdrop" data-post-lightbox-close aria-label="Close image preview"></button>
   <figure class="post-lightbox-dialog" role="dialog" aria-modal="true" aria-label="Image preview">

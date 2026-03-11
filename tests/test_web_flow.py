@@ -2353,6 +2353,8 @@ def test_gallery_column_mode_css_rule_exists():
     assert ".post-gallery-picker-drawer" in css
     assert ".post-gallery-picker-grid" in css
     assert ".post-gallery-picker-drawer.is-scroll-gated .post-gallery-picker-body" in css
+    assert ".post-nav-edge-toggle" in css
+    assert ".post-reader-nav-sheet.is-pinned" in css
     assert ".post-view-shell.is-gallery.has-pinned-picker" in css
     assert "--post-gallery-grid-aspect-ratio" in css
 
@@ -2380,6 +2382,10 @@ def test_gallery_fit_button_cycle_labels_exist_in_js():
     assert "const applyViewerModeWhenImageReady = (modeState, expectedSrc) => {" in js
     assert "renderActive({ modeState: nextModeState });" in js
     assert "selectImage(savedIndex, { preserveModeState: false });" in js
+    assert "const readerNavPinnedStateKey = \"kemono-reader-nav-pinned\";" in js
+    assert "const syncReaderNavState = () => {" in js
+    assert 'readerNavSheet.classList.toggle("is-pinned", docked);' in js
+    assert 'document.body.classList.toggle("is-post-nav-pinned", docked);' in js
     assert "data-post-gallery-picker-view-toggle" in js
     assert "const getMedian = (values) => {" in js
     assert "post-gallery-grid-aspect-ratio" in js
@@ -2443,9 +2449,11 @@ def test_post_detail_reader_mode_propagates_view_and_renders_left_viewer_layout(
     assert shell.get("data-post-view-mode") == "reader"
     assert shell.get("data-post-navigator-url") == f"/posts/{post_id}/navigator"
     assert soup.select_one("[data-post-reader-panel]") is not None
-    assert soup.select_one(".header-actions [data-post-reader-nav-open]") is not None
+    assert soup.select_one(".header-actions [data-post-reader-nav-open]") is None
+    assert soup.select_one(".post-nav-edge-toggle[data-post-reader-nav-open]") is not None
     assert soup.select_one(".post-viewer-head-actions [data-post-reader-nav-open]") is None
     assert soup.select_one("[data-post-reader-nav-sheet]") is not None
+    assert soup.select_one("[data-post-reader-nav-pin]") is not None
     assert soup.select_one(".post-view-sidebar") is None
     assert soup.select_one("[data-post-file-launcher]") is not None
     assert soup.select_one("[data-post-reader-source-image]") is not None
@@ -2541,7 +2549,9 @@ def test_post_detail_gallery_mode_renders_post_header_then_viewer_with_image_lau
     assert soup.select_one(".post-embed-list-shell") is None
     assert soup.select_one(".post-view-sidebar") is None
     assert soup.select_one(".header-actions [data-post-reader-nav-open]") is None
-    assert soup.select_one("[data-post-reader-nav-sheet]") is None
+    assert soup.select_one(".post-nav-edge-toggle[data-post-reader-nav-open]") is not None
+    assert soup.select_one("[data-post-reader-nav-sheet]") is not None
+    assert soup.select_one("[data-post-reader-nav-pin]") is not None
     main = soup.select_one("main.container")
     assert main is not None
     assert "is-post-gallery-layout" in (main.get("class") or [])
