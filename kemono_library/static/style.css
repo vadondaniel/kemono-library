@@ -4246,7 +4246,8 @@ body.is-post-nav-pinned .container {
 }
 
 body.is-post-nav-pinned .container:not(.is-post-reader-layout):not(.is-post-gallery-layout) {
-  max-width: calc(1060px + min(430px, 92vw));
+  padding-right: calc(min(430px, 92vw) + 1rem);
+  max-width: calc(1060px + min(430px, 92vw) + 1rem);
 }
 
 body.is-post-nav-pinned .container.is-post-reader-layout .post-view-shell.is-reader {
