@@ -3862,6 +3862,7 @@ body.is-busy-overlay-open {
   width: 2rem;
   min-width: 2rem;
   height: 2rem;
+  min-height: 2rem;
   padding: 0;
   display: inline-flex;
   align-items: center;
@@ -3869,8 +3870,17 @@ body.is-busy-overlay-open {
 }
 
 .post-gallery-picker-open-icon {
-  font-size: 1rem;
-  line-height: 1;
+  width: 1rem;
+  height: 1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.post-gallery-picker-open-icon svg {
+  width: 1rem;
+  height: 1rem;
+  display: block;
 }
 
 .post-gallery-picker-caption-trigger {
