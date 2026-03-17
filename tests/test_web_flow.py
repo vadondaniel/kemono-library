@@ -1411,6 +1411,83 @@ def test_import_commit_applies_metadata_overrides(tmp_path, monkeypatch):
     assert [row["tag"] for row in tags] == ["one", "two"]
 
 
+def test_import_commit_merges_tags_for_existing_post(tmp_path, monkeypatch):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+
+    payload = {
+        "post": {
+            "title": "Imported Title",
+            "content": "Imported body",
+            "user": "70479526",
+            "attachments": [],
+            "published": "2025-10-25T12:00:00",
+            "edited": "2025-10-25T12:00:00",
+            "next": "",
+            "prev": "",
+            "tags": ["incoming", "existing"],
+        },
+        "attachments": [],
+    }
+
+    def fake_fetch(ref, fallback_user_id=None):  # noqa: ARG001
+        return payload
+
+    def fake_icon_download(service, user_id, icons_root):  # noqa: ARG001
+        destination = Path(icons_root) / f"{service}_{user_id}.jpg"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"icon")
+        return (f"https://img.kemono.cr/icons/{service}/{user_id}", destination)
+
+    monkeypatch.setattr("kemono_library.web.fetch_post_json", fake_fetch)
+    monkeypatch.setattr("kemono_library.web.download_creator_icon", fake_icon_download)
+
+    creator_id = db.create_creator("Merge Import Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="70479526",
+        external_post_id="100",
+        title="Existing Local",
+        content="Existing body",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/70479526/post/100",
+    )
+    base_version = db.get_post_version(post_id)
+    assert base_version is not None
+    db.replace_tags(post_id, ["Existing"], version_id=int(base_version["id"]))
+
+    response = app.test_client().post(
+        "/import/commit",
+        data={
+            "creator_id": str(creator_id),
+            "series_id": "",
+            "service": "fanbox",
+            "user_id": "70479526",
+            "post_id": "100",
+            "import_target_mode": "existing",
+            "target_post_id": str(post_id),
+            "overwrite_matching_version": "1",
+            "set_as_default": "1",
+            "tags_text": "incoming, existing",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+
+    merged = db.list_shared_tags(post_id)
+    assert merged == ["Existing", "incoming"]
+
+
 def test_import_start_rejects_series_owned_by_other_creator(tmp_path):
     app = create_app(
         {
@@ -1608,6 +1685,44 @@ def test_post_detail_series_name_links_to_series_view(tmp_path):
     expected_series_link = f'href="/creators/{creator_id}?series_id={series_id}"'.encode()
     assert expected_series_link in detail.data
     assert b"Folder A" in detail.data
+
+
+def test_post_detail_shows_tag_chips_linked_to_creator_tag_filter(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Detail Tag Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="tag-detail",
+        external_post_id="1010",
+        title="Tagged Detail",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/tag-detail/post/1010",
+    )
+    version = db.get_post_version(post_id)
+    assert version is not None
+    db.replace_tags(post_id, ["Alpha", "Beta"], version_id=int(version["id"]))
+
+    response = app.test_client().get(f"/posts/{post_id}")
+    assert response.status_code == 200
+    soup = BeautifulSoup(response.data, "html.parser")
+    chips = soup.select("a.post-viewer-tag-chip")
+    chip_labels = [chip.get_text(strip=True) for chip in chips]
+    assert chip_labels == ["Alpha", "Beta"]
+    hrefs = [chip.get("href") or "" for chip in chips]
+    assert any(f"/creators/{creator_id}?" in href and "explorer=tags" in href and "tag=Alpha" in href for href in hrefs)
+    assert any(f"/creators/{creator_id}?" in href and "explorer=tags" in href and "tag=Beta" in href for href in hrefs)
 
 
 def test_post_detail_navigator_defaults_to_series_and_supports_all_scope(tmp_path):
@@ -4102,6 +4217,7 @@ def test_edit_page_prettifies_html_content(tmp_path):
     assert soup.select_one("[data-post-edit-workflow-bar]") is not None
     assert soup.select_one("[data-post-edit-workflow-rail]") is not None
     assert soup.select_one("[data-post-edit-preview-toggle]") is not None
+    assert soup.select_one("input#tags_text[name='tags_text']") is not None
 
 
 def test_post_edit_version_actions_use_replace_navigation_attributes(tmp_path):
@@ -4230,6 +4346,74 @@ def test_edit_post_main_save_can_set_active_version_as_default(tmp_path):
     assert default_version is not None
     assert int(default_version["id"]) == manual_version_id
     assert default_version["title"] == "Manual Default Title"
+
+
+def test_edit_post_tags_field_saves_shared_tags_across_versions(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Shared Tags Editor")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="shared-tags",
+        external_post_id="444",
+        title="Shared Tag Post",
+        content="<p>Body</p>",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/shared-tags/post/444",
+    )
+    source_version = db.get_post_version(post_id)
+    assert source_version is not None
+    source_version_id = int(source_version["id"])
+    clone_version_id = db.clone_post_version(
+        post_id=post_id,
+        source_version_id=source_version_id,
+        label="Clone",
+        language="en",
+        set_default=False,
+    )
+    db.replace_tags(post_id, ["legacy"], version_id=source_version_id)
+    db.replace_tags(post_id, ["branch"], version_id=clone_version_id)
+
+    client = app.test_client()
+    edit_page = client.get(f"/posts/{post_id}/edit?version_id={source_version_id}")
+    assert edit_page.status_code == 200
+    soup = BeautifulSoup(edit_page.data, "html.parser")
+    tags_input = soup.select_one("input#tags_text[name='tags_text']")
+    assert tags_input is not None
+    assert tags_input.get("value") == "legacy, branch"
+
+    response = client.post(
+        f"/posts/{post_id}/edit",
+        data={
+            "version_id": str(source_version_id),
+            "version_label": str(source_version["label"]),
+            "version_language": source_version["language"] or "",
+            "title": "Shared Tag Post",
+            "series_id": "",
+            "thumbnail_attachment_id": "__keep__",
+            "thumbnail_focus_x": "50",
+            "thumbnail_focus_y": "50",
+            "content": "<p>Body</p>",
+            "tags_text": "Alpha, beta, ALPHA",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+
+    source_tags = [str(row["tag"]) for row in db.list_tags(post_id, version_id=source_version_id)]
+    clone_tags = [str(row["tag"]) for row in db.list_tags(post_id, version_id=clone_version_id)]
+    assert source_tags == ["Alpha", "beta"]
+    assert clone_tags == ["Alpha", "beta"]
 
 
 def test_edit_post_saves_thumbnail_focus_and_applies_to_creator_grid(tmp_path):
@@ -4945,6 +5129,270 @@ def test_creator_post_search_filters_results_and_preserves_query(tmp_path):
     series_html = series_filtered.data.decode("utf-8")
     assert "Beta Patrol" in series_html
     assert "Delta Note" not in series_html
+
+
+def test_db_creator_tag_filters_and_shared_tag_helpers(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+
+    creator_id = db.create_creator("Tag DB Creator")
+    post_alpha_beta = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="tag-db",
+        external_post_id="800",
+        title="Alpha Beta",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/tag-db/post/800",
+    )
+    post_alpha_only = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="tag-db",
+        external_post_id="801",
+        title="Alpha Only",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/tag-db/post/801",
+    )
+
+    version_alpha_beta = db.get_post_version(post_alpha_beta)
+    version_alpha_only = db.get_post_version(post_alpha_only)
+    assert version_alpha_beta is not None
+    assert version_alpha_only is not None
+    db.replace_tags(post_alpha_beta, ["Alpha", "Beta"], version_id=int(version_alpha_beta["id"]))
+    db.replace_tags(post_alpha_only, ["alpha"], version_id=int(version_alpha_only["id"]))
+
+    filtered = db.list_posts_for_creator(creator_id, required_tags=["ALPHA", "beta"], sort_by="title", sort_direction="asc")
+    assert [str(row["title"]) for row in filtered] == ["Alpha Beta"]
+
+    facets = db.list_creator_tag_facets(creator_id, required_tags=["alpha"])
+    facets_by_tag = {str(row["tag"]).casefold(): int(row["post_count"]) for row in facets}
+    assert facets_by_tag["alpha"] == 2
+    assert facets_by_tag["beta"] == 1
+
+    source_version_id = int(version_alpha_beta["id"])
+    cloned_version_id = db.clone_post_version(
+        post_id=post_alpha_beta,
+        source_version_id=source_version_id,
+        label="Clone",
+        language=None,
+        set_default=False,
+    )
+    db.replace_shared_tags(post_alpha_beta, ["One", "one", "Two"])
+    source_tags = [str(row["tag"]) for row in db.list_tags(post_alpha_beta, version_id=source_version_id)]
+    clone_tags = [str(row["tag"]) for row in db.list_tags(post_alpha_beta, version_id=cloned_version_id)]
+    assert source_tags == ["One", "Two"]
+    assert clone_tags == ["One", "Two"]
+
+    db.merge_shared_tags(post_alpha_beta, ["two", "THREE"])
+    assert db.list_shared_tags(post_alpha_beta) == ["One", "Two", "THREE"]
+
+
+def test_creator_tag_explorer_and_and_filtering(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+
+    creator_id = db.create_creator("Tag Explorer Creator")
+    main_series_id = db.create_series(creator_id, "Main Series")
+    post_both = db.upsert_post(
+        creator_id=creator_id,
+        series_id=main_series_id,
+        service="fanbox",
+        external_user_id="tag-ui",
+        external_post_id="900",
+        title="Both Tags",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/tag-ui/post/900",
+        published_at="2025-02-03T00:00:00",
+    )
+    post_alpha = db.upsert_post(
+        creator_id=creator_id,
+        series_id=main_series_id,
+        service="fanbox",
+        external_user_id="tag-ui",
+        external_post_id="901",
+        title="Alpha Only",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/tag-ui/post/901",
+        published_at="2025-02-02T00:00:00",
+    )
+    post_beta = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="tag-ui",
+        external_post_id="902",
+        title="Beta Unsorted",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/tag-ui/post/902",
+        published_at="2025-02-01T00:00:00",
+    )
+    post_solo = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="tag-ui",
+        external_post_id="903",
+        title="Solo Tag Post",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/tag-ui/post/903",
+        published_at="2025-01-31T00:00:00",
+    )
+
+    for post_id, tags in (
+        (post_both, ["Gamma", "Beta", "Alpha", "Delta", "Epsilon"]),
+        (post_alpha, ["Alpha"]),
+        (post_beta, ["Beta"]),
+        (post_solo, ["Solo"]),
+    ):
+        version = db.get_post_version(post_id)
+        assert version is not None
+        db.replace_tags(post_id, tags, version_id=int(version["id"]))
+
+    client = app.test_client()
+    explorer = client.get(f"/creators/{creator_id}?explorer=tags")
+    assert explorer.status_code == 200
+    explorer_soup = BeautifulSoup(explorer.data, "html.parser")
+    assert explorer_soup.select_one(".creator-explorer-switch") is not None
+    assert explorer_soup.select_one(".creator-tag-explorer-grid") is not None
+    assert any("Alpha" in node.get_text(" ", strip=True) for node in explorer_soup.select(".creator-tag-explorer-grid a"))
+    assert any("Beta" in node.get_text(" ", strip=True) for node in explorer_soup.select(".creator-tag-explorer-grid a"))
+    single_tag_collapse = explorer_soup.select_one(".creator-tag-explorer-collapse")
+    assert single_tag_collapse is not None
+    assert single_tag_collapse.get("open") is None
+    assert any(
+        "Solo" in node.get_text(" ", strip=True)
+        for node in explorer_soup.select(".creator-tag-explorer-grid--collapsed a")
+    )
+    assert explorer_soup.select_one("input[name='explorer'][value='tags']") is not None
+
+    filtered = client.get(f"/creators/{creator_id}?explorer=tags&tag=alpha&tag=beta")
+    assert filtered.status_code == 200
+    filtered_soup = BeautifulSoup(filtered.data, "html.parser")
+    filtered_titles = [node.get_text(strip=True) for node in filtered_soup.select(".creator-post-list .creator-post-body h3 a")]
+    assert filtered_titles == ["Both Tags"]
+    assert filtered_soup.select_one(".creator-post-badge") is None
+    inline_tag_labels = [node.get_text(strip=True) for node in filtered_soup.select(".creator-post-meta .creator-post-tag-chip")]
+    assert inline_tag_labels[:4] == ["Alpha", "Beta", "Delta", "Epsilon"]
+    tag_details = filtered_soup.select_one(".creator-post-tag-details")
+    assert tag_details is not None
+    summary = tag_details.select_one(".creator-post-tag-summary")
+    assert summary is not None
+    assert "+1" in summary.get_text(" ", strip=True)
+    assert "Gamma" in tag_details.get_text(" ", strip=True)
+    hidden_tag_values = [node.get("value") for node in filtered_soup.select("form.creator-post-search input[name='tag']")]
+    assert hidden_tag_values == ["alpha", "beta"]
+    sort_links = [
+        anchor.get("href") or ""
+        for anchor in filtered_soup.select(".creator-sort-bar a")
+        if "sort=" in (anchor.get("href") or "") or "direction=" in (anchor.get("href") or "")
+    ]
+    assert sort_links
+    assert all("explorer=tags" in href for href in sort_links)
+    assert any("tag=alpha" in href and "tag=beta" in href for href in sort_links)
+    assert filtered_soup.select_one(".creator-tag-clear-chip") is not None
+
+    expanded = client.get(f"/creators/{creator_id}?explorer=tags&tag=solo")
+    assert expanded.status_code == 200
+    expanded_soup = BeautifulSoup(expanded.data, "html.parser")
+    expanded_tags = [node.get_text(strip=True) for node in expanded_soup.select(".creator-post-meta .creator-post-tag-chip")]
+    assert expanded_tags == ["Solo"]
+
+
+def test_creator_tag_filter_applies_in_series_and_unsorted_scopes(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Scoped Tag Creator")
+    main_series_id = db.create_series(creator_id, "Main")
+
+    in_series_with_tag = db.upsert_post(
+        creator_id=creator_id,
+        series_id=main_series_id,
+        service="fanbox",
+        external_user_id="tag-scope",
+        external_post_id="1000",
+        title="Series Alpha",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/tag-scope/post/1000",
+    )
+    in_series_without_tag = db.upsert_post(
+        creator_id=creator_id,
+        series_id=main_series_id,
+        service="fanbox",
+        external_user_id="tag-scope",
+        external_post_id="1001",
+        title="Series Plain",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/tag-scope/post/1001",
+    )
+    unsorted_with_tag = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="tag-scope",
+        external_post_id="1002",
+        title="Unsorted Alpha",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/tag-scope/post/1002",
+    )
+
+    for post_id, tags in (
+        (in_series_with_tag, ["alpha"]),
+        (in_series_without_tag, ["beta"]),
+        (unsorted_with_tag, ["alpha"]),
+    ):
+        version = db.get_post_version(post_id)
+        assert version is not None
+        db.replace_tags(post_id, tags, version_id=int(version["id"]))
+
+    client = app.test_client()
+    series_filtered = client.get(f"/creators/{creator_id}?series_id={main_series_id}&tag=alpha")
+    assert series_filtered.status_code == 200
+    series_html = series_filtered.data.decode("utf-8")
+    assert "Series Alpha" in series_html
+    assert "Series Plain" not in series_html
+    assert "Unsorted Alpha" not in series_html
+
+    unsorted_filtered = client.get(f"/creators/{creator_id}?folder=unsorted&tag=alpha")
+    assert unsorted_filtered.status_code == 200
+    unsorted_html = unsorted_filtered.data.decode("utf-8")
+    assert "Unsorted Alpha" in unsorted_html
+    assert "Series Alpha" not in unsorted_html
 
 
 def test_creator_does_not_show_unsorted_folder_tile_without_series(tmp_path):

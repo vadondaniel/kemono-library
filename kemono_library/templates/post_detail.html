@@ -241,6 +241,9 @@
             {% else %}
               <span class="chip post-viewer-chip">Manual version</span>
             {% endif %}
+            {% for entry in post_tag_links %}
+              <a class="chip chip-link post-viewer-chip post-viewer-chip-link post-viewer-tag-chip" href="{{ entry['href'] }}">{{ entry['tag'] }}</a>
+            {% endfor %}
           </div>
         </div>
         <div class="post-viewer-head-actions">

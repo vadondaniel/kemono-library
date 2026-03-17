@@ -1,19 +1,21 @@
 {% extends "base.html" %}
 {% block content %}
 {% set search_query = post_search_text or none %}
+{% set selected_tags_query = selected_tags or none %}
+{% set explorer_query = explorer_mode or 'series' %}
 {% if selected_series %}
-  {% set sort_published_url = url_for('creator_detail', creator_id=creator['id'], series_id=selected_series['id'], sort='published', direction=sort_direction, q=search_query) %}
-  {% set sort_title_url = url_for('creator_detail', creator_id=creator['id'], series_id=selected_series['id'], sort='title', direction=sort_direction, q=search_query) %}
-  {% set direction_desc_url = url_for('creator_detail', creator_id=creator['id'], series_id=selected_series['id'], sort=sort_by, direction='desc', q=search_query) %}
-  {% set direction_asc_url = url_for('creator_detail', creator_id=creator['id'], series_id=selected_series['id'], sort=sort_by, direction='asc', q=search_query) %}
+  {% set sort_published_url = url_for('creator_detail', creator_id=creator['id'], series_id=selected_series['id'], sort='published', direction=sort_direction, q=search_query, tag=selected_tags_query, explorer=explorer_query) %}
+  {% set sort_title_url = url_for('creator_detail', creator_id=creator['id'], series_id=selected_series['id'], sort='title', direction=sort_direction, q=search_query, tag=selected_tags_query, explorer=explorer_query) %}
+  {% set direction_desc_url = url_for('creator_detail', creator_id=creator['id'], series_id=selected_series['id'], sort=sort_by, direction='desc', q=search_query, tag=selected_tags_query, explorer=explorer_query) %}
+  {% set direction_asc_url = url_for('creator_detail', creator_id=creator['id'], series_id=selected_series['id'], sort=sort_by, direction='asc', q=search_query, tag=selected_tags_query, explorer=explorer_query) %}
   {% set import_post_url = url_for('import_form', creator_id=creator['id'], series_id=selected_series['id']) %}
 {% else %}
-  {% set sort_published_url = url_for('creator_detail', creator_id=creator['id'], sort='published', direction=sort_direction, q=search_query) %}
-  {% set sort_title_url = url_for('creator_detail', creator_id=creator['id'], sort='title', direction=sort_direction, q=search_query) %}
-  {% set direction_desc_url = url_for('creator_detail', creator_id=creator['id'], sort=sort_by, direction='desc', q=search_query) %}
-  {% set direction_asc_url = url_for('creator_detail', creator_id=creator['id'], sort=sort_by, direction='asc', q=search_query) %}
-  {% set filter_all_url = url_for('creator_detail', creator_id=creator['id'], sort=sort_by, direction=sort_direction, q=search_query) %}
-  {% set filter_unsorted_url = url_for('creator_detail', creator_id=creator['id'], folder='unsorted', sort=sort_by, direction=sort_direction, q=search_query) %}
+  {% set sort_published_url = url_for('creator_detail', creator_id=creator['id'], sort='published', direction=sort_direction, q=search_query, tag=selected_tags_query, explorer=explorer_query) %}
+  {% set sort_title_url = url_for('creator_detail', creator_id=creator['id'], sort='title', direction=sort_direction, q=search_query, tag=selected_tags_query, explorer=explorer_query) %}
+  {% set direction_desc_url = url_for('creator_detail', creator_id=creator['id'], sort=sort_by, direction='desc', q=search_query, tag=selected_tags_query, explorer=explorer_query) %}
+  {% set direction_asc_url = url_for('creator_detail', creator_id=creator['id'], sort=sort_by, direction='asc', q=search_query, tag=selected_tags_query, explorer=explorer_query) %}
+  {% set filter_all_url = url_for('creator_detail', creator_id=creator['id'], sort=sort_by, direction=sort_direction, q=search_query, tag=selected_tags_query, explorer=explorer_query) %}
+  {% set filter_unsorted_url = url_for('creator_detail', creator_id=creator['id'], folder='unsorted', sort=sort_by, direction=sort_direction, q=search_query, tag=selected_tags_query, explorer=explorer_query) %}
   {% set import_post_url = url_for('import_form', creator_id=creator['id']) %}
 {% endif %}
 
@@ -117,7 +119,7 @@
                     <option value="__first__" {% if selected_series_cover_choice == '__first__' %}selected{% endif %}>First</option>
                   </optgroup>
                   {% if series_thumbnail_options %}
-                    <optgroup label="Current list">
+                    <optgroup label="Dynamic: Current list">
                       {% for option in series_thumbnail_options %}
                         <option value="{{ option['id'] }}" {% if selected_series_cover_choice == (option['id'] ~ '') %}selected{% endif %}>
                           {{ option['title'] }}{% if option['published_at'] %} ({{ option['published_at']|format_datetime }}){% endif %}
@@ -152,7 +154,11 @@
       <div class="section-head layout-row layout-row--between layout-row--baseline layout-row--lg">
         <div>
           <h2>All Posts</h2>
-          <small>{{ series_list|length }} series</small>
+          <div class="creator-explorer-switch post-view-mode-chip-row">
+            <a class="chip chip-link chip--control post-view-mode-chip {% if explorer_mode == 'series' %}is-active{% endif %}" href="{{ explorer_series_url }}">Series</a>
+            <a class="chip chip-link chip--control post-view-mode-chip {% if explorer_mode == 'tags' %}is-active{% endif %}" href="{{ explorer_tags_url }}">Tags</a>
+          </div>
+          <small>{{ series_list|length }} series{% if creator_tag_facets %} · {{ creator_tag_facets|length }} tags{% endif %}</small>
         </div>
         <div class="section-head-actions layout-row layout-row--wrap layout-row--sm-plus">
           <details class="series-create-disclosure">
@@ -175,43 +181,93 @@
         </div>
       </div>
 
-      <div class="folder-explorer-grid">
-        {% for series in series_list %}
-          <div class="folder-tile-wrap">
-            <a class="folder-tile {% if selected_series and selected_series['id'] == series['id'] %}is-active{% endif %}" href="{{ url_for('creator_detail', creator_id=creator['id'], series_id=series['id'], q=search_query) }}">
-              {% if series['cover_thumbnail_local_path'] %}
-                <span class="folder-tile-thumb-wrap">
-                  <img
-                    class="folder-tile-thumb"
-                    src="{{ url_for('serve_file', relative_path=series['cover_thumbnail_local_path']) }}"
-                    alt="{{ series['name'] }} thumbnail"
-                    style="object-fit: cover; object-position: {{ series['cover_thumbnail_focus_x'] }}% {{ series['cover_thumbnail_focus_y'] }}%;"
-                    loading="lazy"
-                  >
-                </span>
-              {% elif series['cover_thumbnail_remote_url'] %}
-                <span class="folder-tile-thumb-wrap">
-                  <img
-                    class="folder-tile-thumb"
-                    src="{{ series['cover_thumbnail_remote_url'] }}"
-                    alt="{{ series['name'] }} thumbnail"
-                    style="object-fit: cover; object-position: {{ series['cover_thumbnail_focus_x'] }}% {{ series['cover_thumbnail_focus_y'] }}%;"
-                    loading="lazy"
-                    referrerpolicy="no-referrer"
-                  >
-                </span>
-              {% else %}
-                <span class="folder-tile-icon" aria-hidden="true"></span>
-              {% endif %}
-              <strong class="folder-tile-name">{{ series['name'] }}</strong>
-              <span class="folder-tile-meta">{{ series['post_count'] }} posts</span>
-            </a>
-          </div>
-        {% endfor %}
-      </div>
+      {% if explorer_mode == 'tags' %}
+        {% if creator_tag_facets %}
+          {% set tag_explorer = namespace(primary=[], singles=[]) %}
+          {% for tag_facet in creator_tag_facets %}
+            {% if tag_facet['post_count'] > 1 or tag_facet['is_selected'] %}
+              {% set tag_explorer.primary = tag_explorer.primary + [tag_facet] %}
+            {% else %}
+              {% set tag_explorer.singles = tag_explorer.singles + [tag_facet] %}
+            {% endif %}
+          {% endfor %}
 
-      {% if not series_list %}
-        <p class="creator-empty">No series yet. Create one to keep arcs grouped.</p>
+          {% if tag_explorer.primary or tag_explorer.singles %}
+            <div class="creator-tag-explorer-grid">
+              {% for tag_facet in tag_explorer.primary %}
+                <a
+                  class="chip chip-link chip--control creator-tag-explorer-chip {% if tag_facet['is_selected'] %}is-active{% endif %}"
+                  href="{{ tag_facet['toggle_url'] }}"
+                  title="{{ tag_facet['post_count'] }} matching posts"
+                >
+                  <span>{{ tag_facet['tag'] }}</span>
+                  <small>{{ tag_facet['post_count'] }}</small>
+                </a>
+              {% endfor %}
+              {% if tag_explorer.singles %}
+                <details class="creator-tag-explorer-collapse">
+                  <summary class="chip chip--control creator-tag-explorer-chip creator-tag-explorer-collapse-toggle" title="Show single-use tags">
+                    <span aria-hidden="true">+{{ tag_explorer.singles|length }}</span>
+                    <span class="sr-only">Show {{ tag_explorer.singles|length }} single-use tags</span>
+                  </summary>
+                </details>
+                <div class="creator-tag-explorer-grid creator-tag-explorer-grid--collapsed">
+                  {% for tag_facet in tag_explorer.singles %}
+                    <a
+                      class="chip chip-link chip--control creator-tag-explorer-chip"
+                      href="{{ tag_facet['toggle_url'] }}"
+                      title="{{ tag_facet['post_count'] }} matching posts"
+                    >
+                      <span>{{ tag_facet['tag'] }}</span>
+                      <small>{{ tag_facet['post_count'] }}</small>
+                    </a>
+                  {% endfor %}
+                </div>
+              {% endif %}
+            </div>
+          {% endif %}
+        {% else %}
+          <p class="creator-empty">No tags available in this view.</p>
+        {% endif %}
+      {% else %}
+        <div class="folder-explorer-grid">
+          {% for series in series_list %}
+            <div class="folder-tile-wrap">
+              <a class="folder-tile {% if selected_series and selected_series['id'] == series['id'] %}is-active{% endif %}" href="{{ url_for('creator_detail', creator_id=creator['id'], series_id=series['id'], sort=sort_by, direction=sort_direction, q=search_query, tag=selected_tags_query, explorer=explorer_query) }}">
+                {% if series['cover_thumbnail_local_path'] %}
+                  <span class="folder-tile-thumb-wrap">
+                    <img
+                      class="folder-tile-thumb"
+                      src="{{ url_for('serve_file', relative_path=series['cover_thumbnail_local_path']) }}"
+                      alt="{{ series['name'] }} thumbnail"
+                      style="object-fit: cover; object-position: {{ series['cover_thumbnail_focus_x'] }}% {{ series['cover_thumbnail_focus_y'] }}%;"
+                      loading="lazy"
+                    >
+                  </span>
+                {% elif series['cover_thumbnail_remote_url'] %}
+                  <span class="folder-tile-thumb-wrap">
+                    <img
+                      class="folder-tile-thumb"
+                      src="{{ series['cover_thumbnail_remote_url'] }}"
+                      alt="{{ series['name'] }} thumbnail"
+                      style="object-fit: cover; object-position: {{ series['cover_thumbnail_focus_x'] }}% {{ series['cover_thumbnail_focus_y'] }}%;"
+                      loading="lazy"
+                      referrerpolicy="no-referrer"
+                    >
+                  </span>
+                {% else %}
+                  <span class="folder-tile-icon" aria-hidden="true"></span>
+                {% endif %}
+                <strong class="folder-tile-name">{{ series['name'] }}</strong>
+                <span class="folder-tile-meta">{{ series['post_count'] }} posts</span>
+              </a>
+            </div>
+          {% endfor %}
+        </div>
+
+        {% if not series_list %}
+          <p class="creator-empty">No series yet. Create one to keep arcs grouped.</p>
+        {% endif %}
       {% endif %}
     {% endif %}
   </article>
@@ -233,6 +289,10 @@
           {% endif %}
           <input type="hidden" name="sort" value="{{ sort_by }}">
           <input type="hidden" name="direction" value="{{ sort_direction }}">
+          <input type="hidden" name="explorer" value="{{ explorer_mode }}">
+          {% for selected_tag in selected_tags %}
+            <input type="hidden" name="tag" value="{{ selected_tag }}">
+          {% endfor %}
           <div class="creator-post-search-field">
             <input class="field"
               type="search"
@@ -250,21 +310,21 @@
               {% if selected_series %}
                 <a
                   class="creator-post-search-clear"
-                  href="{{ url_for('creator_detail', creator_id=creator['id'], series_id=selected_series['id'], sort=sort_by, direction=sort_direction) }}"
+                  href="{{ url_for('creator_detail', creator_id=creator['id'], series_id=selected_series['id'], sort=sort_by, direction=sort_direction, tag=selected_tags_query, explorer=explorer_query) }}"
                   aria-label="Clear search"
                   title="Clear search"
                 >&times;</a>
               {% elif active_folder == 'unsorted' %}
                 <a
                   class="creator-post-search-clear"
-                  href="{{ url_for('creator_detail', creator_id=creator['id'], folder='unsorted', sort=sort_by, direction=sort_direction) }}"
+                  href="{{ url_for('creator_detail', creator_id=creator['id'], folder='unsorted', sort=sort_by, direction=sort_direction, tag=selected_tags_query, explorer=explorer_query) }}"
                   aria-label="Clear search"
                   title="Clear search"
                 >&times;</a>
               {% else %}
                 <a
                   class="creator-post-search-clear"
-                  href="{{ url_for('creator_detail', creator_id=creator['id'], sort=sort_by, direction=sort_direction) }}"
+                  href="{{ url_for('creator_detail', creator_id=creator['id'], sort=sort_by, direction=sort_direction, tag=selected_tags_query, explorer=explorer_query) }}"
                   aria-label="Clear search"
                   title="Clear search"
                 >&times;</a>
@@ -299,6 +359,31 @@
           </summary>
           <div class="creator-sort-popover-panel post-content-settings-popover-panel">
             <div class="creator-sort-bar">
+              <div class="creator-sort-group post-view-mode-switch post-settings-switch creator-tag-sort-group">
+                <span class="post-view-mode-label">Tags</span>
+                <div class="creator-tag-sort-body">
+                  {% if selected_tag_filters %}
+                    <div class="post-view-mode-chip-row creator-tag-selected-row">
+                      {% for selected_tag in selected_tag_filters %}
+                        <a class="chip chip-link chip--control post-view-mode-chip is-active" href="{{ selected_tag['remove_url'] }}">{{ selected_tag['tag'] }}</a>
+                      {% endfor %}
+                      <a class="chip chip-link chip--control creator-tag-clear-chip" href="{{ clear_tag_filters_url }}">Clear</a>
+                    </div>
+                  {% endif %}
+                  {% if creator_tag_facets %}
+                    <div class="post-view-mode-chip-row creator-tag-option-row">
+                      {% for tag_facet in creator_tag_facets %}
+                        <a class="chip chip-link chip--control post-view-mode-chip creator-tag-option-chip {% if tag_facet['is_selected'] %}is-active{% endif %}" href="{{ tag_facet['toggle_url'] }}">
+                          <span>{{ tag_facet['tag'] }}</span>
+                          <small>{{ tag_facet['post_count'] }}</small>
+                        </a>
+                      {% endfor %}
+                    </div>
+                  {% else %}
+                    <small class="text-subtle">No tags in this scope.</small>
+                  {% endif %}
+                </div>
+              </div>
               {% if not selected_series %}
                 <div class="creator-sort-group post-view-mode-switch post-settings-switch">
                   <span class="post-view-mode-label">Filter</span>
@@ -331,7 +416,7 @@
           <option value="{{ suggestion }}">
         {% endfor %}
       </datalist>
-      <small>{{ posts|length }} posts{% if post_search_text %} matching "{{ post_search_text }}"{% endif %}</small>
+      <small>{{ posts|length }} posts{% if post_search_text %} matching "{{ post_search_text }}"{% endif %}{% if selected_tags %} · tags: {{ selected_tags|join(' + ') }}{% endif %}</small>
     </div>
 
     {% if posts %}
@@ -357,13 +442,33 @@
             </a>
             <div class="creator-post-body">
               <h3><a href="{{ url_for('post_detail', post_id=post['id']) }}" data-post-detail-link data-post-creator-id="{{ creator['id'] }}">{{ post['title'] }}</a></h3>
-              <p class="creator-post-meta">
-                {% if not selected_series %}
+              <div class="creator-post-meta">
+                {% if explorer_mode == 'tags' %}
+                  {% set inline_tag_count = 4 %}
+                  {% set inline_tags = post['default_tags'][:inline_tag_count] if post['default_tags'] else [] %}
+                  {% set extra_tags = post['default_tags'][inline_tag_count:] if post['default_tags'] else [] %}
+                  {% for post_tag in inline_tags %}
+                    <span class="chip creator-post-tag-chip">{{ post_tag }}</span>
+                  {% endfor %}
+                  {% if extra_tags %}
+                    <details class="creator-post-tag-details">
+                      <summary class="chip chip--control creator-post-tag-summary">
+                        <span aria-hidden="true">+{{ extra_tags|length }}</span>
+                        <span class="sr-only">Show {{ extra_tags|length }} more tags</span>
+                      </summary>
+                      <div class="creator-post-tag-list layout-row layout-row--wrap layout-row--sm">
+                        {% for post_tag in extra_tags %}
+                          <span class="chip creator-post-tag-chip">{{ post_tag }}</span>
+                        {% endfor %}
+                      </div>
+                    </details>
+                  {% endif %}
+                {% elif not selected_series %}
                   <span class="chip chip--accent creator-post-badge">
                     {% if post['series_name'] %}{{ post['series_name'] }}{% else %}Unsorted{% endif %}
                   </span>
                 {% endif %}
-              </p>
+              </div>
             </div>
           </article>
         {% endfor %}
@@ -381,4 +486,5 @@
     {% endif %}
   </article>
 </section>
+<script src="{{ url_for('static', filename='creator_detail.js') }}"></script>
 {% endblock %}

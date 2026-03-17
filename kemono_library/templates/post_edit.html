@@ -165,6 +165,15 @@
                 </select>
               </div>
             </div>
+            <label class="field-label" for="tags_text">Tags</label>
+            <input
+              class="field"
+              id="tags_text"
+              name="tags_text"
+              value="{{ shared_tags_text }}"
+              placeholder="tag one, tag two"
+            >
+            <p class="field-help">Shared across all versions of this post.</p>
             <div class="post-edit-thumbnail-stage {% if not thumbnail_preview_url %}is-empty{% endif %}" data-thumb-stage title="Drag to adjust visible crop area">
               <img
                 class="post-edit-thumbnail-preview"

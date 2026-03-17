@@ -853,6 +853,10 @@ def create_app(test_config: dict | None = None) -> Flask:
 
         requested_series_id = request.args.get("series_id", type=int)
         folder = request.args.get("folder", "").strip().lower()
+        selected_tags = _normalize_tag_values(request.args.getlist("tag"))
+        selected_tag_keys = {tag.casefold() for tag in selected_tags}
+        requested_explorer_mode = request.args.get("explorer", "series").strip().lower()
+        explorer_mode = "tags" if requested_explorer_mode == "tags" else "series"
 
         selected_series_id: int | None = None
         unsorted_only = False
@@ -904,6 +908,33 @@ def create_app(test_config: dict | None = None) -> Flask:
         if sort_direction not in {"asc", "desc"}:
             sort_direction = series_default_direction if selected_series else "desc"
 
+        def _creator_detail_url(
+            *,
+            series_id_value: int | None = selected_series_id,
+            folder_value: str = active_folder,
+            sort_by_value: str = sort_by,
+            sort_direction_value: str = sort_direction,
+            search_value: str = search_text,
+            tags_value: list[str] | None = None,
+            explorer_value: str = explorer_mode,
+        ) -> str:
+            params: dict[str, Any] = {
+                "creator_id": creator_id,
+                "sort": sort_by_value,
+                "direction": sort_direction_value,
+                "explorer": explorer_value,
+            }
+            effective_tags = selected_tags if tags_value is None else _normalize_tag_values(tags_value)
+            if effective_tags:
+                params["tag"] = effective_tags
+            if search_value:
+                params["q"] = search_value
+            if series_id_value is not None:
+                params["series_id"] = series_id_value
+            elif folder_value == "unsorted":
+                params["folder"] = "unsorted"
+            return url_for("creator_detail", **params)
+
         posts_rows = db.list_posts_for_creator(
             creator_id,
             series_id=selected_series_id,
@@ -911,6 +942,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             sort_by=sort_by,
             sort_direction=sort_direction,
             search_text=search_text,
+            required_tags=selected_tags,
         )
         suggestion_rows = db.list_posts_for_creator(
             creator_id,
@@ -918,6 +950,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             unsorted_only=unsorted_only,
             sort_by="title",
             sort_direction="asc",
+            required_tags=selected_tags,
         )
         post_search_suggestions: list[str] = []
         seen_suggestions: set[str] = set()
@@ -928,15 +961,87 @@ def create_app(test_config: dict | None = None) -> Flask:
                 if normalized_title not in seen_suggestions:
                     post_search_suggestions.append(title)
                     seen_suggestions.add(normalized_title)
+
+        creator_tag_facets_rows = db.list_creator_tag_facets(
+            creator_id,
+            series_id=selected_series_id,
+            unsorted_only=unsorted_only,
+            search_text=search_text,
+            required_tags=selected_tags,
+        )
+        facets_by_key: dict[str, dict[str, Any]] = {
+            str(row["normalized_tag"]): {
+                "tag": str(row["tag"]),
+                "normalized_tag": str(row["normalized_tag"]),
+                "post_count": int(row["post_count"]),
+            }
+            for row in creator_tag_facets_rows
+        }
+        for selected_tag in selected_tags:
+            selected_key = selected_tag.casefold()
+            if selected_key not in facets_by_key:
+                facets_by_key[selected_key] = {
+                    "tag": selected_tag,
+                    "normalized_tag": selected_key,
+                    "post_count": 0,
+                }
+        creator_tag_facets: list[dict[str, Any]] = []
+        for row in sorted(
+            facets_by_key.values(),
+            key=lambda item: (-int(item["post_count"]), str(item["tag"]).casefold()),
+        ):
+            normalized_tag = str(row["normalized_tag"])
+            is_selected = normalized_tag in selected_tag_keys
+            if is_selected:
+                toggled_tags = [tag for tag in selected_tags if tag.casefold() != normalized_tag]
+            else:
+                toggled_tags = [*selected_tags, str(row["tag"])]
+            creator_tag_facets.append(
+                {
+                    "tag": str(row["tag"]),
+                    "normalized_tag": normalized_tag,
+                    "post_count": int(row["post_count"]),
+                    "is_selected": is_selected,
+                    "toggle_url": _creator_detail_url(tags_value=toggled_tags),
+                }
+            )
+
+        selected_tag_filters = [
+            {
+                "tag": tag,
+                "remove_url": _creator_detail_url(
+                    tags_value=[candidate for candidate in selected_tags if candidate.casefold() != tag.casefold()]
+                ),
+            }
+            for tag in selected_tags
+        ]
+        clear_tag_filters_url = _creator_detail_url(tags_value=[])
+        explorer_series_url = _creator_detail_url(explorer_value="series")
+        explorer_tags_url = _creator_detail_url(explorer_value="tags")
+        creator_global_tag_popularity: dict[str, int] = {
+            str(row["normalized_tag"]): int(row["post_count"])
+            for row in db.list_creator_tag_facets(creator_id)
+        }
+
+        post_ids = [int(row["id"]) for row in posts_rows]
+        default_tags_by_post_id = db.list_default_tags_for_posts(post_ids)
         posts: list[dict[str, Any]] = []
         for row in posts_rows:
             item = dict(row)
             focus_x, focus_y = _extract_thumbnail_focus_from_raw_metadata(item.get("metadata_json"))
             item["thumbnail_focus_x"] = focus_x
             item["thumbnail_focus_y"] = focus_y
+            unsorted_tags = default_tags_by_post_id.get(int(item["id"]), [])
+            item["default_tags"] = sorted(
+                unsorted_tags,
+                key=lambda tag: (
+                    -creator_global_tag_popularity.get(tag.casefold(), 0),
+                    tag.casefold(),
+                ),
+            )
             posts.append(item)
         series_thumbnail_rows = posts_rows
-        if selected_series and search_text:
+        if selected_series and (search_text or selected_tags):
             series_thumbnail_rows = db.list_posts_for_creator(
                 creator_id,
                 series_id=selected_series_id,
@@ -981,6 +1086,13 @@ def create_app(test_config: dict | None = None) -> Flask:
             sort_direction=sort_direction,
             post_search_text=search_text,
             post_search_suggestions=post_search_suggestions,
+            selected_tags=selected_tags,
+            selected_tag_filters=selected_tag_filters,
+            clear_tag_filters_url=clear_tag_filters_url,
+            creator_tag_facets=creator_tag_facets,
+            explorer_mode=explorer_mode,
+            explorer_series_url=explorer_series_url,
+            explorer_tags_url=explorer_tags_url,
             header_context=header_context if selected_series else None,
             title=page_title,
         )
@@ -1723,6 +1835,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         nav_scope = _normalize_nav_scope_from_request()
 
         attachments = db.list_attachments(post_id, version_id=active_version_id)
+        post_tags = [str(row["tag"]) for row in db.list_tags(post_id, version_id=active_version_id)]
         local_media_map, local_media_by_name, local_media_by_path_key = _build_local_media_maps(active_version, attachments)
         _apply_postwide_media_aliases(
             db,
@@ -1782,6 +1895,13 @@ def create_app(test_config: dict | None = None) -> Flask:
             remote_media_by_name=remote_media_by_name,
         )
         creator_id = int(post["creator_id"])
+        post_tag_links = [
+            {
+                "tag": tag,
+                "href": url_for("creator_detail", creator_id=creator_id, explorer="tags", tag=[tag]),
+            }
+            for tag in post_tags
+        ]
         navigator_context = _build_post_navigator_context(
             post_id=post_id,
             post=post,
@@ -1875,6 +1995,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             navigator_title=navigator_context["title"],
             navigator_series_url=navigator_context["series_scope_url"],
             navigator_all_url=navigator_context["all_scope_url"],
+            post_tag_links=post_tag_links,
             embed_cards=embed_cards,
             main_class=(
                 "is-post-reader-layout"
@@ -2109,6 +2230,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         thumbnail_local_path = _optional_str(active_version["thumbnail_local_path"])
         thumbnail_preview_url: str | None = None
         active_metadata = _safe_load_metadata(active_version["metadata_json"])
+        shared_tags_text = ", ".join(db.list_shared_tags(post_id))
         thumbnail_focus_x, thumbnail_focus_y = _extract_thumbnail_focus_from_metadata(active_metadata)
         tracked_remote_urls: set[str] = set()
         tracked_remote_path_keys: set[str] = set()
@@ -2235,6 +2357,7 @@ def create_app(test_config: dict | None = None) -> Flask:
 
             title = request.form.get("title", "").strip()
             content = request.form.get("content", "")
+            tags_text = request.form.get("tags_text", "")
             series_id = request.form.get("series_id", type=int)
             version_label = request.form.get("version_label", "").strip() or "Version"
             version_language = request.form.get("version_language")
@@ -2351,6 +2474,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                 resolved_thumbnail_local_path = _optional_str(selected_attachment["local_path"])
 
             metadata_for_save = _set_thumbnail_focus_in_metadata(active_metadata, focus_x, focus_y)
+            parsed_tags = _parse_tags_text(tags_text)
             try:
                 with db.transaction() as conn:
                     db.replace_attachments(
@@ -2391,6 +2515,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                         rename_aliases=rename_aliases,
                         conn=conn,
                     )
+                    db.replace_shared_tags(post_id, parsed_tags, conn=conn)
                     db.update_post_series(post_id=post_id, series_id=series_id, conn=conn)
                     db.update_post_version(
                         version_id=active_version_id,
@@ -2439,6 +2564,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             thumbnail_preview_url=thumbnail_preview_url,
             thumbnail_focus_x=thumbnail_focus_x,
             thumbnail_focus_y=thumbnail_focus_y,
+            shared_tags_text=shared_tags_text,
             header_context=header_context,
             main_class="is-post-edit-layout",
             body_class="is-post-edit-page",
@@ -5167,7 +5293,7 @@ def _import_post_into_library(
                 conn=conn,
             )
             tags = _parse_tags_text(tags_text) if tags_text is not None else _extract_tags(payload)
-            db.replace_tags(local_post_id, tags, version_id=version_id, conn=conn)
+            db.merge_shared_tags(local_post_id, tags, conn=conn)
             db.replace_previews(local_post_id, _extract_previews(raw_payload), version_id=version_id, conn=conn)
             if set_as_default:
                 db.set_default_post_version(local_post_id, version_id, conn=conn)
@@ -5197,13 +5323,11 @@ def _extract_tags(payload: dict[str, Any]) -> list[str]:
     tags = payload.get("tags")
     if not isinstance(tags, list):
         return []
-    out: list[str] = []
+    raw_tags: list[str] = []
     for item in tags:
         if isinstance(item, str):
-            normalized = item.strip()
-            if normalized:
-                out.append(normalized)
-    return out
+            raw_tags.append(item)
+    return _normalize_tag_values(raw_tags)
 
 
 def _validate_import_series_selection(
@@ -5259,13 +5383,20 @@ def _find_import_source_match(
 def _parse_tags_text(raw_tags: str | None) -> list[str]:
     if raw_tags is None:
         return []
+    return _normalize_tag_values(raw_tags.split(","))
+
+
+def _normalize_tag_values(values: list[str]) -> list[str]:
     out: list[str] = []
     seen: set[str] = set()
-    for part in raw_tags.split(","):
-        tag = part.strip()
-        if not tag or tag in seen:
+    for raw_value in values:
+        tag = str(raw_value).strip()
+        if not tag:
             continue
-        seen.add(tag)
+        normalized = tag.casefold()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
         out.append(tag)
     return out
 

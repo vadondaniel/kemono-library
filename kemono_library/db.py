@@ -1478,6 +1478,92 @@ class LibraryDB:
             ).fetchall()
             return list(rows)
 
+    def list_shared_tags(self, post_id: int, *, conn: sqlite3.Connection | None = None) -> list[str]:
+        if conn is None:
+            with self._connect() as own_conn:
+                return self.list_shared_tags(post_id, conn=own_conn)
+        rows = conn.execute(
+            """
+            SELECT t.tag
+            FROM post_versions v
+            LEFT JOIN posts p ON p.id = v.post_id
+            JOIN post_version_tags t ON t.version_id = v.id
+            WHERE v.post_id = ?
+            ORDER BY
+                CASE WHEN p.default_version_id = v.id THEN 0 ELSE 1 END ASC,
+                v.version_rank DESC,
+                v.id DESC,
+                t.id ASC
+            """,
+            (post_id,),
+        ).fetchall()
+        return self._normalize_tags_case_insensitive([str(row["tag"]) for row in rows])
+
+    def replace_shared_tags(
+        self,
+        post_id: int,
+        tags: list[str],
+        *,
+        conn: sqlite3.Connection | None = None,
+    ) -> None:
+        if conn is None:
+            with self._connect() as own_conn:
+                return self.replace_shared_tags(post_id, tags, conn=own_conn)
+        version_rows = conn.execute(
+            "SELECT id FROM post_versions WHERE post_id = ? ORDER BY id",
+            (post_id,),
+        ).fetchall()
+        if not version_rows:
+            return
+        normalized_tags = self._normalize_tags_case_insensitive(tags)
+        for row in version_rows:
+            self._replace_version_tags_conn(conn, int(row["id"]), normalized_tags)
+
+    def merge_shared_tags(
+        self,
+        post_id: int,
+        tags: list[str],
+        *,
+        conn: sqlite3.Connection | None = None,
+    ) -> None:
+        if conn is None:
+            with self._connect() as own_conn:
+                return self.merge_shared_tags(post_id, tags, conn=own_conn)
+        existing = self.list_shared_tags(post_id, conn=conn)
+        merged = self._normalize_tags_case_insensitive([*existing, *tags])
+        self.replace_shared_tags(post_id, merged, conn=conn)
+
+    def list_default_tags_for_posts(self, post_ids: list[int]) -> dict[int, list[str]]:
+        normalized_post_ids = sorted({int(post_id) for post_id in post_ids if int(post_id) > 0})
+        if not normalized_post_ids:
+            return {}
+        placeholders = ",".join("?" for _ in normalized_post_ids)
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT p.id AS post_id, t.tag AS tag
+                FROM posts p
+                LEFT JOIN post_version_tags t ON t.version_id = p.default_version_id
+                WHERE p.id IN ({placeholders})
+                ORDER BY p.id ASC, t.tag COLLATE NOCASE ASC, t.id ASC
+                """,
+                normalized_post_ids,
+            ).fetchall()
+
+        grouped: dict[int, list[str]] = {post_id: [] for post_id in normalized_post_ids}
+        seen_by_post: dict[int, set[str]] = {post_id: set() for post_id in normalized_post_ids}
+        for row in rows:
+            tag = str(row["tag"] or "").strip()
+            if not tag:
+                continue
+            post_id = int(row["post_id"])
+            normalized = tag.casefold()
+            if normalized in seen_by_post[post_id]:
+                continue
+            seen_by_post[post_id].add(normalized)
+            grouped[post_id].append(tag)
+        return grouped
+
     def replace_previews(
         self,
         post_id: int,
@@ -1525,34 +1611,17 @@ class LibraryDB:
             ).fetchall()
             return list(rows)
 
-    def list_posts_for_creator(
+    def _build_creator_post_filters(
         self,
         creator_id: int,
         *,
         series_id: int | None = None,
         unsorted_only: bool = False,
-        sort_by: str = "published",
-        sort_direction: str = "desc",
         search_text: str = "",
-    ) -> list[sqlite3.Row]:
-        normalized_sort = sort_by.lower().strip()
-        if normalized_sort not in {"published", "title"}:
-            normalized_sort = "published"
-
-        normalized_direction = sort_direction.lower().strip()
-        if normalized_direction not in {"asc", "desc"}:
-            normalized_direction = "desc"
+        required_tags: list[str] | None = None,
+    ) -> tuple[str, list[object]]:
         normalized_search = search_text.strip().lower()
-
-        if normalized_sort == "title":
-            order_sql = f"LOWER(p.title) {normalized_direction.upper()}, p.id {normalized_direction.upper()}"
-        else:
-            # Keep posts with no publish date at the end regardless of direction.
-            order_sql = (
-                f"CASE WHEN p.published_at IS NULL OR p.published_at = '' THEN 1 ELSE 0 END ASC, "
-                f"p.published_at {normalized_direction.upper()}, "
-                f"p.id {normalized_direction.upper()}"
-            )
+        normalized_required_tags = self._normalize_tags_case_insensitive(required_tags or [])
 
         where_clauses = ["p.creator_id = ?"]
         params: list[object] = [creator_id]
@@ -1572,8 +1641,56 @@ class LibraryDB:
                 ")"
             )
             params.extend([like_value, like_value, like_value, like_value])
+        for tag in normalized_required_tags:
+            where_clauses.append(
+                """
+                EXISTS (
+                    SELECT 1
+                    FROM post_version_tags t
+                    WHERE t.version_id = p.default_version_id
+                      AND LOWER(t.tag) = ?
+                )
+                """
+            )
+            params.append(tag.lower())
+        return " AND ".join(where_clauses), params
 
-        where_sql = " AND ".join(where_clauses)
+    def list_posts_for_creator(
+        self,
+        creator_id: int,
+        *,
+        series_id: int | None = None,
+        unsorted_only: bool = False,
+        sort_by: str = "published",
+        sort_direction: str = "desc",
+        search_text: str = "",
+        required_tags: list[str] | None = None,
+    ) -> list[sqlite3.Row]:
+        normalized_sort = sort_by.lower().strip()
+        if normalized_sort not in {"published", "title"}:
+            normalized_sort = "published"
+
+        normalized_direction = sort_direction.lower().strip()
+        if normalized_direction not in {"asc", "desc"}:
+            normalized_direction = "desc"
+
+        if normalized_sort == "title":
+            order_sql = f"LOWER(p.title) {normalized_direction.upper()}, p.id {normalized_direction.upper()}"
+        else:
+            # Keep posts with no publish date at the end regardless of direction.
+            order_sql = (
+                f"CASE WHEN p.published_at IS NULL OR p.published_at = '' THEN 1 ELSE 0 END ASC, "
+                f"p.published_at {normalized_direction.upper()}, "
+                f"p.id {normalized_direction.upper()}"
+            )
+
+        where_sql, params = self._build_creator_post_filters(
+            creator_id,
+            series_id=series_id,
+            unsorted_only=unsorted_only,
+            search_text=search_text,
+            required_tags=required_tags,
+        )
         with self._connect() as conn:
             rows = conn.execute(
                 f"""
@@ -1586,6 +1703,61 @@ class LibraryDB:
                 params,
             ).fetchall()
             return list(rows)
+
+    def list_creator_tag_facets(
+        self,
+        creator_id: int,
+        *,
+        series_id: int | None = None,
+        unsorted_only: bool = False,
+        search_text: str = "",
+        required_tags: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        where_sql, params = self._build_creator_post_filters(
+            creator_id,
+            series_id=series_id,
+            unsorted_only=unsorted_only,
+            search_text=search_text,
+            required_tags=required_tags,
+        )
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT p.id AS post_id, t.tag AS tag
+                FROM posts p
+                LEFT JOIN series s ON s.id = p.series_id
+                JOIN post_version_tags t ON t.version_id = p.default_version_id
+                WHERE {where_sql}
+                ORDER BY t.tag COLLATE NOCASE ASC, t.id ASC
+                """,
+                params,
+            ).fetchall()
+
+        buckets: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            raw_tag = str(row["tag"] or "").strip()
+            if not raw_tag:
+                continue
+            normalized = raw_tag.casefold()
+            if normalized not in buckets:
+                buckets[normalized] = {
+                    "tag": raw_tag,
+                    "normalized_tag": normalized,
+                    "post_ids": set(),
+                }
+            buckets[normalized]["post_ids"].add(int(row["post_id"]))
+
+        facets: list[dict[str, Any]] = []
+        for bucket in buckets.values():
+            facets.append(
+                {
+                    "tag": str(bucket["tag"]),
+                    "normalized_tag": str(bucket["normalized_tag"]),
+                    "post_count": len(cast(set[int], bucket["post_ids"])),
+                }
+            )
+        facets.sort(key=lambda item: (-int(item["post_count"]), str(item["tag"]).casefold()))
+        return facets
 
     def get_post(self, post_id: int) -> sqlite3.Row | None:
         with self._connect() as conn:
@@ -2088,14 +2260,7 @@ class LibraryDB:
 
     def _replace_version_tags_conn(self, conn: sqlite3.Connection, version_id: int, tags: list[str]) -> None:
         conn.execute("DELETE FROM post_version_tags WHERE version_id = ?", (version_id,))
-        deduped: list[str] = []
-        seen: set[str] = set()
-        for tag in tags:
-            normalized = tag.strip()
-            if not normalized or normalized in seen:
-                continue
-            seen.add(normalized)
-            deduped.append(normalized)
+        deduped = self._normalize_tags_case_insensitive(tags)
         for tag in deduped:
             conn.execute(
                 "INSERT INTO post_version_tags (version_id, tag) VALUES (?, ?)",
@@ -2528,3 +2693,18 @@ class LibraryDB:
         if normalized not in {"asc", "desc"}:
             return "desc"
         return normalized
+
+    @staticmethod
+    def _normalize_tags_case_insensitive(tags: list[str]) -> list[str]:
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for raw_tag in tags:
+            normalized = str(raw_tag).strip()
+            if not normalized:
+                continue
+            key = normalized.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(normalized)
+        return deduped
