@@ -967,14 +967,26 @@
           const publishedMarkup = publishedAt ? `<small>${escapeHtml(publishedAt)}</small>` : "";
           const seriesMarkup =
             scope === "all" ? `<span class="post-nav-link-series">${escapeHtml(seriesName)}</span>` : "";
-          return [
-            "<li>",
-            `<a class="post-nav-link${isCurrent ? " is-active" : ""}" href="${escapeHtml(href)}">`,
+          const mainMarkup = [
             '<span class="post-nav-link-main">',
             `<strong>${escapeHtml(titleText)}</strong>`,
             publishedMarkup,
             "</span>",
             seriesMarkup,
+          ].join("");
+          if (isCurrent) {
+            return [
+              "<li>",
+              '<span class="post-nav-link is-active is-current" aria-current="page">',
+              mainMarkup,
+              "</span>",
+              "</li>",
+            ].join("");
+          }
+          return [
+            "<li>",
+            `<a class="post-nav-link" href="${escapeHtml(href)}">`,
+            mainMarkup,
             "</a>",
             "</li>",
           ].join("");

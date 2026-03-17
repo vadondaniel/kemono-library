@@ -4954,6 +4954,10 @@ body.is-gallery-picker-open {
   background: color-mix(in srgb, var(--accent-soft) 46%, var(--card-solid));
 }
 
+.post-nav-link.is-current {
+  cursor: default;
+}
+
 .post-nav-link-main {
   min-width: 0;
   flex: 1;

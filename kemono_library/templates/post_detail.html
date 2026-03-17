@@ -47,17 +47,31 @@
           <ul class="post-nav-list">
             {% for entry in navigator_entries %}
               <li>
-                <a class="post-nav-link {% if entry['is_current'] %}is-active{% endif %}" href="{{ entry['href'] }}">
-                  <span class="post-nav-link-main">
-                    <strong>{{ entry['title'] }}</strong>
-                    {% if entry['published_at'] %}
-                      <small>{{ entry['published_at']|format_datetime }}</small>
+                {% if entry['is_current'] %}
+                  <span class="post-nav-link is-active is-current" aria-current="page">
+                    <span class="post-nav-link-main">
+                      <strong>{{ entry['title'] }}</strong>
+                      {% if entry['published_at'] %}
+                        <small>{{ entry['published_at']|format_datetime }}</small>
+                      {% endif %}
+                    </span>
+                    {% if navigator_scope == 'all' %}
+                      <span class="post-nav-link-series">{{ entry['series_name'] or 'Unsorted' }}</span>
                     {% endif %}
                   </span>
-                  {% if navigator_scope == 'all' %}
-                    <span class="post-nav-link-series">{{ entry['series_name'] or 'Unsorted' }}</span>
-                  {% endif %}
-                </a>
+                {% else %}
+                  <a class="post-nav-link" href="{{ entry['href'] }}">
+                    <span class="post-nav-link-main">
+                      <strong>{{ entry['title'] }}</strong>
+                      {% if entry['published_at'] %}
+                        <small>{{ entry['published_at']|format_datetime }}</small>
+                      {% endif %}
+                    </span>
+                    {% if navigator_scope == 'all' %}
+                      <span class="post-nav-link-series">{{ entry['series_name'] or 'Unsorted' }}</span>
+                    {% endif %}
+                  </a>
+                {% endif %}
               </li>
             {% endfor %}
           </ul>

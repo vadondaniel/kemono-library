@@ -1700,7 +1700,8 @@ def test_post_detail_navigator_defaults_to_series_and_supports_all_scope(tmp_pat
     assert "B One" not in series_nav_text
     assert "Unsorted One" not in series_nav_text
     assert any("nav_scope=all" in (link.get("href") or "") for link in series_soup.select(".post-nav-scope-toggle a"))
-    assert series_soup.select_one(f'.post-nav-link.is-active[href="/posts/{series_a_first}?nav_scope=series"]') is not None
+    assert series_soup.select_one(".post-nav-link.is-active.is-current[aria-current='page']") is not None
+    assert series_soup.select_one(f'.post-nav-link.is-active[href="/posts/{series_a_first}?nav_scope=series"]') is None
 
     all_scope = client.get(f"/posts/{series_a_first}?nav_scope=all")
     assert all_scope.status_code == 200
@@ -1726,7 +1727,8 @@ def test_post_detail_navigator_defaults_to_series_and_supports_all_scope(tmp_pat
     assert "Unsorted Two" in unsorted_nav_text
     assert "A One" not in unsorted_nav_text
     assert "B One" not in unsorted_nav_text
-    assert unsorted_soup.select_one(f'.post-nav-link.is-active[href="/posts/{unsorted_first}?nav_scope=series"]') is not None
+    assert unsorted_soup.select_one(".post-nav-link.is-active.is-current[aria-current='page']") is not None
+    assert unsorted_soup.select_one(f'.post-nav-link.is-active[href="/posts/{unsorted_first}?nav_scope=series"]') is None
 
 
 def test_post_detail_navigator_endpoint_returns_scope_payload_without_reloading_context(tmp_path):
