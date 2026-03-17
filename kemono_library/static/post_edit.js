@@ -68,8 +68,18 @@
 
   function renderFocus() {
     previewImage.style.objectPosition = `${focusX}% ${focusY}%`;
-    xInput.value = focusX.toFixed(2);
-    yInput.value = focusY.toFixed(2);
+    const nextX = focusX.toFixed(2);
+    const nextY = focusY.toFixed(2);
+    const xChanged = xInput.value !== nextX;
+    const yChanged = yInput.value !== nextY;
+    xInput.value = nextX;
+    yInput.value = nextY;
+    if (xChanged) {
+      xInput.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    if (yChanged) {
+      yInput.dispatchEvent(new Event("input", { bubbles: true }));
+    }
     updateReadout();
   }
 
@@ -559,6 +569,12 @@
       const type = control.type.toLowerCase();
       if (type === "checkbox" || type === "radio") {
         return control.checked ? "1" : "0";
+      }
+      if (control.name === "thumbnail_focus_x" || control.name === "thumbnail_focus_y") {
+        const numeric = Number(control.value);
+        if (Number.isFinite(numeric)) {
+          return `num:${numeric.toFixed(2)}`;
+        }
       }
       return control.value;
     }
