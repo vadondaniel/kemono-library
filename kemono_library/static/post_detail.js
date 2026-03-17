@@ -340,10 +340,72 @@
       "[data-post-gallery-picker-panel='grid']"
     );
     const gridList = gridPanel instanceof HTMLElement ? gridPanel.querySelector(".post-gallery-picker-grid") : null;
-    let activeScope = "images";
-    let activeTab = "list";
+    const galleryPickerOpenStateKey = "kemono-gallery-picker-open";
+    const galleryPickerPinnedStateKey = "kemono-gallery-picker-pinned";
+    const galleryPickerViewStateKey = "kemono-gallery-picker-view";
+    const galleryPickerScopeStateKey = "kemono-gallery-picker-scope";
+    const readGalleryPickerOpenState = () => {
+      try {
+        return window.sessionStorage.getItem(galleryPickerOpenStateKey) === "1";
+      } catch {
+        return false;
+      }
+    };
+    const writeGalleryPickerOpenState = (open) => {
+      try {
+        window.sessionStorage.setItem(galleryPickerOpenStateKey, open ? "1" : "0");
+      } catch {
+        // Ignore session storage failures.
+      }
+    };
+    const readGalleryPickerPinnedState = () => {
+      try {
+        return window.localStorage.getItem(galleryPickerPinnedStateKey) === "1";
+      } catch {
+        return false;
+      }
+    };
+    const writeGalleryPickerPinnedState = (nextPinned) => {
+      try {
+        window.localStorage.setItem(galleryPickerPinnedStateKey, nextPinned ? "1" : "0");
+      } catch {
+        // Ignore storage failures.
+      }
+    };
+    const readGalleryPickerViewState = () => {
+      try {
+        const stored = window.localStorage.getItem(galleryPickerViewStateKey);
+        return stored === "grid" ? "grid" : "list";
+      } catch {
+        return "list";
+      }
+    };
+    const writeGalleryPickerViewState = (nextTab) => {
+      try {
+        window.localStorage.setItem(galleryPickerViewStateKey, nextTab === "grid" ? "grid" : "list");
+      } catch {
+        // Ignore storage failures.
+      }
+    };
+    const readGalleryPickerScopeState = () => {
+      try {
+        const stored = window.localStorage.getItem(galleryPickerScopeStateKey);
+        return stored === "content" ? "content" : "images";
+      } catch {
+        return "images";
+      }
+    };
+    const writeGalleryPickerScopeState = (nextScope) => {
+      try {
+        window.localStorage.setItem(galleryPickerScopeStateKey, nextScope === "content" ? "content" : "images");
+      } catch {
+        // Ignore storage failures.
+      }
+    };
+    let activeScope = readGalleryPickerScopeState();
+    let activeTab = readGalleryPickerViewState();
     let lastOpenTrigger = null;
-    let pinned = false;
+    let pinned = readGalleryPickerPinnedState();
     let gridAspectFrame = null;
     let gridAspectComputed = false;
     let gridAspectListenersBound = false;
@@ -403,6 +465,7 @@
     const setActiveScope = (nextScope) => {
       const normalized = nextScope === "content" ? "content" : "images";
       activeScope = normalized;
+      writeGalleryPickerScopeState(normalized);
       scopePanels.forEach((panel) => {
         panel.hidden = panel.dataset.postGalleryPickerScopePanel !== normalized;
       });
@@ -512,6 +575,7 @@
     const setActiveTab = (nextTab) => {
       const normalized = nextTab === "grid" ? "grid" : "list";
       activeTab = normalized;
+      writeGalleryPickerViewState(normalized);
       tabPanels.forEach((panel) => {
         panel.hidden = panel.dataset.postGalleryPickerPanel !== normalized;
       });
@@ -527,6 +591,7 @@
     const setOpen = (open, options = {}) => {
       const opts = options && typeof options === "object" ? options : {};
       const restoreFocus = opts.restoreFocus !== false;
+      const focusOnOpen = opts.focusOnOpen !== false;
       const trigger = opts.trigger instanceof HTMLElement ? opts.trigger : null;
       if (open) {
         if (trigger instanceof HTMLElement) {
@@ -535,13 +600,15 @@
         drawer.classList.add("is-open");
         drawer.setAttribute("aria-hidden", "false");
         syncDrawerState();
-        const focusTarget = drawer.querySelector(
-          "[data-post-gallery-picker-scope-tab].is-active, [data-post-gallery-picker-view-toggle], [data-post-gallery-picker-pin-toggle]"
-        );
-        if (focusTarget instanceof HTMLElement) {
-          window.requestAnimationFrame(() => {
-            focusTarget.focus();
-          });
+        if (focusOnOpen) {
+          const focusTarget = drawer.querySelector(
+            "[data-post-gallery-picker-scope-tab].is-active, [data-post-gallery-picker-view-toggle], [data-post-gallery-picker-pin-toggle]"
+          );
+          if (focusTarget instanceof HTMLElement) {
+            window.requestAnimationFrame(() => {
+              focusTarget.focus();
+            });
+          }
         }
       } else {
         drawer.classList.remove("is-open");
@@ -553,6 +620,7 @@
           });
         }
       }
+      writeGalleryPickerOpenState(open);
     };
 
     openTriggers.forEach((trigger) => {
@@ -580,6 +648,7 @@
       pinToggle.addEventListener("click", (event) => {
         event.preventDefault();
         pinned = !pinned;
+        writeGalleryPickerPinnedState(pinned);
         syncDrawerState();
       });
     }
@@ -602,7 +671,11 @@
 
     setActiveTab(activeTab);
     setActiveScope(activeScope);
-    syncDrawerState();
+    if (readGalleryPickerOpenState()) {
+      setOpen(true, { restoreFocus: false, focusOnOpen: false });
+    } else {
+      syncDrawerState();
+    }
 
     return {
       contains(node) {
