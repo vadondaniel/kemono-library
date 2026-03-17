@@ -88,7 +88,7 @@
             <summary class="btn btn-link btn--ghost series-edit-toggle">Edit</summary>
             <div class="series-edit-popover">
               <form method="post" action="{{ url_for('update_series', creator_id=creator['id'], series_id=selected_series['id']) }}" class="form series-edit-form">
-                <label class="field-label field-label--subtle" for="series-name">Folder name</label>
+                <label class="field-label field-label--subtle" for="series-name">Series name</label>
                 <input class="field" id="series-name" name="name" required value="{{ selected_series['name'] }}">
                 <label class="field-label field-label--subtle" for="series-description">Description</label>
                 <textarea class="field" id="series-description" name="description" rows="4" placeholder="Optional description">{{ selected_series['description'] or '' }}</textarea>
@@ -110,7 +110,7 @@
                     </select>
                   </div>
                 </div>
-                <label class="field-label field-label--subtle" for="series-cover-post">Folder thumbnail source</label>
+                <label class="field-label field-label--subtle" for="series-cover-post">Series thumbnail source</label>
                 <select class="field" id="series-cover-post" name="cover_post_id">
                   <optgroup label="Automatic">
                     <option value="__latest__" {% if selected_series_cover_choice == '__latest__' %}selected{% endif %}>Latest</option>
@@ -369,7 +369,15 @@
         {% endfor %}
       </div>
     {% else %}
-      <p class="creator-empty">{% if post_search_text %}No posts match this search in the current view.{% else %}No posts in this folder yet.{% endif %}</p>
+      <p class="creator-empty">
+        {% if post_search_text %}
+          No posts match this search in the current view.
+        {% elif selected_series %}
+          No posts in this series yet.
+        {% else %}
+          No posts in this view yet.
+        {% endif %}
+      </p>
     {% endif %}
   </article>
 </section>
