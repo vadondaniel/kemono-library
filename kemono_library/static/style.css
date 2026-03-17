@@ -4220,6 +4220,12 @@ body.is-post-gallery-page .site-header {
   isolation: isolate;
 }
 
+body.is-post-nav-open .site-header {
+  position: relative;
+  z-index: var(--z-header-popover);
+  isolation: isolate;
+}
+
 .post-reader-nav-sheet.is-open {
   transform: translateX(0);
 }
