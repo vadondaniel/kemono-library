@@ -4189,7 +4189,7 @@ body.is-busy-overlay-open {
 
 .post-nav-edge-toggle {
   position: fixed;
-  top: calc((100dvh + var(--site-header-height, 0px)) / 2);
+  top: 50dvh;
   right: -0.2rem;
   transform: translateY(-50%);
   z-index: var(--z-reader-sheet);
