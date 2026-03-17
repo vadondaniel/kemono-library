@@ -4097,6 +4097,12 @@ def test_edit_page_prettifies_html_content(tmp_path):
     assert b'data-nav-replace-href' in response.data
     assert b"/static/transient_navigation.js" in response.data
 
+    soup = BeautifulSoup(response.data, "html.parser")
+    assert soup.select_one("main.container.is-post-edit-layout") is not None
+    assert soup.select_one("[data-post-edit-workflow-bar]") is not None
+    assert soup.select_one("[data-post-edit-workflow-rail]") is not None
+    assert soup.select_one("[data-post-edit-preview-toggle]") is not None
+
 
 def test_post_edit_version_actions_use_replace_navigation_attributes(tmp_path):
     app = create_app(
@@ -4440,6 +4446,12 @@ def test_edit_post_attachment_management_is_save_based_and_updates_inline_media(
     edit_page = client.get(f"/posts/{post_id}/edit?version_id={manual_version_id}")
     assert edit_page.status_code == 200
     assert "extra.png" in edit_page.data.decode("utf-8")
+    edit_soup = BeautifulSoup(edit_page.data, "html.parser")
+    assert len(edit_soup.select("[data-post-edit-attachment-group]")) == 2
+    assert len(edit_soup.select("[data-post-edit-attachment-filter]")) == 2
+    assert len(edit_soup.select("[data-post-edit-attachment-bulk='all']")) == 2
+    assert len(edit_soup.select("[data-post-edit-attachment-bulk='none']")) == 2
+    assert edit_soup.select_one("[data-post-edit-attachment-item] [data-post-edit-attachment-toggle]") is not None
 
     before_detail = client.get(f"/posts/{post_id}?version_id={manual_version_id}")
     assert before_detail.status_code == 200

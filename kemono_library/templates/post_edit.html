@@ -1,165 +1,11 @@
 {% extends "base.html" %}
-{% block content %}
-<div class="post-edit-page">
-<section class="panel post-edit-shell">
-  <header class="post-edit-head">
-    <div class="post-edit-title-wrap">
-      <p class="text-kicker">Edit Version</p>
-      <h1>{{ active_version['title'] }}</h1>
-      <p class="post-edit-subtitle">Edit content, files, and thumbnail for this {% if versions|length > 1 %}version{% else %}post{% endif %}.</p>
-      <div class="post-edit-chips layout-row layout-row--wrap layout-row--sm-plus">
-        <span class="chip post-edit-chip">Version: {{ active_version['label'] }}</span>
-        {% if active_version['language'] %}
-          <span class="chip post-edit-chip">Lang: {{ active_version['language'] }}</span>
-        {% endif %}
-        {% if active_version['derived_from_version_id'] %}
-          <a class="chip chip-link post-edit-chip post-edit-chip-link" href="{{ url_for('post_detail', post_id=post['id'], version_id=active_version['derived_from_version_id']) }}">Based on: {{ active_version['derived_from_label'] or 'Earlier version' }}{% if active_version['derived_from_language'] %} ({{ active_version['derived_from_language'] }}){% endif %}</a>
-        {% endif %}
-        {% if active_version['is_default'] %}
-          <span class="chip post-edit-chip">Default version</span>
-        {% endif %}
-        {% if active_version['source_url'] %}
-          <a class="chip chip-link post-edit-chip post-edit-chip-link" href="{{ active_version['source_url'] }}" target="_blank" rel="noopener noreferrer">Source</a>
-        {% else %}
-          <span class="chip post-edit-chip">Manual version</span>
-        {% endif %}
-      </div>
-    </div>
-    <div class="post-edit-head-tools">
-      <form method="get" action="{{ url_for('edit_post', post_id=post['id']) }}" class="form post-edit-version-switch" data-nav-replace-redirect>
-        <label class="field-label" for="active-version">Active version</label>
-        <select class="field" id="active-version" name="version_id" onchange="if (this.form.requestSubmit) { this.form.requestSubmit(); } else { this.form.submit(); }">
-          {% for version in versions %}
-            <option value="{{ version['id'] }}" {% if version['id'] == active_version['id'] %}selected{% endif %}>
-              {{ version['label'] }}{% if version['language'] %} ({{ version['language'] }}){% endif %}{% if version['is_default'] %} [default]{% endif %}
-            </option>
-          {% endfor %}
-        </select>
-      </form>
-    </div>
-  </header>
-
-  <form method="post" id="post-edit-main-form" class="form post-edit-form" data-nav-replace-redirect>
-    <input type="hidden" name="version_id" value="{{ active_version['id'] }}">
-    <section class="post-edit-block">
-      <h2>Version Metadata</h2>
-      <div class="post-edit-field-row">
-        <div>
-          <label class="field-label" for="version_label">Version label</label>
-          <input class="field" id="version_label" name="version_label" value="{{ active_version['label'] }}">
-        </div>
-        <div>
-          <label class="field-label" for="version_language">Language (optional)</label>
-          <input class="field" id="version_language" name="version_language" value="{{ active_version['language'] or '' }}" placeholder="en / ja / ko">
-        </div>
-      </div>
-      <label class="field-label" for="title">Title</label>
-      <input class="field" id="title" name="title" required value="{{ active_version['title'] }}">
-    </section>
-
-    <section class="post-edit-block">
-      <h2>Organization</h2>
-      <div class="post-edit-field-row">
-        <div>
-          <label class="field-label" for="series_id">Series</label>
-          <select class="field" id="series_id" name="series_id">
-            <option value="">No series</option>
-            {% for series in series_list %}
-              <option value="{{ series['id'] }}" {% if post['series_id'] and post['series_id'] == series['id'] %}selected{% endif %}>{{ series['name'] }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div>
-          <label class="field-label" for="thumbnail_attachment_id">Thumbnail source</label>
-          <select class="field" id="thumbnail_attachment_id" name="thumbnail_attachment_id">
-            <option value="__keep__" data-preview-url="{{ thumbnail_preview_url or '' }}" {% if not selected_thumbnail_choice %}selected{% endif %}>Keep current thumbnail</option>
-            <option value="__none__" data-preview-url="">No thumbnail</option>
-            {% for file in attachments %}
-              {% if file['is_image'] %}
-                <option value="{{ file['choice_value'] }}" data-preview-url="{{ file['preview_url'] }}" {% if selected_thumbnail_choice == file['choice_value'] %}selected{% endif %}>
-                  {{ file['name'] }}{% if not file['local_available'] %} (remote only){% endif %}
-                </option>
-              {% endif %}
-            {% endfor %}
-          </select>
-        </div>
-      </div>
-      <div class="post-edit-thumbnail-stage {% if not thumbnail_preview_url %}is-empty{% endif %}" data-thumb-stage title="Drag to adjust visible crop area">
-        <img
-          class="post-edit-thumbnail-preview"
-          src="{{ thumbnail_preview_url or '' }}"
-          alt="Current thumbnail preview"
-          loading="lazy"
-          referrerpolicy="no-referrer"
-          data-thumb-image
-          {% if thumbnail_preview_url %}
-            style="object-position: {{ thumbnail_focus_x }}% {{ thumbnail_focus_y }}%;"
-          {% else %}
-            hidden
-          {% endif %}
-        >
-        <div class="post-edit-thumbnail-empty" data-thumb-empty {% if thumbnail_preview_url %}hidden{% endif %}>No thumbnail selected.</div>
-      </div>
-      <input type="hidden" name="thumbnail_focus_x" value="{{ thumbnail_focus_x }}" data-thumb-focus-x-input>
-      <input type="hidden" name="thumbnail_focus_y" value="{{ thumbnail_focus_y }}" data-thumb-focus-y-input>
-    </section>
-
-    <section class="post-edit-block">
-      <h2>Content</h2>
-      <label class="field-label" for="content">Content (HTML/plain text)</label>
-      <textarea class="field" id="content" name="content" rows="18">{{ edit_content }}</textarea>
-    </section>
-
-  </form>
-</section>
-
-<section class="panel post-edit-tools">
-  <h2>Version Tools</h2>
-  <div class="post-edit-tool-row">
-    <a
-      class="btn btn-link btn--ghost"
-      href="{{ url_for('import_form', creator_id=post['creator_id'], series_id=post['series_id'], import_target_mode='existing', target_post_id=post['id'], force_target_post_version='1', overwrite_matching_version='0', set_as_default='0', version_label='Imported version', version_language='') }}"
-      data-nav-replace-href
-    >Import new version</a>
-    {% if active_version['origin_kind'] == 'source' and active_version['source_url'] %}
-      <a
-        class="btn btn-link btn--ghost"
-        href="{{ url_for('import_form', url=active_version['source_url'], creator_id=post['creator_id'], series_id=post['series_id'], import_target_mode='existing', target_post_id=post['id'], force_overwrite_matching_version='1', overwrite_matching_version='1', set_as_default='1' if active_version['is_default'] else '0', version_label=active_version['label'], version_language=active_version['language'] or '') }}"
-        data-nav-replace-href
-      >Reimport and overwrite this version</a>
-    {% endif %}
-    <form method="post" action="{{ url_for('clone_post_version', post_id=post['id']) }}" class="inline-form" data-nav-replace-redirect>
-      <input type="hidden" name="source_version_id" value="{{ active_version['id'] }}">
-      <input type="hidden" name="set_as_default" value="0">
-      <input type="hidden" name="version_label" value="Manual translation">
-      <input type="hidden" name="version_language" value="">
-      <button type="submit" class="btn btn--ghost">Clone as manual version</button>
-    </form>
-    {% if not active_version['is_default'] %}
-      <form method="post" action="{{ url_for('set_default_post_version', post_id=post['id'], version_id=active_version['id']) }}" class="inline-form" data-nav-replace-redirect>
-        <button type="submit" class="btn btn--ghost">Set as default</button>
-      </form>
-    {% endif %}
-    {% if versions|length > 1 %}
-      <form method="post" action="{{ url_for('delete_post_version', post_id=post['id'], version_id=active_version['id']) }}" class="inline-form" onsubmit="return confirm('Delete this version?');" data-nav-replace-redirect>
-        <button type="submit" class="btn btn--ghost btn--danger-quiet">Delete version</button>
-      </form>
-    {% endif %}
-  </div>
-</section>
-
-<section class="panel post-edit-danger">
-  <details>
-    <summary>Danger zone</summary>
-    <p>Delete the entire post and all saved files from your local library.</p>
-    <form method="post" action="{{ url_for('delete_post', post_id=post['id']) }}" class="inline-form" onsubmit="return confirm('Delete this post from your local library?');">
-      <button type="submit" class="btn btn--ghost btn--danger-quiet">Delete post</button>
-    </form>
-  </details>
-</section>
 
 {% macro render_attachment_item(file, active_version, post) %}
-  <li class="post-edit-attachment-item">
+  <li
+    class="post-edit-attachment-item"
+    data-post-edit-attachment-item
+    data-attachment-search="{{ (file['name'] ~ ' ' ~ file['kind'] ~ ' ' ~ (file['remote_url'] or ''))|lower }}"
+  >
     <div class="post-edit-attachment-preview">
       {% if file['is_image'] %}
         <button
@@ -190,111 +36,348 @@
         {% endif %}
       </div>
       <label class="field-label" for="attachment-name-{{ file['form_key'] }}">File name</label>
-      <input class="field"
+      <input
+        class="field"
         id="attachment-name-{{ file['form_key'] }}"
         name="attachment_name_{{ file['form_key'] }}"
         value="{{ file['name'] }}"
         form="post-edit-main-form"
       >
       <div class="post-edit-attachment-actions">
-      {% if file['local_available'] and file['local_path'] %}
-        {% if not file['is_image'] %}
-          <a class="btn btn-link btn--ghost" href="{{ url_for('serve_file', relative_path=file['local_path']) }}" target="_blank" rel="noopener">Open local</a>
+        {% if file['local_available'] and file['local_path'] %}
+          {% if not file['is_image'] %}
+            <a class="btn btn-link btn--ghost" href="{{ url_for('serve_file', relative_path=file['local_path']) }}" target="_blank" rel="noopener">Open local</a>
+          {% endif %}
+        {% else %}
+          <a class="btn btn-link btn--ghost" href="{{ file['remote_url_display'] }}" target="_blank" rel="noopener noreferrer">Open remote</a>
+          {% if file['id'] is not none %}
+            <form method="post" action="{{ url_for('retry_attachment_download', post_id=post['id'], attachment_id=file['id'], version_id=active_version['id']) }}" class="inline-form">
+              <input type="hidden" name="version_id" value="{{ active_version['id'] }}">
+              <button type="submit" class="btn btn--ghost">Retry download</button>
+            </form>
+          {% endif %}
         {% endif %}
-      {% else %}
-        <a class="btn btn-link btn--ghost" href="{{ file['remote_url_display'] }}" target="_blank" rel="noopener noreferrer">Open remote</a>
-        {% if file['id'] is not none %}
-          <form method="post" action="{{ url_for('retry_attachment_download', post_id=post['id'], attachment_id=file['id'], version_id=active_version['id']) }}" class="inline-form">
-            <input type="hidden" name="version_id" value="{{ active_version['id'] }}">
-            <button type="submit" class="btn btn--ghost">Retry download</button>
-          </form>
+        {% if file['tracked'] %}
+          <label class="post-edit-attachment-keep">
+            <input type="hidden" name="attachment_keep_{{ file['form_key'] }}" value="0" form="post-edit-main-form">
+            <input
+              type="checkbox"
+              name="attachment_keep_{{ file['form_key'] }}"
+              value="1"
+              checked
+              form="post-edit-main-form"
+              data-post-edit-attachment-toggle
+            >
+            <span>Keep file</span>
+          </label>
+        {% else %}
+          <label class="post-edit-attachment-keep">
+            <input type="hidden" name="attachment_add_{{ file['form_key'] }}" value="0" form="post-edit-main-form">
+            <input
+              type="checkbox"
+              name="attachment_add_{{ file['form_key'] }}"
+              value="1"
+              form="post-edit-main-form"
+              data-post-edit-attachment-toggle
+            >
+            <span>Add file</span>
+          </label>
         {% endif %}
-      {% endif %}
-      {% if file['tracked'] %}
-        <label class="post-edit-attachment-keep">
-          <input type="hidden" name="attachment_keep_{{ file['form_key'] }}" value="0" form="post-edit-main-form">
-          <input
-            type="checkbox"
-            name="attachment_keep_{{ file['form_key'] }}"
-            value="1"
-            checked
-            form="post-edit-main-form"
-          >
-          <span>Keep file</span>
-        </label>
-      {% else %}
-        <label class="post-edit-attachment-keep">
-          <input type="hidden" name="attachment_add_{{ file['form_key'] }}" value="0" form="post-edit-main-form">
-          <input type="checkbox" name="attachment_add_{{ file['form_key'] }}" value="1" form="post-edit-main-form">
-          <span>Add file</span>
-        </label>
-      {% endif %}
       </div>
     </div>
   </li>
 {% endmacro %}
 
-<section class="panel post-edit-attachments">
-  <h2>Attachment Management</h2>
-  {% if tracked_attachments or source_attachments %}
-    <p class="post-edit-attachments-note">Attachment edits are applied when you click <strong>Save Changes</strong>.</p>
-    <div class="post-edit-attachments-group">
-      <div class="post-edit-attachments-group-head">
-        <h3>In This Version</h3>
-        <small>Shown in the post viewer.</small>
-      </div>
-      {% if tracked_attachments %}
-        <ul class="post-edit-attachment-list">
-          {% for file in tracked_attachments %}
-            {{ render_attachment_item(file, active_version, post) }}
-          {% endfor %}
-        </ul>
-      {% else %}
-        <p class="post-edit-attachments-group-empty">No files currently in this version.</p>
-      {% endif %}
+{% block content %}
+{% set detail_href = url_for('post_detail', post_id=post['id']) if active_version['is_default'] else url_for('post_detail', post_id=post['id'], version_id=active_version['id']) %}
+<div class="post-edit-page" data-post-edit-page>
+  <div class="post-edit-layout">
+    <div class="post-edit-main">
+      <section class="panel post-edit-shell">
+        <header class="post-edit-head">
+          <div class="post-edit-title-wrap">
+            <p class="text-kicker">Edit Version</p>
+            <h1>{{ active_version['title'] }}</h1>
+            <p class="post-edit-subtitle">Edit content, files, and thumbnail for this {% if versions|length > 1 %}version{% else %}post{% endif %}.</p>
+            <div class="post-edit-chips layout-row layout-row--wrap layout-row--sm-plus">
+              <span class="chip post-edit-chip">Version: {{ active_version['label'] }}</span>
+              {% if active_version['language'] %}
+                <span class="chip post-edit-chip">Lang: {{ active_version['language'] }}</span>
+              {% endif %}
+              {% if active_version['derived_from_version_id'] %}
+                <a class="chip chip-link post-edit-chip post-edit-chip-link" href="{{ url_for('post_detail', post_id=post['id'], version_id=active_version['derived_from_version_id']) }}">Based on: {{ active_version['derived_from_label'] or 'Earlier version' }}{% if active_version['derived_from_language'] %} ({{ active_version['derived_from_language'] }}){% endif %}</a>
+              {% endif %}
+              {% if active_version['is_default'] %}
+                <span class="chip post-edit-chip">Default version</span>
+              {% endif %}
+              {% if active_version['source_url'] %}
+                <a class="chip chip-link post-edit-chip post-edit-chip-link" href="{{ active_version['source_url'] }}" target="_blank" rel="noopener noreferrer">Source</a>
+              {% else %}
+                <span class="chip post-edit-chip">Manual version</span>
+              {% endif %}
+            </div>
+          </div>
+        </header>
+
+        <form method="post" id="post-edit-main-form" class="form post-edit-form" data-nav-replace-redirect>
+          <input type="hidden" name="version_id" value="{{ active_version['id'] }}">
+
+          <section class="post-edit-block" id="post-edit-section-metadata" data-post-edit-section>
+            <h2>Version Metadata</h2>
+            <div class="post-edit-field-row">
+              <div>
+                <label class="field-label" for="version_label">Version label</label>
+                <input class="field" id="version_label" name="version_label" value="{{ active_version['label'] }}">
+              </div>
+              <div>
+                <label class="field-label" for="version_language">Language (optional)</label>
+                <input class="field" id="version_language" name="version_language" value="{{ active_version['language'] or '' }}" placeholder="en / ja / ko">
+              </div>
+            </div>
+            <label class="field-label" for="title">Title</label>
+            <input class="field" id="title" name="title" required value="{{ active_version['title'] }}">
+          </section>
+
+          <section class="post-edit-block" id="post-edit-section-organization" data-post-edit-section>
+            <h2>Organization</h2>
+            <div class="post-edit-field-row">
+              <div>
+                <label class="field-label" for="series_id">Series</label>
+                <select class="field" id="series_id" name="series_id">
+                  <option value="">No series</option>
+                  {% for series in series_list %}
+                    <option value="{{ series['id'] }}" {% if post['series_id'] and post['series_id'] == series['id'] %}selected{% endif %}>{{ series['name'] }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div>
+                <label class="field-label" for="thumbnail_attachment_id">Thumbnail source</label>
+                <select class="field" id="thumbnail_attachment_id" name="thumbnail_attachment_id">
+                  <option value="__keep__" data-preview-url="{{ thumbnail_preview_url or '' }}" {% if not selected_thumbnail_choice %}selected{% endif %}>Keep current thumbnail</option>
+                  <option value="__none__" data-preview-url="">No thumbnail</option>
+                  {% for file in attachments %}
+                    {% if file['is_image'] %}
+                      <option value="{{ file['choice_value'] }}" data-preview-url="{{ file['preview_url'] }}" {% if selected_thumbnail_choice == file['choice_value'] %}selected{% endif %}>
+                        {{ file['name'] }}{% if not file['local_available'] %} (remote only){% endif %}
+                      </option>
+                    {% endif %}
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+            <div class="post-edit-thumbnail-stage {% if not thumbnail_preview_url %}is-empty{% endif %}" data-thumb-stage title="Drag to adjust visible crop area">
+              <img
+                class="post-edit-thumbnail-preview"
+                src="{{ thumbnail_preview_url or '' }}"
+                alt="Current thumbnail preview"
+                loading="lazy"
+                referrerpolicy="no-referrer"
+                data-thumb-image
+                {% if thumbnail_preview_url %}
+                  style="object-position: {{ thumbnail_focus_x }}% {{ thumbnail_focus_y }}%;"
+                {% else %}
+                  hidden
+                {% endif %}
+              >
+              <div class="post-edit-thumbnail-empty" data-thumb-empty {% if thumbnail_preview_url %}hidden{% endif %}>No thumbnail selected.</div>
+            </div>
+            <input type="hidden" name="thumbnail_focus_x" value="{{ thumbnail_focus_x }}" data-thumb-focus-x-input>
+            <input type="hidden" name="thumbnail_focus_y" value="{{ thumbnail_focus_y }}" data-thumb-focus-y-input>
+          </section>
+
+          <section class="post-edit-block" id="post-edit-section-content" data-post-edit-section>
+            <div class="post-edit-block-head">
+              <h2>Content</h2>
+              <button
+                type="button"
+                class="btn btn-link btn--ghost"
+                data-post-edit-preview-toggle
+                aria-expanded="false"
+                aria-controls="post-edit-content-preview"
+              >Show preview</button>
+            </div>
+            <label class="field-label" for="content">Content (HTML/plain text)</label>
+            <textarea class="field" id="content" name="content" rows="18">{{ edit_content }}</textarea>
+            <div class="post-edit-content-preview" id="post-edit-content-preview" data-post-edit-preview hidden>
+              <iframe class="post-edit-content-preview-frame" data-post-edit-preview-frame sandbox=""></iframe>
+            </div>
+          </section>
+        </form>
+      </section>
+
+      <section class="panel post-edit-attachments" id="post-edit-section-attachments" data-post-edit-section>
+        <h2>Attachment Management</h2>
+        {% if tracked_attachments or source_attachments %}
+          <p class="post-edit-attachments-note">Attachment edits are applied when you click <strong>Save Changes</strong>.</p>
+          <div class="post-edit-attachments-group" data-post-edit-attachment-group>
+            <div class="post-edit-attachments-group-head">
+              <div>
+                <h3>In This Version</h3>
+                <small>Shown in the post viewer.</small>
+              </div>
+              {% if tracked_attachments %}
+                <div class="post-edit-attachments-group-tools">
+                  <input
+                    class="field post-edit-attachments-filter-field"
+                    type="search"
+                    placeholder="Filter files"
+                    aria-label="Filter files in this version"
+                    data-post-edit-attachment-filter
+                  >
+                  <div class="post-edit-attachments-bulk-actions">
+                    <button type="button" class="btn btn-link btn--ghost" data-post-edit-attachment-bulk="all">All</button>
+                    <button type="button" class="btn btn-link btn--ghost" data-post-edit-attachment-bulk="none">None</button>
+                  </div>
+                </div>
+              {% endif %}
+            </div>
+            {% if tracked_attachments %}
+              <ul class="post-edit-attachment-list">
+                {% for file in tracked_attachments %}
+                  {{ render_attachment_item(file, active_version, post) }}
+                {% endfor %}
+              </ul>
+              <p class="post-edit-attachments-group-empty" data-post-edit-filter-empty hidden>No files match this filter.</p>
+            {% else %}
+              <p class="post-edit-attachments-group-empty">No files currently in this version.</p>
+            {% endif %}
+          </div>
+
+          {% if source_attachments %}
+            <div class="post-edit-attachments-group" data-post-edit-attachment-group>
+              <div class="post-edit-attachments-group-head">
+                <div>
+                  <h3>Available From Source</h3>
+                  <small>Not included unless you check <strong>Add file</strong>.</small>
+                </div>
+                <div class="post-edit-attachments-group-tools">
+                  <input
+                    class="field post-edit-attachments-filter-field"
+                    type="search"
+                    placeholder="Filter files"
+                    aria-label="Filter files available from source"
+                    data-post-edit-attachment-filter
+                  >
+                  <div class="post-edit-attachments-bulk-actions">
+                    <button type="button" class="btn btn-link btn--ghost" data-post-edit-attachment-bulk="all">All</button>
+                    <button type="button" class="btn btn-link btn--ghost" data-post-edit-attachment-bulk="none">None</button>
+                  </div>
+                </div>
+              </div>
+              <ul class="post-edit-attachment-list">
+                {% for file in source_attachments %}
+                  {{ render_attachment_item(file, active_version, post) }}
+                {% endfor %}
+              </ul>
+              <p class="post-edit-attachments-group-empty" data-post-edit-filter-empty hidden>No files match this filter.</p>
+            </div>
+          {% endif %}
+        {% else %}
+          <p>No attachments saved for this version.</p>
+        {% endif %}
+      </section>
     </div>
 
-    {% if source_attachments %}
-      <div class="post-edit-attachments-group">
-        <div class="post-edit-attachments-group-head">
-          <h3>Available From Source</h3>
-          <small>Not included unless you check <strong>Add to version</strong>.</small>
+    <aside class="post-edit-rail" aria-label="Post edit workflow">
+      <section class="panel post-edit-rail-panel post-edit-workflow-rail" data-post-edit-workflow-rail>
+        <h2>Workflow</h2>
+        <p class="post-edit-workflow-rail-hint">Use Ctrl/Cmd+S to save quickly.</p>
+        <nav class="post-edit-rail-jumps" aria-label="Jump to edit sections">
+          <a class="chip chip-link post-edit-rail-jump" href="#post-edit-section-metadata" data-post-edit-jump>Metadata</a>
+          <a class="chip chip-link post-edit-rail-jump" href="#post-edit-section-organization" data-post-edit-jump>Organization</a>
+          <a class="chip chip-link post-edit-rail-jump" href="#post-edit-section-content" data-post-edit-jump>Content</a>
+          <a class="chip chip-link post-edit-rail-jump" href="#post-edit-section-attachments" data-post-edit-jump>Attachments</a>
+        </nav>
+      </section>
+
+      <section class="panel post-edit-rail-panel">
+        <h2>Active Version</h2>
+        <form method="get" action="{{ url_for('edit_post', post_id=post['id']) }}" class="form post-edit-version-switch" data-nav-replace-redirect>
+          <label class="field-label" for="active-version">Select version</label>
+          <select class="field" id="active-version" name="version_id" onchange="if (this.form.requestSubmit) { this.form.requestSubmit(); } else { this.form.submit(); }">
+            {% for version in versions %}
+              <option value="{{ version['id'] }}" {% if version['id'] == active_version['id'] %}selected{% endif %}>
+                {{ version['label'] }}{% if version['language'] %} ({{ version['language'] }}){% endif %}{% if version['is_default'] %} [default]{% endif %}
+              </option>
+            {% endfor %}
+          </select>
+        </form>
+      </section>
+
+      <section class="panel post-edit-tools post-edit-rail-panel">
+        <h2>Version Tools</h2>
+        <div class="post-edit-tool-row">
+          <a
+            class="btn btn-link btn--ghost"
+            href="{{ url_for('import_form', creator_id=post['creator_id'], series_id=post['series_id'], import_target_mode='existing', target_post_id=post['id'], force_target_post_version='1', overwrite_matching_version='0', set_as_default='0', version_label='Imported version', version_language='') }}"
+            data-nav-replace-href
+          >Import new version</a>
+          {% if active_version['origin_kind'] == 'source' and active_version['source_url'] %}
+            <a
+              class="btn btn-link btn--ghost"
+              href="{{ url_for('import_form', url=active_version['source_url'], creator_id=post['creator_id'], series_id=post['series_id'], import_target_mode='existing', target_post_id=post['id'], force_overwrite_matching_version='1', overwrite_matching_version='1', set_as_default='1' if active_version['is_default'] else '0', version_label=active_version['label'], version_language=active_version['language'] or '') }}"
+              data-nav-replace-href
+            >Reimport and overwrite this version</a>
+          {% endif %}
+          <form method="post" action="{{ url_for('clone_post_version', post_id=post['id']) }}" class="inline-form" data-nav-replace-redirect>
+            <input type="hidden" name="source_version_id" value="{{ active_version['id'] }}">
+            <input type="hidden" name="set_as_default" value="0">
+            <input type="hidden" name="version_label" value="Manual translation">
+            <input type="hidden" name="version_language" value="">
+            <button type="submit" class="btn btn--ghost">Clone as manual version</button>
+          </form>
+          {% if not active_version['is_default'] %}
+            <form method="post" action="{{ url_for('set_default_post_version', post_id=post['id'], version_id=active_version['id']) }}" class="inline-form" data-nav-replace-redirect>
+              <button type="submit" class="btn btn--ghost">Set as default</button>
+            </form>
+          {% endif %}
+          {% if versions|length > 1 %}
+            <form method="post" action="{{ url_for('delete_post_version', post_id=post['id'], version_id=active_version['id']) }}" class="inline-form" onsubmit="return confirm('Delete this version?');" data-nav-replace-redirect>
+              <button type="submit" class="btn btn--ghost btn--danger-quiet">Delete version</button>
+            </form>
+          {% endif %}
         </div>
-        <ul class="post-edit-attachment-list">
-          {% for file in source_attachments %}
-            {{ render_attachment_item(file, active_version, post) }}
-          {% endfor %}
-        </ul>
-      </div>
-    {% endif %}
-  {% else %}
-    <p>No attachments saved for this version.</p>
-  {% endif %}
-</section>
-<div class="post-edit-floating-actions" aria-label="Post edit quick actions">
-  <a
-    class="btn btn-link btn--ghost"
-    href="{{ url_for('post_detail', post_id=post['id']) if active_version['is_default'] else url_for('post_detail', post_id=post['id'], version_id=active_version['id']) }}"
-    data-nav-replace-href
-  >Back to post</a>
-  <button type="submit" form="post-edit-main-form">Save Changes</button>
-</div>
-<div class="post-edit-lightbox" data-post-edit-lightbox hidden>
-  <button
-    type="button"
-    class="post-edit-lightbox-backdrop"
-    data-lightbox-close
-    aria-label="Close image preview"
-  ></button>
-  <figure class="post-edit-lightbox-dialog" role="dialog" aria-modal="true" aria-label="Attachment image preview">
-    <div class="post-lightbox-actions">
-      <a href="#" target="_blank" rel="noopener noreferrer" class="btn btn-link btn--ghost" data-lightbox-open-tab>Open in new tab</a>
-      <button type="button" class="post-lightbox-close btn btn-link btn--ghost" data-lightbox-close aria-label="Close image preview">Close</button>
+      </section>
+
+      <section class="panel post-edit-danger post-edit-rail-panel">
+        <details>
+          <summary>Danger zone</summary>
+          <p>Delete the entire post and all saved files from your local library.</p>
+          <form method="post" action="{{ url_for('delete_post', post_id=post['id']) }}" class="inline-form" onsubmit="return confirm('Delete this post from your local library?');">
+            <button type="submit" class="btn btn--ghost btn--danger-quiet">Delete post</button>
+          </form>
+        </details>
+      </section>
+    </aside>
+  </div>
+
+  <div class="post-edit-workflow-bar" data-post-edit-workflow-bar aria-label="Post edit quick actions">
+    <div class="post-edit-workflow-status-wrap">
+      <span class="post-edit-workflow-status-label">Status</span>
+      <span class="post-edit-workflow-status" role="status" aria-live="polite" data-post-edit-save-state data-save-state="saved">Saved</span>
     </div>
-    <img src="" alt="" data-lightbox-image-target>
-    <figcaption data-lightbox-caption data-middle-ellipsis></figcaption>
-  </figure>
-</div>
+    <div class="post-edit-workflow-actions">
+      <a class="btn btn-link btn--ghost" href="{{ detail_href }}" data-nav-replace-href>Back to post</a>
+      <button type="submit" form="post-edit-main-form" data-post-edit-primary-save>Save Changes</button>
+    </div>
+  </div>
+
+  <div class="post-edit-lightbox" data-post-edit-lightbox hidden>
+    <button
+      type="button"
+      class="post-edit-lightbox-backdrop"
+      data-lightbox-close
+      aria-label="Close image preview"
+    ></button>
+    <figure class="post-edit-lightbox-dialog" role="dialog" aria-modal="true" aria-label="Attachment image preview">
+      <div class="post-lightbox-actions">
+        <a href="#" target="_blank" rel="noopener noreferrer" class="btn btn-link btn--ghost" data-lightbox-open-tab>Open in new tab</a>
+        <button type="button" class="post-lightbox-close btn btn-link btn--ghost" data-lightbox-close aria-label="Close image preview">Close</button>
+      </div>
+      <img src="" alt="" data-lightbox-image-target>
+      <figcaption data-lightbox-caption data-middle-ellipsis></figcaption>
+    </figure>
+  </div>
 </div>
 <script src="{{ url_for('static', filename='post_edit.js') }}"></script>
 {% endblock %}

@@ -475,3 +475,368 @@
     applyMiddleEllipsis(captionTarget);
   });
 })();
+
+(() => {
+  const page = document.querySelector("[data-post-edit-page]");
+  const form = document.getElementById("post-edit-main-form");
+  if (!(page instanceof HTMLElement) || !(form instanceof HTMLFormElement)) {
+    return;
+  }
+
+  const statusNodes = Array.from(document.querySelectorAll("[data-post-edit-save-state]")).filter(
+    (node) => node instanceof HTMLElement
+  );
+  const primarySaveButton = document.querySelector("[data-post-edit-primary-save]");
+  const contentField = document.getElementById("content");
+  const previewToggle = document.querySelector("[data-post-edit-preview-toggle]");
+  const previewRoot = document.querySelector("[data-post-edit-preview]");
+  const previewFrame = document.querySelector("[data-post-edit-preview-frame]");
+  const sectionJumpLinks = Array.from(document.querySelectorAll("[data-post-edit-jump]")).filter(
+    (node) => node instanceof HTMLAnchorElement
+  );
+
+  const formControlSet = new Set();
+  Array.from(form.querySelectorAll("input, textarea, select")).forEach((node) => {
+    if (node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement || node instanceof HTMLSelectElement) {
+      formControlSet.add(node);
+    }
+  });
+  const externalControls = Array.from(
+    document.querySelectorAll("input[form='post-edit-main-form'], textarea[form='post-edit-main-form'], select[form='post-edit-main-form']")
+  );
+  externalControls.forEach((node) => {
+    if (node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement || node instanceof HTMLSelectElement) {
+      formControlSet.add(node);
+    }
+  });
+  const trackedControls = Array.from(formControlSet);
+  if (!trackedControls.length) {
+    return;
+  }
+
+  const baseValues = new Map();
+  const confirmLeaveMessage = "You have unsaved changes. Leave without saving?";
+  let dirty = false;
+  let saving = false;
+  let navigationBypass = false;
+  let bypassTimeout = null;
+  let previewVisible = false;
+  let previewDebounce = null;
+
+  const setSaveState = (state) => {
+    const normalized = state === "saving" || state === "dirty" ? state : "saved";
+    const text = normalized === "saving" ? "Saving..." : normalized === "dirty" ? "Unsaved changes" : "Saved";
+    statusNodes.forEach((node) => {
+      if (!(node instanceof HTMLElement)) {
+        return;
+      }
+      node.dataset.saveState = normalized;
+      node.textContent = text;
+    });
+  };
+
+  const clearNavigationBypassSoon = () => {
+    if (bypassTimeout !== null) {
+      window.clearTimeout(bypassTimeout);
+    }
+    bypassTimeout = window.setTimeout(() => {
+      bypassTimeout = null;
+      navigationBypass = false;
+      if (saving) {
+        saving = false;
+        setSaveState(dirty ? "dirty" : "saved");
+      }
+    }, 5000);
+  };
+
+  const markNavigationBypass = () => {
+    navigationBypass = true;
+    clearNavigationBypassSoon();
+  };
+
+  const getControlValue = (control) => {
+    if (control instanceof HTMLInputElement) {
+      const type = control.type.toLowerCase();
+      if (type === "checkbox" || type === "radio") {
+        return control.checked ? "1" : "0";
+      }
+      return control.value;
+    }
+    if (control instanceof HTMLTextAreaElement) {
+      return control.value;
+    }
+    if (control instanceof HTMLSelectElement) {
+      if (control.multiple) {
+        return Array.from(control.selectedOptions)
+          .map((option) => option.value)
+          .join("\u001f");
+      }
+      return control.value;
+    }
+    return "";
+  };
+
+  trackedControls.forEach((control) => {
+    baseValues.set(control, getControlValue(control));
+  });
+
+  const recomputeDirty = () => {
+    dirty = trackedControls.some((control) => baseValues.get(control) !== getControlValue(control));
+    if (!saving) {
+      setSaveState(dirty ? "dirty" : "saved");
+    }
+  };
+
+  const attachDirtyListeners = () => {
+    const onControlChange = () => {
+      if (!saving && navigationBypass) {
+        navigationBypass = false;
+      }
+      recomputeDirty();
+    };
+    trackedControls.forEach((control) => {
+      control.addEventListener("input", onControlChange);
+      control.addEventListener("change", onControlChange);
+    });
+  };
+
+  const maybeWarnBeforeLeaving = () => {
+    if (!dirty || navigationBypass || saving) {
+      return true;
+    }
+    return window.confirm(confirmLeaveMessage);
+  };
+
+  form.addEventListener("submit", () => {
+    saving = true;
+    setSaveState("saving");
+    markNavigationBypass();
+  });
+
+  document.addEventListener(
+    "submit",
+    (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLFormElement) || target === form) {
+        return;
+      }
+      if (maybeWarnBeforeLeaving()) {
+        markNavigationBypass();
+        return;
+      }
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    },
+    true
+  );
+
+  document.addEventListener(
+    "click",
+    (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+      const link = target.closest("a[href]");
+      if (!(link instanceof HTMLAnchorElement)) {
+        return;
+      }
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+        return;
+      }
+      if (link.target && link.target !== "_self") {
+        return;
+      }
+      const rawHref = link.getAttribute("href") || "";
+      if (!rawHref || rawHref.startsWith("#") || link.hasAttribute("download")) {
+        return;
+      }
+      if (!maybeWarnBeforeLeaving()) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
+      markNavigationBypass();
+    },
+    true
+  );
+
+  window.addEventListener("beforeunload", (event) => {
+    if (!dirty || navigationBypass || saving) {
+      return;
+    }
+    event.preventDefault();
+    event.returnValue = "";
+  });
+
+  window.addEventListener("keydown", (event) => {
+    const key = typeof event.key === "string" ? event.key.toLowerCase() : "";
+    if ((event.ctrlKey || event.metaKey) && key === "s") {
+      event.preventDefault();
+      if (typeof form.requestSubmit === "function") {
+        if (primarySaveButton instanceof HTMLButtonElement) {
+          form.requestSubmit(primarySaveButton);
+          return;
+        }
+        form.requestSubmit();
+        return;
+      }
+      form.submit();
+    }
+  });
+
+  const escapeHtml = (value) =>
+    value
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+
+  const renderPreview = () => {
+    if (!(contentField instanceof HTMLTextAreaElement) || !(previewFrame instanceof HTMLIFrameElement) || !previewVisible) {
+      return;
+    }
+    const raw = contentField.value || "";
+    const looksLikeHtml = /<[a-z!/?][\s\S]*>/i.test(raw);
+    const bodyMarkup = looksLikeHtml ? raw : `<pre>${escapeHtml(raw)}</pre>`;
+    const doc = [
+      "<!doctype html>",
+      "<html lang='en'>",
+      "<head>",
+      "<meta charset='utf-8'>",
+      "<meta name='viewport' content='width=device-width, initial-scale=1'>",
+      "<style>",
+      "body{margin:0;padding:1rem 1.1rem;font-family:Georgia,'Times New Roman',serif;line-height:1.62;color:#1f1b17;background:#f4f2ef;}",
+      "img,video,iframe{max-width:100%;height:auto;}",
+      "pre{white-space:pre-wrap;word-break:break-word;font-family:'Cascadia Mono','Consolas',monospace;background:#ece6de;padding:0.78rem;border-radius:0.55rem;}",
+      "a{color:#5f3f1f;}",
+      "</style>",
+      "</head>",
+      "<body>",
+      bodyMarkup,
+      "</body>",
+      "</html>",
+    ].join("");
+    previewFrame.srcdoc = doc;
+  };
+
+  const schedulePreviewRender = () => {
+    if (previewDebounce !== null) {
+      window.clearTimeout(previewDebounce);
+    }
+    previewDebounce = window.setTimeout(() => {
+      previewDebounce = null;
+      renderPreview();
+    }, 170);
+  };
+
+  const syncPreviewToggle = () => {
+    if (!(previewToggle instanceof HTMLButtonElement) || !(previewRoot instanceof HTMLElement)) {
+      return;
+    }
+    previewRoot.hidden = !previewVisible;
+    previewToggle.setAttribute("aria-expanded", previewVisible ? "true" : "false");
+    previewToggle.textContent = previewVisible ? "Hide preview" : "Show preview";
+  };
+
+  if (previewToggle instanceof HTMLButtonElement && previewRoot instanceof HTMLElement) {
+    previewToggle.addEventListener("click", () => {
+      previewVisible = !previewVisible;
+      syncPreviewToggle();
+      if (previewVisible) {
+        renderPreview();
+      }
+    });
+    if (contentField instanceof HTMLTextAreaElement) {
+      contentField.addEventListener("input", schedulePreviewRender);
+    }
+    syncPreviewToggle();
+  }
+
+  sectionJumpLinks.forEach((jumpLink) => {
+    jumpLink.addEventListener("click", (event) => {
+      const targetId = jumpLink.getAttribute("href") || "";
+      if (!targetId.startsWith("#")) {
+        return;
+      }
+      const section = document.querySelector(targetId);
+      if (!(section instanceof HTMLElement)) {
+        return;
+      }
+      event.preventDefault();
+      section.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
+
+  const attachmentGroups = Array.from(document.querySelectorAll("[data-post-edit-attachment-group]")).filter(
+    (node) => node instanceof HTMLElement
+  );
+  attachmentGroups.forEach((groupNode) => {
+    if (!(groupNode instanceof HTMLElement)) {
+      return;
+    }
+    const items = Array.from(groupNode.querySelectorAll("[data-post-edit-attachment-item]")).filter(
+      (node) => node instanceof HTMLElement
+    );
+    if (!items.length) {
+      return;
+    }
+    const filterInput = groupNode.querySelector("[data-post-edit-attachment-filter]");
+    const bulkButtons = Array.from(groupNode.querySelectorAll("[data-post-edit-attachment-bulk]")).filter(
+      (node) => node instanceof HTMLButtonElement
+    );
+    const emptyNote = groupNode.querySelector("[data-post-edit-filter-empty]");
+
+    const applyFilter = () => {
+      const rawQuery =
+        filterInput instanceof HTMLInputElement || filterInput instanceof HTMLTextAreaElement ? filterInput.value : "";
+      const query = rawQuery.trim().toLowerCase();
+      let visibleCount = 0;
+      items.forEach((itemNode) => {
+        if (!(itemNode instanceof HTMLElement)) {
+          return;
+        }
+        const haystack = (itemNode.dataset.attachmentSearch || itemNode.textContent || "").toLowerCase();
+        const visible = !query || haystack.includes(query);
+        itemNode.hidden = !visible;
+        if (visible) {
+          visibleCount += 1;
+        }
+      });
+      if (emptyNote instanceof HTMLElement) {
+        emptyNote.hidden = visibleCount !== 0;
+      }
+    };
+
+    if (filterInput instanceof HTMLInputElement || filterInput instanceof HTMLTextAreaElement) {
+      filterInput.addEventListener("input", applyFilter);
+    }
+
+    bulkButtons.forEach((buttonNode) => {
+      buttonNode.addEventListener("click", () => {
+        const mode = buttonNode.dataset.postEditAttachmentBulk;
+        const nextChecked = mode === "all";
+        items.forEach((itemNode) => {
+          if (!(itemNode instanceof HTMLElement) || itemNode.hidden) {
+            return;
+          }
+          const toggle = itemNode.querySelector("[data-post-edit-attachment-toggle]");
+          if (!(toggle instanceof HTMLInputElement) || toggle.type.toLowerCase() !== "checkbox") {
+            return;
+          }
+          if (toggle.checked === nextChecked) {
+            return;
+          }
+          toggle.checked = nextChecked;
+          toggle.dispatchEvent(new Event("change", { bubbles: true }));
+        });
+      });
+    });
+
+    applyFilter();
+  });
+
+  attachDirtyListeners();
+  recomputeDirty();
+})();

@@ -2437,6 +2437,8 @@ def create_app(test_config: dict | None = None) -> Flask:
             thumbnail_focus_x=thumbnail_focus_x,
             thumbnail_focus_y=thumbnail_focus_y,
             header_context=header_context,
+            main_class="is-post-edit-layout",
+            body_class="is-post-edit-page",
             title=_build_page_title(post_title, "Edit Post"),
         )
 

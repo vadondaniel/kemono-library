@@ -555,6 +555,12 @@ p:last-child {
   padding: 0;
 }
 
+.container.is-post-edit-layout {
+  max-width: none;
+  margin: 0;
+  padding: 0 0.8rem 6.4rem;
+}
+
 .panel {
   background: var(--card);
   border: 1px solid var(--border);
@@ -3257,15 +3263,44 @@ button:disabled,
 }
 
 .post-edit-shell {
+  margin-bottom: 0;
   background:
     radial-gradient(560px 220px at 96% -16%, color-mix(in srgb, var(--accent-soft) 58%, transparent), transparent 72%),
     var(--card);
 }
 
+.post-edit-page {
+  padding: 0.14rem 0 0.95rem;
+}
+
+.post-edit-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(286px, 338px);
+  gap: var(--space-xl);
+  align-items: start;
+}
+
+.post-edit-main {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-lg);
+}
+
+.post-edit-rail {
+  position: sticky;
+  top: 0.85rem;
+  align-self: start;
+  display: grid;
+  gap: var(--space-lg);
+}
+
+.post-edit-rail-panel {
+  margin-bottom: 0;
+}
+
 .post-edit-head {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
-  gap: var(--space-2xl);
+  gap: var(--space-lg);
   align-items: start;
 }
 
@@ -3291,10 +3326,10 @@ button:disabled,
   color: inherit;
 }
 
-.post-edit-head-tools {
+.post-edit-form {
+  margin-top: 0.35rem;
   display: grid;
-  gap: var(--space-lg);
-  justify-items: stretch;
+  gap: var(--space-xl);
 }
 
 .post-edit-version-switch {
@@ -3302,14 +3337,32 @@ button:disabled,
   gap: var(--space-sm);
 }
 
-.post-edit-form {
-  margin-top: 0.9rem;
-  display: grid;
-  gap: var(--space-xl);
+.post-edit-version-switch .field {
+  min-height: 2.25rem;
 }
 
-.post-edit-page {
-  padding-bottom: 5.5rem;
+.post-edit-workflow-rail h2 {
+  margin-bottom: 0.35rem;
+}
+
+.post-edit-workflow-rail-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.83rem;
+}
+
+.post-edit-rail-jumps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.post-edit-rail-jump {
+  font-size: 0.78rem;
+}
+
+.post-edit-rail-jump:focus-visible {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
 .post-edit-block {
@@ -3324,6 +3377,29 @@ button:disabled,
 .post-edit-block h2 {
   margin: 0 0 0.12rem;
   font-size: 1.08rem;
+}
+
+.post-edit-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.post-edit-content-preview {
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: color-mix(in srgb, var(--card-solid) 94%, transparent);
+}
+
+.post-edit-content-preview-frame {
+  width: 100%;
+  min-height: 360px;
+  border: 0;
+  display: block;
+  background: color-mix(in srgb, var(--card-solid) 96%, transparent);
 }
 
 .post-edit-field-row {
@@ -3398,25 +3474,61 @@ button:disabled,
 }
 
 .post-edit-tools h2,
-.post-edit-attachments h2 {
+.post-edit-attachments h2,
+.post-edit-rail-panel h2 {
   margin-bottom: 0.7rem;
 }
 
-.post-edit-floating-actions {
+.post-edit-workflow-bar {
   position: fixed;
-  left: 50%;
-  transform: translateX(-50%);
-  bottom: 0.85rem;
-  width: min(980px, calc(100vw - 1.4rem));
+  left: 0.8rem;
+  right: 0.8rem;
+  bottom: 0.64rem;
   z-index: var(--z-floating-toolbar);
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
   gap: var(--space-md);
-  padding: 0.45rem;
+  padding: 0.5rem 0.62rem;
   border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
   border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--card-solid) 90%, transparent);
+  background: color-mix(in srgb, var(--card-solid) 94%, transparent);
   backdrop-filter: blur(6px);
+}
+
+.post-edit-workflow-status-wrap {
+  display: inline-flex;
+  gap: var(--space-sm);
+  align-items: baseline;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.post-edit-workflow-status-label {
+  color: var(--muted);
+  font-size: 0.79rem;
+}
+
+.post-edit-workflow-status {
+  font-weight: 650;
+  font-size: 0.9rem;
+  color: color-mix(in srgb, var(--accent) 78%, var(--text));
+}
+
+.post-edit-workflow-status[data-save-state="dirty"] {
+  color: color-mix(in srgb, var(--warning-accent) 88%, var(--text));
+}
+
+.post-edit-workflow-status[data-save-state="saving"] {
+  color: color-mix(in srgb, var(--accent) 62%, var(--text));
+}
+
+.post-edit-workflow-actions {
+  display: inline-flex;
+  gap: var(--space-sm);
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
 }
 
 .post-edit-lightbox,
@@ -3584,11 +3696,10 @@ body.is-busy-overlay-open {
 }
 
 .post-edit-attachments-group-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
   gap: var(--space-lg);
-  flex-wrap: wrap;
 }
 
 .post-edit-attachments-group-head h3 {
@@ -3598,6 +3709,24 @@ body.is-busy-overlay-open {
 
 .post-edit-attachments-group-head small {
   color: var(--muted);
+}
+
+.post-edit-attachments-group-tools {
+  display: inline-flex;
+  gap: var(--space-sm);
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.post-edit-attachments-filter-field {
+  min-width: 12rem;
+  width: min(16rem, 60vw);
+}
+
+.post-edit-attachments-bulk-actions {
+  display: inline-flex;
+  gap: var(--space-xs);
 }
 
 .post-edit-attachments-group-empty {
@@ -5380,33 +5509,55 @@ body.is-gallery-picker-open {
     align-items: stretch;
   }
 
-  .post-edit-head {
-    grid-template-columns: 1fr;
-  }
-
   .post-edit-field-row {
     grid-template-columns: 1fr;
   }
 
-  .post-edit-page {
-    padding-bottom: 6.4rem;
+  .container.is-post-edit-layout {
+    padding: 0 0.5rem 8rem;
   }
 
-  .post-edit-floating-actions {
-    width: calc(100vw - 1rem);
+  .post-edit-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .post-edit-rail {
+    position: static;
+  }
+
+  .post-edit-attachments-group-head {
+    grid-template-columns: 1fr;
+    align-items: start;
+    gap: var(--space-sm);
+  }
+
+  .post-edit-attachments-group-tools {
+    justify-content: flex-start;
+  }
+
+  .post-edit-attachments-filter-field {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .post-edit-workflow-bar {
+    left: 0.5rem;
+    right: 0.5rem;
     bottom: 0.5rem;
     gap: var(--space-sm);
-    padding: 0.42rem;
+    padding: 0.46rem;
+    flex-direction: column;
+    align-items: stretch;
   }
 
-  .post-edit-floating-actions .btn,
-  .post-edit-floating-actions button {
+  .post-edit-workflow-actions {
+    justify-content: stretch;
+  }
+
+  .post-edit-workflow-actions .btn,
+  .post-edit-workflow-actions button {
     flex: 1;
     text-align: center;
-  }
-
-  .post-edit-attachment-item {
-    grid-template-columns: 1fr;
   }
 
   .post-edit-attachment-actions {
