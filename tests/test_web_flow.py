@@ -5032,6 +5032,111 @@ def test_series_settings_apply_default_sort_and_cover_source(tmp_path):
     assert folder_override_html.index("Zeta Post") < folder_override_html.index("Alpha Post")
 
 
+def test_series_thumbnail_source_supports_auto_first_and_skips_posts_without_thumbnail(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+
+    creator_id = db.create_creator("Series Thumbnail Source Creator")
+    series_id = db.create_series(creator_id, "Main Arc")
+
+    first_thumb_post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=series_id,
+        service="fanbox",
+        external_user_id="user-1",
+        external_post_id="501",
+        title="First Thumbnail Post",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/user-1/post/501",
+        thumbnail_local_path="post_501/first.jpg",
+        published_at="2025-01-01T00:00:00",
+    )
+    latest_thumb_post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=series_id,
+        service="fanbox",
+        external_user_id="user-1",
+        external_post_id="502",
+        title="Latest Thumbnail Post",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/user-1/post/502",
+        thumbnail_local_path="post_502/latest.jpg",
+        published_at="2025-01-03T00:00:00",
+    )
+    no_thumb_post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=series_id,
+        service="fanbox",
+        external_user_id="user-1",
+        external_post_id="503",
+        title="No Thumbnail Post",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/user-1/post/503",
+        published_at="2025-01-04T00:00:00",
+    )
+
+    client = app.test_client()
+    detail_view = client.get(f"/creators/{creator_id}?series_id={series_id}")
+    assert detail_view.status_code == 200
+    soup = BeautifulSoup(detail_view.data, "html.parser")
+    cover_select = soup.find("select", {"id": "series-cover-post"})
+    assert cover_select is not None
+    option_values = {option.get("value") for option in cover_select.find_all("option")}
+    assert "__latest__" in option_values
+    assert "__first__" in option_values
+    assert str(first_thumb_post_id) in option_values
+    assert str(latest_thumb_post_id) in option_values
+    assert str(no_thumb_post_id) not in option_values
+    assert any("Dynamic:" in (group.get("label") or "") for group in cover_select.find_all("optgroup"))
+
+    auto_first = client.post(
+        f"/creators/{creator_id}/series/{series_id}",
+        data={
+            "name": "Main Arc",
+            "description": "",
+            "tags_text": "",
+            "default_sort_by": "published",
+            "default_sort_direction": "desc",
+            "cover_post_id": "__first__",
+        },
+        follow_redirects=False,
+    )
+    assert auto_first.status_code == 302
+
+    series_row = next(row for row in db.list_series(creator_id) if int(row["id"]) == series_id)
+    assert int(series_row["cover_post_id"]) == LibraryDB.SERIES_COVER_POST_AUTO_FIRST
+    assert series_row["cover_thumbnail_local_path"] == "post_501/first.jpg"
+
+    auto_latest = client.post(
+        f"/creators/{creator_id}/series/{series_id}",
+        data={
+            "name": "Main Arc",
+            "description": "",
+            "tags_text": "",
+            "default_sort_by": "published",
+            "default_sort_direction": "desc",
+            "cover_post_id": "__latest__",
+        },
+        follow_redirects=False,
+    )
+    assert auto_latest.status_code == 302
+
+    series_row = next(row for row in db.list_series(creator_id) if int(row["id"]) == series_id)
+    assert series_row["cover_post_id"] is None
+    assert series_row["cover_thumbnail_local_path"] == "post_502/latest.jpg"
+
+
 def test_creator_import_context_and_series_folder_metadata_mode(tmp_path):
     app = create_app(
         {

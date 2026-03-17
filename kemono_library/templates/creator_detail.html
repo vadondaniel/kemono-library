@@ -112,12 +112,19 @@
                 </div>
                 <label class="field-label field-label--subtle" for="series-cover-post">Folder thumbnail source</label>
                 <select class="field" id="series-cover-post" name="cover_post_id">
-                  <option value="">Automatic (latest post)</option>
-                  {% for option in series_thumbnail_options %}
-                    <option value="{{ option['id'] }}" {% if selected_series['cover_post_id'] and selected_series['cover_post_id'] == option['id'] %}selected{% endif %}>
-                      {{ option['title'] }}{% if option['published_at'] %} ({{ option['published_at']|format_datetime }}){% endif %}
-                    </option>
-                  {% endfor %}
+                  <optgroup label="Automatic">
+                    <option value="__latest__" {% if selected_series_cover_choice == '__latest__' %}selected{% endif %}>Latest</option>
+                    <option value="__first__" {% if selected_series_cover_choice == '__first__' %}selected{% endif %}>First</option>
+                  </optgroup>
+                  {% if series_thumbnail_options %}
+                    <optgroup label="Current list">
+                      {% for option in series_thumbnail_options %}
+                        <option value="{{ option['id'] }}" {% if selected_series_cover_choice == (option['id'] ~ '') %}selected{% endif %}>
+                          {{ option['title'] }}{% if option['published_at'] %} ({{ option['published_at']|format_datetime }}){% endif %}
+                        </option>
+                      {% endfor %}
+                    </optgroup>
+                  {% endif %}
                 </select>
                 <div class="series-edit-actions">
                   <button type="submit">Save metadata</button>

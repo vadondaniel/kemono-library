@@ -12,6 +12,7 @@ class LibraryDB:
     VERSION_ORIGIN_SOURCE = "source"
     VERSION_ORIGIN_CLONE = "clone"
     VERSION_ORIGIN_MANUAL = "manual"
+    SERIES_COVER_POST_AUTO_FIRST = -2
     VERSION_ORIGIN_KINDS = {
         VERSION_ORIGIN_SOURCE,
         VERSION_ORIGIN_CLONE,
@@ -340,8 +341,23 @@ class LibraryDB:
 
     def list_series(self, creator_id: int) -> list[sqlite3.Row]:
         with self._connect() as conn:
+            first_cover_sentinel = int(self.SERIES_COVER_POST_AUTO_FIRST)
+            thumbnail_available_sql = (
+                "(p.thumbnail_local_path IS NOT NULL AND TRIM(p.thumbnail_local_path) <> '') "
+                "OR (p.thumbnail_remote_url IS NOT NULL AND TRIM(p.thumbnail_remote_url) <> '')"
+            )
+            fallback_cover_order_latest_sql = (
+                "CASE WHEN p.published_at IS NULL OR p.published_at = '' THEN 1 ELSE 0 END ASC, "
+                "p.published_at DESC, "
+                "p.id DESC"
+            )
+            fallback_cover_order_first_sql = (
+                "CASE WHEN p.published_at IS NULL OR p.published_at = '' THEN 1 ELSE 0 END ASC, "
+                "p.published_at ASC, "
+                "p.id ASC"
+            )
             rows = conn.execute(
-                """
+                f"""
                 SELECT s.*,
                        (SELECT COUNT(*) FROM posts p WHERE p.series_id = s.id) AS post_count,
                        COALESCE(
@@ -351,16 +367,25 @@ class LibraryDB:
                                WHERE p.id = s.cover_post_id AND p.series_id = s.id
                                LIMIT 1
                            ),
-                           (
-                               SELECT p.thumbnail_local_path
-                               FROM posts p
-                               WHERE p.series_id = s.id
-                               ORDER BY
-                                   CASE WHEN p.published_at IS NULL OR p.published_at = '' THEN 1 ELSE 0 END ASC,
-                                   p.published_at DESC,
-                                   p.id DESC
-                               LIMIT 1
-                           )
+                           CASE
+                               WHEN s.cover_post_id = {first_cover_sentinel}
+                               THEN (
+                                   SELECT p.thumbnail_local_path
+                                   FROM posts p
+                                   WHERE p.series_id = s.id
+                                     AND ({thumbnail_available_sql})
+                                   ORDER BY {fallback_cover_order_first_sql}
+                                   LIMIT 1
+                               )
+                               ELSE (
+                                   SELECT p.thumbnail_local_path
+                                   FROM posts p
+                                   WHERE p.series_id = s.id
+                                     AND ({thumbnail_available_sql})
+                                   ORDER BY {fallback_cover_order_latest_sql}
+                                   LIMIT 1
+                               )
+                           END
                        ) AS cover_thumbnail_local_path,
                        COALESCE(
                            (
@@ -369,16 +394,25 @@ class LibraryDB:
                                WHERE p.id = s.cover_post_id AND p.series_id = s.id
                                LIMIT 1
                            ),
-                           (
-                               SELECT p.thumbnail_remote_url
-                               FROM posts p
-                               WHERE p.series_id = s.id
-                               ORDER BY
-                                   CASE WHEN p.published_at IS NULL OR p.published_at = '' THEN 1 ELSE 0 END ASC,
-                                   p.published_at DESC,
-                                   p.id DESC
-                               LIMIT 1
-                           )
+                           CASE
+                               WHEN s.cover_post_id = {first_cover_sentinel}
+                               THEN (
+                                   SELECT p.thumbnail_remote_url
+                                   FROM posts p
+                                   WHERE p.series_id = s.id
+                                     AND ({thumbnail_available_sql})
+                                   ORDER BY {fallback_cover_order_first_sql}
+                                   LIMIT 1
+                               )
+                               ELSE (
+                                   SELECT p.thumbnail_remote_url
+                                   FROM posts p
+                                   WHERE p.series_id = s.id
+                                     AND ({thumbnail_available_sql})
+                                   ORDER BY {fallback_cover_order_latest_sql}
+                                   LIMIT 1
+                               )
+                           END
                        ) AS cover_thumbnail_remote_url,
                        COALESCE(
                            (
@@ -387,16 +421,25 @@ class LibraryDB:
                                WHERE p.id = s.cover_post_id AND p.series_id = s.id
                                LIMIT 1
                            ),
-                           (
-                               SELECT p.metadata_json
-                               FROM posts p
-                               WHERE p.series_id = s.id
-                               ORDER BY
-                                   CASE WHEN p.published_at IS NULL OR p.published_at = '' THEN 1 ELSE 0 END ASC,
-                                   p.published_at DESC,
-                                   p.id DESC
-                               LIMIT 1
-                           )
+                           CASE
+                               WHEN s.cover_post_id = {first_cover_sentinel}
+                               THEN (
+                                   SELECT p.metadata_json
+                                   FROM posts p
+                                   WHERE p.series_id = s.id
+                                     AND ({thumbnail_available_sql})
+                                   ORDER BY {fallback_cover_order_first_sql}
+                                   LIMIT 1
+                               )
+                               ELSE (
+                                   SELECT p.metadata_json
+                                   FROM posts p
+                                   WHERE p.series_id = s.id
+                                     AND ({thumbnail_available_sql})
+                                   ORDER BY {fallback_cover_order_latest_sql}
+                                   LIMIT 1
+                               )
+                           END
                        ) AS cover_metadata_json
                 FROM series s
                 WHERE s.creator_id = ?

@@ -39,6 +39,9 @@ from .kemono import (
 )
 from .rendering import render_post_content
 
+SERIES_COVER_CHOICE_LATEST = "__latest__"
+SERIES_COVER_CHOICE_FIRST = "__first__"
+
 
 def create_app(test_config: dict | None = None) -> Flask:
     app = Flask(__name__)
@@ -862,6 +865,18 @@ def create_app(test_config: dict | None = None) -> Flask:
             active_folder = "series"
 
         selected_series = series_by_id.get(selected_series_id) if selected_series_id is not None else None
+        selected_series_cover_choice = SERIES_COVER_CHOICE_LATEST
+        if selected_series:
+            raw_cover_post_id = selected_series.get("cover_post_id")
+            if raw_cover_post_id is not None:
+                try:
+                    normalized_cover_post_id = int(raw_cover_post_id)
+                except (TypeError, ValueError):
+                    normalized_cover_post_id = 0
+                if normalized_cover_post_id == LibraryDB.SERIES_COVER_POST_AUTO_FIRST:
+                    selected_series_cover_choice = SERIES_COVER_CHOICE_FIRST
+                elif normalized_cover_post_id > 0:
+                    selected_series_cover_choice = str(normalized_cover_post_id)
         series_default_sort = (
             str(selected_series.get("default_sort_by", "")).strip().lower()
             if selected_series and isinstance(selected_series.get("default_sort_by"), str)
@@ -937,6 +952,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                     "published_at": str(row["published_at"]) if row["published_at"] else "",
                 }
                 for row in series_thumbnail_rows
+                if _post_has_thumbnail(row)
             ]
             if selected_series
             else []
@@ -959,6 +975,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             posts=posts,
             selected_series=selected_series,
             series_thumbnail_options=series_thumbnail_options,
+            selected_series_cover_choice=selected_series_cover_choice,
             active_folder=active_folder,
             sort_by=sort_by,
             sort_direction=sort_direction,
@@ -1003,11 +1020,17 @@ def create_app(test_config: dict | None = None) -> Flask:
         tags_text = request.form.get("tags_text", "")
         default_sort_by = request.form.get("default_sort_by", "published").strip().lower()
         default_sort_direction = request.form.get("default_sort_direction", "desc").strip().lower()
-        raw_cover_post_id = request.form.get("cover_post_id", "").strip()
-        try:
-            cover_post_id = int(raw_cover_post_id) if raw_cover_post_id else None
-        except ValueError:
+        raw_cover_post_choice = request.form.get("cover_post_id", "").strip()
+        if raw_cover_post_choice in {"", SERIES_COVER_CHOICE_LATEST}:
             cover_post_id = None
+        elif raw_cover_post_choice == SERIES_COVER_CHOICE_FIRST:
+            cover_post_id = LibraryDB.SERIES_COVER_POST_AUTO_FIRST
+        else:
+            try:
+                parsed_cover_post_id = int(raw_cover_post_choice)
+            except ValueError:
+                parsed_cover_post_id = None
+            cover_post_id = parsed_cover_post_id if parsed_cover_post_id and parsed_cover_post_id > 0 else None
         if not name:
             flash("Series/group name is required.", "error")
             return redirect(url_for("creator_detail", creator_id=creator_id, series_id=series_id))
@@ -1015,7 +1038,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             default_sort_by = "published"
         if default_sort_direction not in {"asc", "desc"}:
             default_sort_direction = "desc"
-        if cover_post_id is not None:
+        if cover_post_id is not None and cover_post_id > 0:
             cover_post = db.get_post(cover_post_id)
             if (
                 not cover_post
@@ -1024,6 +1047,9 @@ def create_app(test_config: dict | None = None) -> Flask:
                 or int(cover_post["series_id"]) != series_id
             ):
                 flash("Selected cover post is not part of this series.", "error")
+                return redirect(url_for("creator_detail", creator_id=creator_id, series_id=series_id))
+            if not _post_has_thumbnail(cover_post):
+                flash("Selected cover post has no thumbnail.", "error")
                 return redirect(url_for("creator_detail", creator_id=creator_id, series_id=series_id))
 
         db.update_series(
@@ -4123,6 +4149,24 @@ def _optional_str(value: Any) -> str | None:
         cleaned = value.strip()
         return cleaned or None
     return None
+
+
+def _post_has_thumbnail(row: Any) -> bool:
+    if not row:
+        return False
+    if isinstance(row, dict):
+        local_path = _optional_str(row.get("thumbnail_local_path"))
+        remote_url = _optional_str(row.get("thumbnail_remote_url"))
+    else:
+        try:
+            local_path = _optional_str(row["thumbnail_local_path"])
+        except Exception:
+            local_path = None
+        try:
+            remote_url = _optional_str(row["thumbnail_remote_url"])
+        except Exception:
+            remote_url = None
+    return bool(local_path or remote_url)
 
 
 def _format_bytes_for_display(value: Any) -> str:
