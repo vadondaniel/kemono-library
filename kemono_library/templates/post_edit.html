@@ -302,6 +302,22 @@
             {% endfor %}
           </select>
         </form>
+        <div class="post-edit-default-control">
+          <label class="post-edit-attachment-keep post-edit-default-toggle">
+            <input
+              type="checkbox"
+              name="set_as_default"
+              value="1"
+              form="post-edit-main-form"
+              data-post-edit-default-toggle
+              {% if active_version['is_default'] %}checked disabled{% endif %}
+            >
+            <span>{% if active_version['is_default'] %}This is the default version{% else %}Make this version default on Save{% endif %}</span>
+          </label>
+          {% if not active_version['is_default'] %}
+            <small class="post-edit-default-note">Applied when you save changes.</small>
+          {% endif %}
+        </div>
       </section>
 
       <section class="panel post-edit-tools post-edit-rail-panel">
@@ -326,11 +342,6 @@
             <input type="hidden" name="version_language" value="">
             <button type="submit" class="btn btn--ghost">Clone as manual version</button>
           </form>
-          {% if not active_version['is_default'] %}
-            <form method="post" action="{{ url_for('set_default_post_version', post_id=post['id'], version_id=active_version['id']) }}" class="inline-form" data-nav-replace-redirect>
-              <button type="submit" class="btn btn--ghost">Set as default</button>
-            </form>
-          {% endif %}
           {% if versions|length > 1 %}
             <form method="post" action="{{ url_for('delete_post_version', post_id=post['id'], version_id=active_version['id']) }}" class="inline-form" onsubmit="return confirm('Delete this version?');" data-nav-replace-redirect>
               <button type="submit" class="btn btn--ghost btn--danger-quiet">Delete version</button>

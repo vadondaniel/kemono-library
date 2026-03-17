@@ -2238,6 +2238,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             series_id = request.form.get("series_id", type=int)
             version_label = request.form.get("version_label", "").strip() or "Version"
             version_language = request.form.get("version_language")
+            set_as_default = request.form.get("set_as_default") == "1"
             thumbnail_choice = request.form.get("thumbnail_attachment_id", "__keep__").strip()
             focus_x, focus_y = _parse_thumbnail_focus_inputs(
                 request.form.get("thumbnail_focus_x"),
@@ -2408,13 +2409,15 @@ def create_app(test_config: dict | None = None) -> Flask:
                         source_url=active_version["source_url"],
                         conn=conn,
                     )
+                    if set_as_default:
+                        db.set_default_post_version(post_id=post_id, version_id=active_version_id, conn=conn)
             except Exception as exc:  # noqa: BLE001
                 flash(f"Failed to update post: {exc}", "error")
                 return _redirect_with_ajax(url_for("edit_post", post_id=post_id, version_id=active_version_id))
             flash("Post updated.", "success")
             detail_url = (
                 url_for("post_detail", post_id=post_id)
-                if bool(active_version["is_default"])
+                if bool(active_version["is_default"]) or set_as_default
                 else url_for("post_detail", post_id=post_id, version_id=active_version_id)
             )
             return _redirect_with_ajax(detail_url)

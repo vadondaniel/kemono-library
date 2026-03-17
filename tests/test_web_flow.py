@@ -4156,13 +4156,80 @@ def test_post_edit_version_actions_use_replace_navigation_attributes(tmp_path):
     assert clone_form is not None
     assert clone_form.get("data-nav-replace-redirect") is not None
 
-    set_default_form = soup.find("form", action=f"/posts/{post_id}/versions/{manual_id}/set-default")
-    assert set_default_form is not None
-    assert set_default_form.get("data-nav-replace-redirect") is not None
+    default_toggle = soup.select_one("input[data-post-edit-default-toggle][name='set_as_default'][form='post-edit-main-form']")
+    assert default_toggle is not None
+    assert default_toggle.get("value") == "1"
+    assert default_toggle.get("checked") is None
+    assert default_toggle.get("disabled") is None
+    assert soup.find("form", action=f"/posts/{post_id}/versions/{manual_id}/set-default") is None
 
     delete_form = soup.find("form", action=f"/posts/{post_id}/versions/{manual_id}/delete")
     assert delete_form is not None
     assert delete_form.get("data-nav-replace-redirect") is not None
+
+
+def test_edit_post_main_save_can_set_active_version_as_default(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Default Toggle Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="toggle-user",
+        external_post_id="toggle-post",
+        title="Source Version Title",
+        content="<p>Source body</p>",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/toggle-user/post/toggle-post",
+    )
+    source_version = db.get_post_version(post_id)
+    assert source_version is not None
+    source_version_id = int(source_version["id"])
+    manual_version_id = db.clone_post_version(
+        post_id=post_id,
+        source_version_id=source_version_id,
+        label="Manual",
+        language="en",
+        set_default=False,
+    )
+
+    client = app.test_client()
+    response = client.post(
+        f"/posts/{post_id}/edit",
+        data={
+            "version_id": str(manual_version_id),
+            "version_label": "Manual",
+            "version_language": "en",
+            "title": "Manual Default Title",
+            "series_id": "",
+            "thumbnail_attachment_id": "__keep__",
+            "thumbnail_focus_x": "50",
+            "thumbnail_focus_y": "50",
+            "content": "<p>Manual body</p>",
+            "set_as_default": "1",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith(f"/posts/{post_id}")
+
+    post_row = db.get_post(post_id)
+    assert post_row is not None
+    assert int(post_row["default_version_id"]) == manual_version_id
+
+    default_version = db.get_post_version(post_id)
+    assert default_version is not None
+    assert int(default_version["id"]) == manual_version_id
+    assert default_version["title"] == "Manual Default Title"
 
 
 def test_edit_post_saves_thumbnail_focus_and_applies_to_creator_grid(tmp_path):

@@ -3341,6 +3341,20 @@ button:disabled,
   min-height: 2.25rem;
 }
 
+.post-edit-default-control {
+  display: grid;
+  gap: var(--space-xs);
+}
+
+.post-edit-default-toggle {
+  width: fit-content;
+}
+
+.post-edit-default-note {
+  color: var(--muted);
+  font-size: 0.79rem;
+}
+
 .post-edit-workflow-rail h2 {
   margin-bottom: 0.35rem;
 }
