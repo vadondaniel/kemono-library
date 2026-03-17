@@ -1024,6 +1024,7 @@
     const zoomInButton = document.querySelector("[data-post-reader-zoom-in]");
     const zoomOutButton = document.querySelector("[data-post-reader-zoom-out]");
     const zoomFitButton = document.querySelector("[data-post-reader-zoom-fit]");
+    const fullscreenButton = document.querySelector("[data-post-reader-fullscreen-toggle]");
     const scrollBar = document.querySelector("[data-post-reader-scrollbar]");
     const scrollBarHorizontal = document.querySelector("[data-post-reader-scrollbar-horizontal]");
     const openTabLink = document.querySelector("[data-post-reader-open-tab]");
@@ -1066,6 +1067,9 @@
     let dragPanX = 0;
     let dragPanY = 0;
     let scrollActivityTimer = null;
+    const fullscreenSupported =
+      typeof canvas.requestFullscreen === "function" &&
+      (typeof document.fullscreenEnabled !== "boolean" || document.fullscreenEnabled);
 
     const readSavedImageIndex = () => {
       if (!imageStateStorageKey) {
@@ -1439,6 +1443,43 @@
       return delta;
     };
 
+    const isCanvasFullscreen = () => document.fullscreenElement === canvas;
+
+    const syncFullscreenButton = () => {
+      if (!(fullscreenButton instanceof HTMLButtonElement)) {
+        return;
+      }
+      if (!fullscreenSupported) {
+        fullscreenButton.hidden = true;
+        fullscreenButton.disabled = true;
+        return;
+      }
+      const active = isCanvasFullscreen();
+      fullscreenButton.hidden = false;
+      fullscreenButton.disabled = false;
+      fullscreenButton.classList.toggle("is-active", active);
+      fullscreenButton.setAttribute("aria-pressed", active ? "true" : "false");
+      fullscreenButton.setAttribute("aria-label", active ? "Exit fullscreen" : "Enter fullscreen");
+      fullscreenButton.title = active ? "Exit fullscreen" : "Enter fullscreen";
+    };
+
+    const toggleCanvasFullscreen = async () => {
+      if (!fullscreenSupported) {
+        return;
+      }
+      try {
+        if (isCanvasFullscreen()) {
+          if (typeof document.exitFullscreen === "function") {
+            await document.exitFullscreen();
+          }
+          return;
+        }
+        await canvas.requestFullscreen();
+      } catch {
+        // Ignore fullscreen errors (for example if denied by browser settings).
+      }
+    };
+
     const updateButtons = () => {
       const hasImages = catalog.length > 0 && currentIndex >= 0;
       const showNavigation = hasImages && catalog.length > 1;
@@ -1696,6 +1737,20 @@
     zoomInButton.addEventListener("click", () => zoomBy(BUTTON_ZOOM_STEP));
     zoomOutButton.addEventListener("click", () => zoomBy(-BUTTON_ZOOM_STEP));
     zoomFitButton.addEventListener("click", toggleFitMode);
+    if (fullscreenButton instanceof HTMLButtonElement) {
+      fullscreenButton.addEventListener("click", (event) => {
+        event.preventDefault();
+        void toggleCanvasFullscreen();
+      });
+    }
+    document.addEventListener("fullscreenchange", () => {
+      syncFullscreenButton();
+      if (catalog.length === 0 || currentIndex < 0) {
+        return;
+      }
+      setTransforms();
+      updateButtons();
+    });
     if (scrollBar instanceof HTMLInputElement) {
       scrollBar.addEventListener("input", () => {
         if (!scrollModeActive) {
@@ -1853,6 +1908,7 @@
     } else {
       renderActive();
     }
+    syncFullscreenButton();
 
     return {
       openByTrigger(trigger) {

@@ -3803,7 +3803,7 @@ body.is-busy-overlay-open {
 .post-reader-counter {
   font-size: 0.82rem;
   color: var(--muted);
-  margin-left: var(--space-md);
+  margin-left: 0;
   white-space: nowrap;
 }
 
@@ -3813,6 +3813,42 @@ body.is-busy-overlay-open {
   align-items: center;
   gap: var(--space-md);
   min-width: 0;
+}
+
+.post-reader-meta-end {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.post-reader-fullscreen-toggle {
+  width: 2rem;
+  min-width: 2rem;
+  height: 2rem;
+  min-height: 2rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.post-reader-fullscreen-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.post-reader-fullscreen-icon svg {
+  width: 0.95rem;
+  height: 0.95rem;
+  display: block;
+}
+
+.post-reader-fullscreen-toggle.is-active {
+  border-color: color-mix(in srgb, var(--accent) 52%, var(--border));
+  background: color-mix(in srgb, var(--accent-soft) 42%, var(--card-solid));
+  color: var(--accent-strong);
 }
 
 .post-gallery-picker-trigger {
@@ -3879,6 +3915,14 @@ body.is-busy-overlay-open {
   display: block;
   touch-action: none;
   cursor: grab;
+}
+
+.post-reader-canvas:fullscreen,
+.post-reader-canvas:-webkit-full-screen {
+  width: 100vw;
+  height: 100vh;
+  min-height: 100vh;
+  background: color-mix(in srgb, var(--card-solid) 88%, black 12%);
 }
 
 .post-reader-canvas.is-dragging {
@@ -4401,10 +4445,9 @@ body.is-post-nav-pinned .container.is-post-reader-layout .post-view-shell.is-rea
   justify-self: center;
 }
 
-.container.is-post-gallery-layout .post-view-shell.is-gallery > .post-reader-panel.post-reader-panel-gallery .post-reader-counter {
+.container.is-post-gallery-layout .post-view-shell.is-gallery > .post-reader-panel.post-reader-panel-gallery .post-reader-meta-end {
   grid-column: 3;
   justify-self: end;
-  margin-left: 0;
 }
 
 body.is-gallery-picker-open {
