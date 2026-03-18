@@ -1,10 +1,32 @@
 (() => {
-  const tagPopovers = Array.from(document.querySelectorAll(".creator-post-tag-details")).filter(
-    (node) => node instanceof HTMLDetailsElement
-  );
-  if (!tagPopovers.length) {
+  const creatorPageSelector = "[data-creator-detail-page]";
+  const creatorFilterFormSelector = "[data-creator-filter-form]";
+  const creatorFilterSearchSelector = "[data-creator-filter-search]";
+  const dynamicCreatorLinkSelector = [
+    ".creator-sort-bar a",
+    ".creator-explorer-switch a",
+    ".creator-tag-explorer-grid a",
+    ".folder-explorer-grid a.folder-tile",
+    ".creator-post-search-clear",
+  ].join(", ");
+
+  const getCreatorPageRoot = () => document.querySelector(creatorPageSelector);
+  if (!(getCreatorPageRoot() instanceof HTMLElement)) {
     return;
   }
+  const getCreatorSortPopover = () => {
+    const root = getCreatorPageRoot();
+    if (!(root instanceof HTMLElement)) {
+      return null;
+    }
+    const node = root.querySelector(".creator-sort-popover");
+    return node instanceof HTMLDetailsElement ? node : null;
+  };
+
+  const listTagPopovers = () =>
+    Array.from(document.querySelectorAll(".creator-post-tag-details")).filter(
+      (node) => node instanceof HTMLDetailsElement
+    );
 
   const syncCardLayerClass = (popover) => {
     if (!(popover instanceof HTMLDetailsElement)) {
@@ -17,14 +39,190 @@
     card.classList.toggle("is-tag-popover-open", popover.open);
   };
 
-  const closeAllExcept = (keepOpen) => {
-    tagPopovers.forEach((popover) => {
+  const syncAllCardLayers = () => {
+    listTagPopovers().forEach((popover) => {
+      syncCardLayerClass(popover);
+    });
+  };
+
+  const closeAllTagPopoversExcept = (keepOpen) => {
+    listTagPopovers().forEach((popover) => {
       if (!(popover instanceof HTMLDetailsElement) || popover === keepOpen) {
         return;
       }
       popover.open = false;
       syncCardLayerClass(popover);
     });
+  };
+
+  const isCreatorDetailUrl = (href) => {
+    try {
+      const targetUrl = new URL(href, window.location.href);
+      return targetUrl.origin === window.location.origin && /^\/creators\/\d+\/?$/.test(targetUrl.pathname);
+    } catch (_error) {
+      return false;
+    }
+  };
+
+  const buildUrlFromForm = (form) => {
+    const action = form.getAttribute("action") || window.location.pathname;
+    const targetUrl = new URL(action, window.location.href);
+    const params = new URLSearchParams(new FormData(form));
+    const query = params.toString();
+    targetUrl.search = query;
+    return targetUrl.toString();
+  };
+
+  let pendingSearchTimer = null;
+  let activeFilterRequest = null;
+  let filterRequestToken = 0;
+  let searchInputToken = 0;
+
+  const clearPendingSearchTimer = () => {
+    if (pendingSearchTimer !== null) {
+      window.clearTimeout(pendingSearchTimer);
+      pendingSearchTimer = null;
+    }
+  };
+
+  const replaceCreatorLayout = (htmlText, destinationUrl) => {
+    const parser = new DOMParser();
+    const parsedDocument = parser.parseFromString(htmlText, "text/html");
+    const nextCreatorPage = parsedDocument.querySelector(creatorPageSelector);
+    const currentCreatorPage = getCreatorPageRoot();
+    if (!(nextCreatorPage instanceof HTMLElement) || !(currentCreatorPage instanceof HTMLElement)) {
+      return false;
+    }
+
+    currentCreatorPage.replaceWith(nextCreatorPage);
+    const nextTitle = parsedDocument.querySelector("title");
+    if (nextTitle instanceof HTMLTitleElement) {
+      const parsedTitle = (nextTitle.textContent || "").trim();
+      if (parsedTitle) {
+        document.title = parsedTitle;
+      }
+    }
+    window.history.replaceState(null, "", destinationUrl);
+    syncAllCardLayers();
+    return true;
+  };
+
+  const fetchAndRenderCreatorLayout = async (
+    targetUrl,
+    { restoreSearchCaret = false, expectedSearchToken = null, preserveSortPopoverState = true } = {}
+  ) => {
+    if (!isCreatorDetailUrl(targetUrl)) {
+      window.location.assign(targetUrl);
+      return;
+    }
+    const rootBeforeFetch = getCreatorPageRoot();
+    if (!(rootBeforeFetch instanceof HTMLElement)) {
+      window.location.assign(targetUrl);
+      return;
+    }
+
+    clearPendingSearchTimer();
+    filterRequestToken += 1;
+    const requestToken = filterRequestToken;
+    if (activeFilterRequest instanceof AbortController) {
+      activeFilterRequest.abort();
+    }
+    const controller = new AbortController();
+    activeFilterRequest = controller;
+
+    let caretStart = null;
+    let caretEnd = null;
+    const currentSortPopover = getCreatorSortPopover();
+    const reopenSortPopover =
+      preserveSortPopoverState &&
+      currentSortPopover instanceof HTMLDetailsElement &&
+      currentSortPopover.open;
+    if (restoreSearchCaret) {
+      const activeElement = document.activeElement;
+      if (activeElement instanceof HTMLInputElement && activeElement.matches(creatorFilterSearchSelector)) {
+        caretStart = activeElement.selectionStart;
+        caretEnd = activeElement.selectionEnd;
+      }
+    }
+
+    rootBeforeFetch.setAttribute("aria-busy", "true");
+    try {
+      const response = await fetch(targetUrl, {
+        method: "GET",
+        credentials: "same-origin",
+        headers: {
+          Accept: "text/html,application/xhtml+xml",
+          "X-Requested-With": "XMLHttpRequest",
+        },
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        throw new Error(`Creator filter request failed (${response.status})`);
+      }
+
+      const responseHtml = await response.text();
+      if (requestToken !== filterRequestToken) {
+        return;
+      }
+      if (expectedSearchToken !== null && expectedSearchToken !== searchInputToken) {
+        return;
+      }
+
+      const destinationUrl = response.url || targetUrl;
+      if (!replaceCreatorLayout(responseHtml, destinationUrl)) {
+        window.location.assign(targetUrl);
+        return;
+      }
+      if (reopenSortPopover) {
+        const nextSortPopover = getCreatorSortPopover();
+        if (nextSortPopover instanceof HTMLDetailsElement) {
+          nextSortPopover.open = true;
+        }
+      }
+
+      if (restoreSearchCaret) {
+        const nextSearchInput = document.querySelector(creatorFilterSearchSelector);
+        if (nextSearchInput instanceof HTMLInputElement) {
+          nextSearchInput.focus();
+          if (caretStart !== null && caretEnd !== null) {
+            const valueLength = nextSearchInput.value.length;
+            const nextStart = Math.max(0, Math.min(caretStart, valueLength));
+            const nextEnd = Math.max(0, Math.min(caretEnd, valueLength));
+            nextSearchInput.setSelectionRange(nextStart, nextEnd);
+          }
+        }
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return;
+      }
+      window.location.assign(targetUrl);
+    } finally {
+      const currentRoot = getCreatorPageRoot();
+      if (currentRoot instanceof HTMLElement) {
+        currentRoot.removeAttribute("aria-busy");
+      }
+      if (activeFilterRequest === controller) {
+        activeFilterRequest = null;
+      }
+    }
+  };
+
+  const queueSearchRefresh = (form) => {
+    searchInputToken += 1;
+    const expectedSearchToken = searchInputToken;
+    if (activeFilterRequest instanceof AbortController) {
+      activeFilterRequest.abort();
+    }
+    clearPendingSearchTimer();
+    pendingSearchTimer = window.setTimeout(() => {
+      pendingSearchTimer = null;
+      fetchAndRenderCreatorLayout(buildUrlFromForm(form), {
+        restoreSearchCaret: true,
+        expectedSearchToken,
+      });
+    }, 220);
   };
 
   document.addEventListener(
@@ -36,7 +234,7 @@
       }
       syncCardLayerClass(target);
       if (target.open) {
-        closeAllExcept(target);
+        closeAllTagPopoversExcept(target);
       }
     },
     true
@@ -49,11 +247,11 @@
       if (!(target instanceof Node)) {
         return;
       }
-      const clickedInside = tagPopovers.some((popover) => popover.contains(target));
-      if (clickedInside) {
+      const clickedInsidePopover = listTagPopovers().some((popover) => popover.contains(target));
+      if (clickedInsidePopover) {
         return;
       }
-      closeAllExcept(null);
+      closeAllTagPopoversExcept(null);
     },
     true
   );
@@ -62,10 +260,61 @@
     if (event.key !== "Escape") {
       return;
     }
-    closeAllExcept(null);
+    closeAllTagPopoversExcept(null);
   });
 
-  tagPopovers.forEach((popover) => {
-    syncCardLayerClass(popover);
+  document.addEventListener("submit", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLFormElement) || !target.matches(creatorFilterFormSelector)) {
+      return;
+    }
+    if (!(target.closest(creatorPageSelector) instanceof HTMLElement)) {
+      return;
+    }
+    event.preventDefault();
+    fetchAndRenderCreatorLayout(buildUrlFromForm(target));
   });
+
+  document.addEventListener("input", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement) || !target.matches(creatorFilterSearchSelector)) {
+      return;
+    }
+    const form = target.closest(creatorFilterFormSelector);
+    if (!(form instanceof HTMLFormElement)) {
+      return;
+    }
+    if (!(form.closest(creatorPageSelector) instanceof HTMLElement)) {
+      return;
+    }
+    queueSearchRefresh(form);
+  });
+
+  document.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+    const link = target.closest(dynamicCreatorLinkSelector);
+    if (!(link instanceof HTMLAnchorElement)) {
+      return;
+    }
+    if (!(link.closest(creatorPageSelector) instanceof HTMLElement)) {
+      return;
+    }
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+      return;
+    }
+    if (link.target && link.target !== "_self") {
+      return;
+    }
+    const href = link.href;
+    if (!href || !isCreatorDetailUrl(href)) {
+      return;
+    }
+    event.preventDefault();
+    fetchAndRenderCreatorLayout(href);
+  });
+
+  syncAllCardLayers();
 })();

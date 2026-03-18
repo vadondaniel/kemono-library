@@ -5092,11 +5092,15 @@ def test_creator_post_search_filters_results_and_preserves_query(tmp_path):
     searched = client.get(f"/creators/{creator_id}?q=needle")
     assert searched.status_code == 200
     searched_soup = BeautifulSoup(searched.data, "html.parser")
+    creator_layout = searched_soup.select_one(".creator-layout")
+    assert creator_layout is not None
+    assert creator_layout.has_attr("data-creator-detail-page")
     searched_titles = [node.get_text(strip=True) for node in searched_soup.select(".creator-post-list .creator-post-body h3 a")]
     assert searched_titles == ["Delta Note"]
     search_form = searched_soup.select_one("form.creator-post-search")
     assert search_form is not None
     assert search_form.get("autocomplete") == "off"
+    assert search_form.has_attr("data-creator-filter-form")
     query_input = searched_soup.select_one(".creator-post-search input[name='q']")
     assert query_input is not None
     assert query_input.get("value") == "needle"
@@ -5105,6 +5109,7 @@ def test_creator_post_search_filters_results_and_preserves_query(tmp_path):
     assert query_input.get("autocorrect") == "off"
     assert query_input.get("autocapitalize") == "none"
     assert query_input.get("spellcheck") == "false"
+    assert query_input.has_attr("data-creator-filter-search")
     suggestion_values = [
         option.get("value") or ""
         for option in searched_soup.select("#creator-post-search-suggestions option")

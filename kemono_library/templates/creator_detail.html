@@ -80,7 +80,7 @@
   </section>
 {% endif %}
 
-<section class="creator-layout">
+<section class="creator-layout" data-creator-detail-page>
   <article class="panel creator-series-panel">
     {% if selected_series %}
       <div class="series-meta-head">
@@ -281,6 +281,7 @@
           class="creator-post-search"
           role="search"
           autocomplete="off"
+          data-creator-filter-form
         >
           {% if selected_series %}
             <input type="hidden" name="series_id" value="{{ selected_series['id'] }}">
@@ -305,6 +306,7 @@
               autocorrect="off"
               autocapitalize="none"
               spellcheck="false"
+              data-creator-filter-search
             >
             {% if post_search_text %}
               {% if selected_series %}
