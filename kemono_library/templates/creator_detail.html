@@ -456,8 +456,13 @@
               <div class="creator-post-meta">
                 {% if explorer_mode == 'tags' %}
                   {% set inline_tag_count = 4 %}
-                  {% set inline_tags = post['default_tags'][:inline_tag_count] if post['default_tags'] else [] %}
-                  {% set extra_tags = post['default_tags'][inline_tag_count:] if post['default_tags'] else [] %}
+                  {% set all_tags = post['default_tags'] if post['default_tags'] else [] %}
+                  {% set inline_tags = all_tags[:inline_tag_count] %}
+                  {% set extra_tags = all_tags[inline_tag_count:] %}
+                  {% if extra_tags|length == 1 %}
+                    {% set inline_tags = all_tags %}
+                    {% set extra_tags = [] %}
+                  {% endif %}
                   {% for post_tag in inline_tags %}
                     <span class="chip creator-post-tag-chip">{{ post_tag }}</span>
                   {% endfor %}

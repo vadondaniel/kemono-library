@@ -5305,13 +5305,9 @@ def test_creator_tag_explorer_and_and_filtering(tmp_path):
     assert filtered_titles == ["Both Tags"]
     assert filtered_soup.select_one(".creator-post-badge") is None
     inline_tag_labels = [node.get_text(strip=True) for node in filtered_soup.select(".creator-post-meta .creator-post-tag-chip")]
-    assert inline_tag_labels[:4] == ["Alpha", "Beta", "Delta", "Epsilon"]
+    assert inline_tag_labels == ["Alpha", "Beta", "Delta", "Epsilon", "Gamma"]
     tag_details = filtered_soup.select_one(".creator-post-tag-details")
-    assert tag_details is not None
-    summary = tag_details.select_one(".creator-post-tag-summary")
-    assert summary is not None
-    assert "+1" in summary.get_text(" ", strip=True)
-    assert "Gamma" in tag_details.get_text(" ", strip=True)
+    assert tag_details is None
     hidden_tag_values = [node.get("value") for node in filtered_soup.select("form.creator-post-search input[name='tag']")]
     assert hidden_tag_values == ["alpha", "beta"]
     sort_links = [
@@ -5329,6 +5325,53 @@ def test_creator_tag_explorer_and_and_filtering(tmp_path):
     expanded_soup = BeautifulSoup(expanded.data, "html.parser")
     expanded_tags = [node.get_text(strip=True) for node in expanded_soup.select(".creator-post-meta .creator-post-tag-chip")]
     assert expanded_tags == ["Solo"]
+
+
+def test_creator_tag_popover_only_appears_when_more_than_one_tag_is_hidden(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+
+    creator_id = db.create_creator("Tag Overflow Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="tag-overflow",
+        external_post_id="910",
+        title="Six Tags",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/tag-overflow/post/910",
+        published_at="2025-02-03T00:00:00",
+    )
+    version = db.get_post_version(post_id)
+    assert version is not None
+    db.replace_tags(post_id, ["Gamma", "Beta", "Alpha", "Delta", "Epsilon", "Zeta"], version_id=int(version["id"]))
+
+    response = app.test_client().get(f"/creators/{creator_id}?explorer=tags")
+    assert response.status_code == 200
+    soup = BeautifulSoup(response.data, "html.parser")
+
+    inline_tag_labels = [
+        node.get_text(strip=True) for node in soup.select(".creator-post-list .creator-post-meta > .creator-post-tag-chip")
+    ]
+    assert inline_tag_labels == ["Alpha", "Beta", "Delta", "Epsilon"]
+
+    tag_details = soup.select_one(".creator-post-tag-details")
+    assert tag_details is not None
+    summary = tag_details.select_one(".creator-post-tag-summary")
+    assert summary is not None
+    assert "+2" in summary.get_text(" ", strip=True)
+    assert "Gamma" in tag_details.get_text(" ", strip=True)
+    assert "Zeta" in tag_details.get_text(" ", strip=True)
 
 
 def test_creator_tag_filter_applies_in_series_and_unsorted_scopes(tmp_path):
