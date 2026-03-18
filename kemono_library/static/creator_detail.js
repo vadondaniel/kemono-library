@@ -24,6 +24,9 @@
     ".creator-post-search-clear",
   ].join(", ");
 
+  const shouldPushHistoryForLink = (link) =>
+    link instanceof HTMLAnchorElement && link.matches(".folder-explorer-grid a.folder-tile");
+
   const getCreatorPageRoot = () => document.querySelector(creatorPageSelector);
   if (!(getCreatorPageRoot() instanceof HTMLElement)) {
     return;
@@ -645,7 +648,7 @@
     currentBrand.replaceWith(nextBrand);
   };
 
-  const replaceCreatorLayout = (htmlText, destinationUrl) => {
+  const replaceCreatorLayout = (htmlText, destinationUrl, { historyMode = "replace" } = {}) => {
     const parser = new DOMParser();
     const parsedDocument = parser.parseFromString(htmlText, "text/html");
     const nextCreatorPage = parsedDocument.querySelector(creatorPageSelector);
@@ -663,7 +666,11 @@
         document.title = parsedTitle;
       }
     }
-    window.history.replaceState(null, "", destinationUrl);
+    if (historyMode === "push") {
+      window.history.pushState(null, "", destinationUrl);
+    } else if (historyMode === "replace") {
+      window.history.replaceState(null, "", destinationUrl);
+    }
     resetQuickAddState();
     syncAllCardLayers();
     return true;
@@ -676,6 +683,7 @@
       expectedSearchToken = null,
       preserveSortPopoverState = true,
       preserveTagSortCollapseState = true,
+      historyMode = "replace",
     } = {}
   ) => {
     if (!isCreatorDetailUrl(targetUrl)) {
@@ -742,7 +750,7 @@
       }
 
       const destinationUrl = response.url || targetUrl;
-      if (!replaceCreatorLayout(responseHtml, destinationUrl)) {
+      if (!replaceCreatorLayout(responseHtml, destinationUrl, { historyMode })) {
         window.location.assign(targetUrl);
         return;
       }
@@ -1111,7 +1119,21 @@
       return;
     }
     event.preventDefault();
-    fetchAndRenderCreatorLayout(href);
+    fetchAndRenderCreatorLayout(href, {
+      historyMode: shouldPushHistoryForLink(link) ? "push" : "replace",
+    });
+  });
+
+  window.addEventListener("popstate", () => {
+    const targetUrl = window.location.href;
+    if (!isCreatorDetailUrl(targetUrl)) {
+      return;
+    }
+    fetchAndRenderCreatorLayout(targetUrl, {
+      historyMode: "preserve",
+      preserveSortPopoverState: false,
+      preserveTagSortCollapseState: false,
+    });
   });
 
   syncAllCardLayers();
