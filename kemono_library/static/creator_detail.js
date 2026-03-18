@@ -954,15 +954,6 @@
       if (!clickedInsidePopover) {
         closeAllTagPopoversExcept(null);
       }
-
-      const quickAddRoot = getSeriesQuickAddRoot();
-      if (
-        quickAddRoot instanceof HTMLElement &&
-        isQuickAddOpen() &&
-        !quickAddRoot.contains(target)
-      ) {
-        setQuickAddOpen(false);
-      }
     },
     true
   );
