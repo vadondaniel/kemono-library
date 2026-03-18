@@ -1617,6 +1617,7 @@ class LibraryDB:
         *,
         series_id: int | None = None,
         unsorted_only: bool = False,
+        exclude_series_id: int | None = None,
         search_text: str = "",
         required_tags: list[str] | None = None,
     ) -> tuple[str, list[object]]:
@@ -1630,6 +1631,9 @@ class LibraryDB:
             params.append(series_id)
         elif unsorted_only:
             where_clauses.append("p.series_id IS NULL")
+        if exclude_series_id is not None:
+            where_clauses.append("(p.series_id IS NULL OR p.series_id <> ?)")
+            params.append(exclude_series_id)
         if normalized_search:
             like_value = f"%{normalized_search}%"
             where_clauses.append(
@@ -1661,6 +1665,7 @@ class LibraryDB:
         *,
         series_id: int | None = None,
         unsorted_only: bool = False,
+        exclude_series_id: int | None = None,
         sort_by: str = "published",
         sort_direction: str = "desc",
         search_text: str = "",
@@ -1688,6 +1693,7 @@ class LibraryDB:
             creator_id,
             series_id=series_id,
             unsorted_only=unsorted_only,
+            exclude_series_id=exclude_series_id,
             search_text=search_text,
             required_tags=required_tags,
         )
@@ -1710,6 +1716,7 @@ class LibraryDB:
         *,
         series_id: int | None = None,
         unsorted_only: bool = False,
+        exclude_series_id: int | None = None,
         search_text: str = "",
         required_tags: list[str] | None = None,
     ) -> list[dict[str, Any]]:
@@ -1717,6 +1724,7 @@ class LibraryDB:
             creator_id,
             series_id=series_id,
             unsorted_only=unsorted_only,
+            exclude_series_id=exclude_series_id,
             search_text=search_text,
             required_tags=required_tags,
         )

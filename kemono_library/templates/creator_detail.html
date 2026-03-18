@@ -19,124 +19,171 @@
   {% set import_post_url = url_for('import_form', creator_id=creator['id']) %}
 {% endif %}
 
-{% if not selected_series %}
-  <section class="panel creator-hero">
-    <div class="creator-hero-main">
-      <div class="creator-hero-avatar">
-        {% if creator['icon_local_path'] %}
-          <img class="creator-icon creator-icon-xl" src="{{ url_for('serve_creator_icon', relative_path=creator['icon_local_path']) }}" alt="{{ creator['name'] }} icon" loading="lazy">
-        {% elif creator['icon_remote_url'] %}
-          <img class="creator-icon creator-icon-xl" src="{{ creator['icon_remote_url'] }}" alt="{{ creator['name'] }} icon" loading="lazy" referrerpolicy="no-referrer">
-        {% else %}
-          <span class="creator-icon creator-icon-xl creator-icon-placeholder" aria-hidden="true"></span>
-        {% endif %}
-      </div>
-      <div class="creator-hero-copy">
-        <h1 class="creator-title">{{ creator['name'] }}</h1>
-        <div class="creator-meta-row layout-row layout-row--wrap layout-row--sm">
-          {% if creator['service'] and creator['external_user_id'] %}
-            <a
-              class="chip chip-link creator-meta-pill creator-meta-pill-link"
-              href="{{ creator_external_url or ('https://kemono.cr/' ~ creator['service'] ~ '/user/' ~ creator['external_user_id']) }}"
-              target="_blank"
-              rel="noopener noreferrer nofollow"
-            >
-              {{ creator['service']|upper }} · User {{ creator['external_user_id'] }}
-            </a>
+<section data-creator-detail-page>
+  {% if not selected_series %}
+    <section class="panel creator-hero">
+      <div class="creator-hero-main">
+        <div class="creator-hero-avatar">
+          {% if creator['icon_local_path'] %}
+            <img class="creator-icon creator-icon-xl" src="{{ url_for('serve_creator_icon', relative_path=creator['icon_local_path']) }}" alt="{{ creator['name'] }} icon" loading="lazy">
+          {% elif creator['icon_remote_url'] %}
+            <img class="creator-icon creator-icon-xl" src="{{ creator['icon_remote_url'] }}" alt="{{ creator['name'] }} icon" loading="lazy" referrerpolicy="no-referrer">
           {% else %}
-            <span class="chip creator-meta-pill">
-              {% if creator['service'] %}
-                {{ creator['service']|upper }} · No external user
-              {% elif creator['external_user_id'] %}
-                UNLINKED · User {{ creator['external_user_id'] }}
-              {% else %}
-                UNLINKED · No external user
-              {% endif %}
-            </span>
+            <span class="creator-icon creator-icon-xl creator-icon-placeholder" aria-hidden="true"></span>
           {% endif %}
         </div>
-      </div>
-      <div class="creator-hero-actions layout-row layout-row--wrap layout-row--end">
-        <a class="btn btn-link btn--ghost" href="{{ url_for('edit_creator', creator_id=creator['id']) }}" data-nav-replace-href>Edit</a>
-      </div>
-    </div>
-    {% if creator['description'] or creator['tags_text'] %}
-      <div class="creator-profile-meta">
-        {% if creator['description'] %}
-          <div class="creator-profile-description">{{ creator['description']|render_markdown }}</div>
-        {% endif %}
-        {% if creator['tags_text'] %}
-          <div class="creator-profile-tags layout-row layout-row--wrap layout-row--sm-plus">
-            {% for tag in creator['tags_text'].split(',') %}
-              {% set normalized_tag = tag.strip() %}
-              {% if normalized_tag %}
-                <span class="chip chip--accent creator-profile-tag">{{ normalized_tag }}</span>
-              {% endif %}
-            {% endfor %}
+        <div class="creator-hero-copy">
+          <h1 class="creator-title">{{ creator['name'] }}</h1>
+          <div class="creator-meta-row layout-row layout-row--wrap layout-row--sm">
+            {% if creator['service'] and creator['external_user_id'] %}
+              <a
+                class="chip chip-link creator-meta-pill creator-meta-pill-link"
+                href="{{ creator_external_url or ('https://kemono.cr/' ~ creator['service'] ~ '/user/' ~ creator['external_user_id']) }}"
+                target="_blank"
+                rel="noopener noreferrer nofollow"
+              >
+                {{ creator['service']|upper }} · User {{ creator['external_user_id'] }}
+              </a>
+            {% else %}
+              <span class="chip creator-meta-pill">
+                {% if creator['service'] %}
+                  {{ creator['service']|upper }} · No external user
+                {% elif creator['external_user_id'] %}
+                  UNLINKED · User {{ creator['external_user_id'] }}
+                {% else %}
+                  UNLINKED · No external user
+                {% endif %}
+              </span>
+            {% endif %}
           </div>
-        {% endif %}
-      </div>
-    {% endif %}
-  </section>
-{% endif %}
-
-<section class="creator-layout" data-creator-detail-page>
-  <article class="panel creator-series-panel">
-    {% if selected_series %}
-      <div class="series-meta-head">
-        <h2 class="series-meta-title">{{ selected_series['name'] }}</h2>
-        <div class="series-meta-actions layout-row layout-row--wrap layout-row--end">
-          <details class="series-edit-disclosure">
-            <summary class="btn btn-link btn--ghost series-edit-toggle">Edit</summary>
-            <div class="series-edit-popover">
-              <form method="post" action="{{ url_for('update_series', creator_id=creator['id'], series_id=selected_series['id']) }}" class="form series-edit-form">
-                <label class="field-label field-label--subtle" for="series-name">Series name</label>
-                <input class="field" id="series-name" name="name" required value="{{ selected_series['name'] }}">
-                <label class="field-label field-label--subtle" for="series-description">Description</label>
-                <textarea class="field" id="series-description" name="description" rows="4" placeholder="Optional description">{{ selected_series['description'] or '' }}</textarea>
-                <label class="field-label field-label--subtle" for="series-tags">Tags</label>
-                <input class="field" id="series-tags" name="tags_text" value="{{ selected_series['tags_text'] or '' }}" placeholder="tag one, tag two">
-                <div class="series-edit-settings-row">
-                  <div>
-                    <label class="field-label field-label--subtle" for="series-default-sort">Default sort</label>
-                    <select class="field" id="series-default-sort" name="default_sort_by">
-                      <option value="published" {% if (selected_series['default_sort_by'] or 'published') == 'published' %}selected{% endif %}>Publish date</option>
-                      <option value="title" {% if selected_series['default_sort_by'] == 'title' %}selected{% endif %}>Alphabetical</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label class="field-label field-label--subtle" for="series-default-direction">Default order</label>
-                    <select class="field" id="series-default-direction" name="default_sort_direction">
-                      <option value="desc" {% if (selected_series['default_sort_direction'] or 'desc') == 'desc' %}selected{% endif %}>Descending</option>
-                      <option value="asc" {% if selected_series['default_sort_direction'] == 'asc' %}selected{% endif %}>Ascending</option>
-                    </select>
-                  </div>
-                </div>
-                <label class="field-label field-label--subtle" for="series-cover-post">Series thumbnail source</label>
-                <select class="field" id="series-cover-post" name="cover_post_id">
-                  <optgroup label="Automatic">
-                    <option value="__latest__" {% if selected_series_cover_choice == '__latest__' %}selected{% endif %}>Latest</option>
-                    <option value="__first__" {% if selected_series_cover_choice == '__first__' %}selected{% endif %}>First</option>
-                  </optgroup>
-                  {% if series_thumbnail_options %}
-                    <optgroup label="Dynamic: Current list">
-                      {% for option in series_thumbnail_options %}
-                        <option value="{{ option['id'] }}" {% if selected_series_cover_choice == (option['id'] ~ '') %}selected{% endif %}>
-                          {{ option['title'] }}{% if option['published_at'] %} ({{ option['published_at']|format_datetime }}){% endif %}
-                        </option>
-                      {% endfor %}
-                    </optgroup>
-                  {% endif %}
-                </select>
-                <div class="series-edit-actions">
-                  <button type="submit">Save metadata</button>
-                </div>
-              </form>
-            </div>
-          </details>
-          <a class="btn btn-link btn--ghost creator-import-action" href="{{ import_post_url }}">Import</a>
+        </div>
+        <div class="creator-hero-actions layout-row layout-row--wrap layout-row--end">
+          <a class="btn btn-link btn--ghost" href="{{ url_for('edit_creator', creator_id=creator['id']) }}" data-nav-replace-href>Edit</a>
         </div>
       </div>
+      {% if creator['description'] or creator['tags_text'] %}
+        <div class="creator-profile-meta">
+          {% if creator['description'] %}
+            <div class="creator-profile-description">{{ creator['description']|render_markdown }}</div>
+          {% endif %}
+          {% if creator['tags_text'] %}
+            <div class="creator-profile-tags layout-row layout-row--wrap layout-row--sm-plus">
+              {% for tag in creator['tags_text'].split(',') %}
+                {% set normalized_tag = tag.strip() %}
+                {% if normalized_tag %}
+                  <span class="chip chip--accent creator-profile-tag">{{ normalized_tag }}</span>
+                {% endif %}
+              {% endfor %}
+            </div>
+          {% endif %}
+        </div>
+      {% endif %}
+    </section>
+  {% endif %}
+
+  <section class="creator-layout">
+  <article class="panel creator-series-panel">
+    {% if selected_series %}
+      <section
+        class="series-quick-add-area"
+        data-series-quick-add-root
+        data-series-quick-add-candidates-url="{{ url_for('series_quick_add_candidates', creator_id=creator['id'], series_id=selected_series['id']) }}"
+        data-series-quick-add-submit-url="{{ url_for('series_quick_add_posts', creator_id=creator['id'], series_id=selected_series['id']) }}"
+      >
+        <div class="series-meta-head">
+          <h2 class="series-meta-title">{{ selected_series['name'] }}</h2>
+          <div class="series-meta-actions layout-row layout-row--wrap layout-row--end">
+            <button
+              type="button"
+              class="btn btn-link btn--ghost series-quick-add-toggle"
+              data-series-quick-add-toggle
+              aria-expanded="false"
+              aria-controls="series-quick-add-form-{{ selected_series['id'] }}"
+            >Add</button>
+            <details class="series-edit-disclosure">
+              <summary class="btn btn-link btn--ghost series-edit-toggle">Edit</summary>
+              <div class="series-edit-popover">
+                <form method="post" action="{{ url_for('update_series', creator_id=creator['id'], series_id=selected_series['id']) }}" class="form series-edit-form">
+                  <label class="field-label field-label--subtle" for="series-name">Series name</label>
+                  <input class="field" id="series-name" name="name" required value="{{ selected_series['name'] }}">
+                  <label class="field-label field-label--subtle" for="series-description">Description</label>
+                  <textarea class="field" id="series-description" name="description" rows="4" placeholder="Optional description">{{ selected_series['description'] or '' }}</textarea>
+                  <label class="field-label field-label--subtle" for="series-tags">Tags</label>
+                  <input class="field" id="series-tags" name="tags_text" value="{{ selected_series['tags_text'] or '' }}" placeholder="tag one, tag two">
+                  <div class="series-edit-settings-row">
+                    <div>
+                      <label class="field-label field-label--subtle" for="series-default-sort">Default sort</label>
+                      <select class="field" id="series-default-sort" name="default_sort_by">
+                        <option value="published" {% if (selected_series['default_sort_by'] or 'published') == 'published' %}selected{% endif %}>Publish date</option>
+                        <option value="title" {% if selected_series['default_sort_by'] == 'title' %}selected{% endif %}>Alphabetical</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label class="field-label field-label--subtle" for="series-default-direction">Default order</label>
+                      <select class="field" id="series-default-direction" name="default_sort_direction">
+                        <option value="desc" {% if (selected_series['default_sort_direction'] or 'desc') == 'desc' %}selected{% endif %}>Descending</option>
+                        <option value="asc" {% if selected_series['default_sort_direction'] == 'asc' %}selected{% endif %}>Ascending</option>
+                      </select>
+                    </div>
+                  </div>
+                  <label class="field-label field-label--subtle" for="series-cover-post">Series thumbnail source</label>
+                  <select class="field" id="series-cover-post" name="cover_post_id">
+                    <optgroup label="Automatic">
+                      <option value="__latest__" {% if selected_series_cover_choice == '__latest__' %}selected{% endif %}>Latest</option>
+                      <option value="__first__" {% if selected_series_cover_choice == '__first__' %}selected{% endif %}>First</option>
+                    </optgroup>
+                    {% if series_thumbnail_options %}
+                      <optgroup label="Dynamic: Current list">
+                        {% for option in series_thumbnail_options %}
+                          <option value="{{ option['id'] }}" {% if selected_series_cover_choice == (option['id'] ~ '') %}selected{% endif %}>
+                            {{ option['title'] }}{% if option['published_at'] %} ({{ option['published_at']|format_datetime }}){% endif %}
+                          </option>
+                        {% endfor %}
+                      </optgroup>
+                    {% endif %}
+                  </select>
+                  <div class="series-edit-actions">
+                    <button type="submit">Save metadata</button>
+                  </div>
+                </form>
+              </div>
+            </details>
+            <a class="btn btn-link btn--ghost creator-import-action" href="{{ import_post_url }}">Import</a>
+          </div>
+        </div>
+        <form id="series-quick-add-form-{{ selected_series['id'] }}" class="form series-quick-add-form" data-series-quick-add-form hidden>
+          <label class="field-label field-label--subtle" for="series-quick-add-search-{{ selected_series['id'] }}">Search posts</label>
+          <div class="series-quick-add-search-field">
+            <input
+              class="field"
+              id="series-quick-add-search-{{ selected_series['id'] }}"
+              type="search"
+              placeholder="Search title/content/id"
+              autocomplete="off"
+              data-series-quick-add-search
+            >
+            <button
+              type="button"
+              class="series-quick-add-search-clear"
+              data-series-quick-add-search-clear
+              aria-label="Clear quick-add search"
+              title="Clear search"
+              hidden
+            >&times;</button>
+          </div>
+          <div class="post-view-mode-chip-row series-quick-add-tag-row" data-series-quick-add-tag-row></div>
+          <small class="text-subtle series-quick-add-status" data-series-quick-add-status aria-live="polite">Loading posts...</small>
+          <div class="series-quick-add-grid" data-series-quick-add-grid></div>
+          <p class="creator-empty series-quick-add-empty" data-series-quick-add-empty hidden>No matching posts found.</p>
+          <div class="series-quick-add-actions">
+            <div class="layout-row layout-row--sm-plus layout-row--wrap">
+              <button type="button" class="btn btn-link btn--ghost" data-series-quick-add-select-all>All visible</button>
+              <button type="button" class="btn btn-link btn--ghost" data-series-quick-add-select-none>None</button>
+            </div>
+            <button type="submit" class="btn btn-link btn--ghost" data-series-quick-add-submit disabled>Add selected</button>
+          </div>
+        </form>
+      </section>
       {% if selected_series['description'] %}
         <p class="series-meta-description">{{ selected_series['description'] }}</p>
       {% endif %}
@@ -501,6 +548,7 @@
       </p>
     {% endif %}
   </article>
+  </section>
 </section>
 <script src="{{ url_for('static', filename='creator_detail.js') }}"></script>
 {% endblock %}

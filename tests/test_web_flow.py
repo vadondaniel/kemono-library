@@ -5092,9 +5092,10 @@ def test_creator_post_search_filters_results_and_preserves_query(tmp_path):
     searched = client.get(f"/creators/{creator_id}?q=needle")
     assert searched.status_code == 200
     searched_soup = BeautifulSoup(searched.data, "html.parser")
-    creator_layout = searched_soup.select_one(".creator-layout")
+    creator_detail_root = searched_soup.select_one("[data-creator-detail-page]")
+    assert creator_detail_root is not None
+    creator_layout = creator_detail_root.select_one(".creator-layout")
     assert creator_layout is not None
-    assert creator_layout.has_attr("data-creator-detail-page")
     searched_titles = [node.get_text(strip=True) for node in searched_soup.select(".creator-post-list .creator-post-body h3 a")]
     assert searched_titles == ["Delta Note"]
     search_form = searched_soup.select_one("form.creator-post-search")
@@ -5774,6 +5775,286 @@ def test_creator_import_context_and_series_folder_metadata_mode(tmp_path):
     assert b'Series Details' not in folder.data
     assert b'Series / Folder A' not in folder.data
     assert b'folder-explorer-grid' not in folder.data
+
+
+def test_series_quick_add_candidates_exclude_current_series_and_support_filters(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+
+    creator_id = db.create_creator("Quick Add Candidate Creator")
+    target_series_id = db.create_series(creator_id, "Target")
+    source_series_id = db.create_series(creator_id, "Source")
+
+    in_target_post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=target_series_id,
+        service="fanbox",
+        external_user_id="qa-filter",
+        external_post_id="2000",
+        title="Already In Target",
+        content="target content",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/qa-filter/post/2000",
+    )
+    unsorted_post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="qa-filter",
+        external_post_id="2001",
+        title="Alpha Candidate",
+        content="alpha content",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/qa-filter/post/2001",
+    )
+    source_post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=source_series_id,
+        service="fanbox",
+        external_user_id="qa-filter",
+        external_post_id="2002",
+        title="Beta Candidate",
+        content="beta content",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/qa-filter/post/2002",
+    )
+    mixed_post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=source_series_id,
+        service="fanbox",
+        external_user_id="qa-filter",
+        external_post_id="2003",
+        title="Alpha Beta Candidate",
+        content="mixed content",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/qa-filter/post/2003",
+    )
+
+    for post_id, tags in (
+        (in_target_post_id, ["alpha", "target"]),
+        (unsorted_post_id, ["alpha"]),
+        (source_post_id, ["beta"]),
+        (mixed_post_id, ["alpha", "beta"]),
+    ):
+        version = db.get_post_version(post_id)
+        assert version is not None
+        db.replace_tags(post_id, tags, version_id=int(version["id"]))
+
+    client = app.test_client()
+    base_response = client.get(f"/creators/{creator_id}/series/{target_series_id}/quick-add/candidates")
+    assert base_response.status_code == 200
+    base_payload = base_response.get_json()
+    assert isinstance(base_payload, dict)
+
+    base_ids = {int(row["id"]) for row in base_payload["posts"]}
+    assert in_target_post_id not in base_ids
+    assert {unsorted_post_id, source_post_id, mixed_post_id}.issubset(base_ids)
+
+    facets_by_key = {str(row["normalized_tag"]): int(row["post_count"]) for row in base_payload["tag_facets"]}
+    assert facets_by_key["alpha"] >= 2
+    assert facets_by_key["beta"] >= 2
+
+    search_response = client.get(
+        f"/creators/{creator_id}/series/{target_series_id}/quick-add/candidates?q=beta"
+    )
+    assert search_response.status_code == 200
+    search_payload = search_response.get_json()
+    assert isinstance(search_payload, dict)
+    search_ids = {int(row["id"]) for row in search_payload["posts"]}
+    assert search_ids == {source_post_id, mixed_post_id}
+
+    tagged_response = client.get(
+        f"/creators/{creator_id}/series/{target_series_id}/quick-add/candidates?tag=alpha&tag=beta"
+    )
+    assert tagged_response.status_code == 200
+    tagged_payload = tagged_response.get_json()
+    assert isinstance(tagged_payload, dict)
+
+    tagged_ids = {int(row["id"]) for row in tagged_payload["posts"]}
+    assert tagged_ids == {mixed_post_id}
+    assert tagged_payload["selected_tags"] == ["alpha", "beta"]
+
+
+def test_series_quick_add_post_moves_posts_and_skips_invalid_or_foreign(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+
+    creator_a = db.create_creator("Quick Add Move Creator A")
+    creator_b = db.create_creator("Quick Add Move Creator B")
+    target_series_id = db.create_series(creator_a, "Target")
+    source_series_id = db.create_series(creator_a, "Source")
+    foreign_series_id = db.create_series(creator_b, "Foreign")
+
+    unsorted_post_id = db.upsert_post(
+        creator_id=creator_a,
+        series_id=None,
+        service="fanbox",
+        external_user_id="qa-move",
+        external_post_id="3000",
+        title="Unsorted",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/qa-move/post/3000",
+    )
+    source_post_id = db.upsert_post(
+        creator_id=creator_a,
+        series_id=source_series_id,
+        service="fanbox",
+        external_user_id="qa-move",
+        external_post_id="3001",
+        title="Source Series",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/qa-move/post/3001",
+    )
+    already_target_post_id = db.upsert_post(
+        creator_id=creator_a,
+        series_id=target_series_id,
+        service="fanbox",
+        external_user_id="qa-move",
+        external_post_id="3002",
+        title="Already Target",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/qa-move/post/3002",
+    )
+    foreign_post_id = db.upsert_post(
+        creator_id=creator_b,
+        series_id=foreign_series_id,
+        service="fanbox",
+        external_user_id="qa-move-b",
+        external_post_id="3003",
+        title="Foreign",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/qa-move-b/post/3003",
+    )
+
+    client = app.test_client()
+    move = client.post(
+        f"/creators/{creator_a}/series/{target_series_id}/quick-add",
+        headers={"X-Requested-With": "XMLHttpRequest"},
+        data=MultiDict(
+            [
+                ("post_id", str(unsorted_post_id)),
+                ("post_id", str(source_post_id)),
+                ("post_id", str(already_target_post_id)),
+                ("post_id", str(foreign_post_id)),
+                ("post_id", "999999"),
+            ]
+        ),
+    )
+    assert move.status_code == 200
+    payload = move.get_json()
+    assert isinstance(payload, dict)
+    assert payload["moved_count"] == 2
+    assert set(payload["moved_post_ids"]) == {unsorted_post_id, source_post_id}
+    assert payload["skipped_count"] == 3
+
+    moved_unsorted = db.get_post(unsorted_post_id)
+    moved_source = db.get_post(source_post_id)
+    unchanged_target = db.get_post(already_target_post_id)
+    unchanged_foreign = db.get_post(foreign_post_id)
+    assert moved_unsorted is not None and int(moved_unsorted["series_id"]) == target_series_id
+    assert moved_source is not None and int(moved_source["series_id"]) == target_series_id
+    assert unchanged_target is not None and int(unchanged_target["series_id"]) == target_series_id
+    assert unchanged_foreign is not None and int(unchanged_foreign["series_id"]) == foreign_series_id
+
+    invalid_series = client.post(
+        f"/creators/{creator_a}/series/{foreign_series_id}/quick-add",
+        headers={"X-Requested-With": "XMLHttpRequest"},
+        data={"post_id": str(unsorted_post_id)},
+    )
+    assert invalid_series.status_code == 404
+    invalid_payload = invalid_series.get_json()
+    assert isinstance(invalid_payload, dict)
+    assert "Series not found" in str(invalid_payload.get("error", ""))
+
+
+def test_series_quick_add_controls_render_only_in_selected_series_view(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+
+    creator_id = db.create_creator("Quick Add Render Creator")
+    series_id = db.create_series(creator_id, "Render Target")
+    moving_post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="qa-render",
+        external_post_id="4000",
+        title="Move Me",
+        content="",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/qa-render/post/4000",
+    )
+
+    client = app.test_client()
+
+    all_posts_view = client.get(f"/creators/{creator_id}")
+    assert all_posts_view.status_code == 200
+    assert b"data-series-quick-add-root" not in all_posts_view.data
+
+    selected_series_view = client.get(f"/creators/{creator_id}?series_id={series_id}")
+    assert selected_series_view.status_code == 200
+    assert b"data-series-quick-add-root" in selected_series_view.data
+    assert b"data-series-quick-add-candidates-url" in selected_series_view.data
+    assert b"data-series-quick-add-submit-url" in selected_series_view.data
+    assert b'class=\"btn btn-link btn--ghost series-edit-toggle\"' in selected_series_view.data
+    assert b'class=\"btn btn-link btn--ghost creator-import-action\"' in selected_series_view.data
+
+    selected_soup = BeautifulSoup(selected_series_view.data, "html.parser")
+    quick_add_form = selected_soup.select_one("form[data-series-quick-add-form]")
+    assert quick_add_form is not None
+    assert quick_add_form.has_attr("hidden")
+    clear_button = quick_add_form.select_one("[data-series-quick-add-search-clear]")
+    assert clear_button is not None
+    assert clear_button.has_attr("hidden")
+
+    action_row = selected_soup.select_one(".series-meta-actions")
+    assert action_row is not None
+    direct_actions = action_row.find_all(recursive=False)
+    quick_add_index = next(
+        index for index, action in enumerate(direct_actions) if action.has_attr("data-series-quick-add-toggle")
+    )
+    edit_index = next(
+        index
+        for index, action in enumerate(direct_actions)
+        if "series-edit-disclosure" in action.get("class", [])
+    )
+    assert quick_add_index < edit_index
+
+    non_ajax_move = client.post(
+        f"/creators/{creator_id}/series/{series_id}/quick-add",
+        data={"post_id": str(moving_post_id)},
+        follow_redirects=True,
+    )
+    assert non_ajax_move.status_code == 200
+    assert b"Move Me" in non_ajax_move.data
 
 
 def test_series_metadata_update_flow(tmp_path):

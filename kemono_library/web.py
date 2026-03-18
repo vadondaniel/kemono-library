@@ -187,8 +187,11 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     threading.Thread(target=import_worker, daemon=True).start()
 
+    def _is_ajax_request() -> bool:
+        return request.headers.get("X-Requested-With") == "XMLHttpRequest"
+
     def _redirect_with_ajax(url: str):
-        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        if _is_ajax_request():
             return jsonify({"redirect_url": url})
         return redirect(url)
 
@@ -1174,6 +1177,187 @@ def create_app(test_config: dict | None = None) -> Flask:
             cover_post_id=cover_post_id,
         )
         flash("Series updated.", "success")
+        return redirect(url_for("creator_detail", creator_id=creator_id, series_id=series_id))
+
+    @app.get("/creators/<int:creator_id>/series/<int:series_id>/quick-add/candidates")
+    def series_quick_add_candidates(creator_id: int, series_id: int):
+        creator = db.get_creator(creator_id)
+        if not creator:
+            return jsonify({"error": "Creator not found."}), 404
+
+        series = db.get_series(series_id)
+        if not series or int(series["creator_id"]) != creator_id:
+            return jsonify({"error": "Series not found for this creator."}), 404
+
+        search_text = request.args.get("q", "").strip()
+        selected_tags = _normalize_tag_values(request.args.getlist("tag"))
+        selected_tag_keys = {tag.casefold() for tag in selected_tags}
+
+        candidate_rows = db.list_posts_for_creator(
+            creator_id,
+            exclude_series_id=series_id,
+            sort_by="published",
+            sort_direction="desc",
+            search_text=search_text,
+            required_tags=selected_tags,
+        )
+        candidate_post_ids = [int(row["id"]) for row in candidate_rows]
+        default_tags_by_post_id = db.list_default_tags_for_posts(candidate_post_ids)
+        global_tag_popularity = {
+            str(row["normalized_tag"]): int(row["post_count"])
+            for row in db.list_creator_tag_facets(creator_id, exclude_series_id=series_id)
+        }
+
+        tag_facet_rows = db.list_creator_tag_facets(
+            creator_id,
+            exclude_series_id=series_id,
+            search_text=search_text,
+            required_tags=selected_tags,
+        )
+        facets_by_key: dict[str, dict[str, Any]] = {
+            str(row["normalized_tag"]): {
+                "tag": str(row["tag"]),
+                "normalized_tag": str(row["normalized_tag"]),
+                "post_count": int(row["post_count"]),
+            }
+            for row in tag_facet_rows
+        }
+        for selected_tag in selected_tags:
+            normalized = selected_tag.casefold()
+            if normalized not in facets_by_key:
+                facets_by_key[normalized] = {
+                    "tag": selected_tag,
+                    "normalized_tag": normalized,
+                    "post_count": 0,
+                }
+
+        facets = [
+            {
+                "tag": str(row["tag"]),
+                "normalized_tag": str(row["normalized_tag"]),
+                "post_count": int(row["post_count"]),
+                "is_selected": str(row["normalized_tag"]) in selected_tag_keys,
+            }
+            for row in sorted(
+                facets_by_key.values(),
+                key=lambda item: (-int(item["post_count"]), str(item["tag"]).casefold()),
+            )
+        ]
+
+        posts: list[dict[str, Any]] = []
+        for row in candidate_rows:
+            item = dict(row)
+            focus_x, focus_y = _extract_thumbnail_focus_from_raw_metadata(item.get("metadata_json"))
+            unsorted_tags = default_tags_by_post_id.get(int(item["id"]), [])
+            sorted_tags = sorted(
+                unsorted_tags,
+                key=lambda tag: (
+                    -global_tag_popularity.get(tag.casefold(), 0),
+                    tag.casefold(),
+                ),
+            )
+            posts.append(
+                {
+                    "id": int(item["id"]),
+                    "title": str(item["title"]) if item["title"] else f"Post {item['id']}",
+                    "series_id": int(item["series_id"]) if item["series_id"] is not None else None,
+                    "series_name": str(item["series_name"]) if item["series_name"] else "Unsorted",
+                    "published_at": str(item["published_at"]) if item["published_at"] else "",
+                    "thumbnail_local_path": _optional_str(item.get("thumbnail_local_path")),
+                    "thumbnail_remote_url": _optional_str(item.get("thumbnail_remote_url")),
+                    "thumbnail_focus_x": focus_x,
+                    "thumbnail_focus_y": focus_y,
+                    "default_tags": sorted_tags,
+                }
+            )
+
+        return jsonify(
+            {
+                "posts": posts,
+                "tag_facets": facets,
+                "selected_tags": selected_tags,
+                "count": len(posts),
+            }
+        )
+
+    @app.post("/creators/<int:creator_id>/series/<int:series_id>/quick-add")
+    def series_quick_add_posts(creator_id: int, series_id: int):
+        creator = db.get_creator(creator_id)
+        if not creator:
+            if _is_ajax_request():
+                return jsonify({"error": "Creator not found."}), 404
+            return ("Creator not found", 404)
+
+        series = db.get_series(series_id)
+        if not series or int(series["creator_id"]) != creator_id:
+            if _is_ajax_request():
+                return jsonify({"error": "Series not found for this creator."}), 404
+            return ("Series not found", 404)
+
+        raw_post_ids = [str(value) for value in request.form.getlist("post_id")]
+        if not raw_post_ids:
+            payload = request.get_json(silent=True)
+            if isinstance(payload, dict):
+                payload_post_ids = payload.get("post_id")
+                if isinstance(payload_post_ids, list):
+                    raw_post_ids = [str(value) for value in payload_post_ids]
+                elif payload_post_ids is not None:
+                    raw_post_ids = [str(payload_post_ids)]
+
+        requested_post_ids: list[int] = []
+        seen_post_ids: set[int] = set()
+        for raw_post_id in raw_post_ids:
+            try:
+                post_id = int(str(raw_post_id).strip())
+            except ValueError:
+                continue
+            if post_id <= 0 or post_id in seen_post_ids:
+                continue
+            seen_post_ids.add(post_id)
+            requested_post_ids.append(post_id)
+
+        if not requested_post_ids:
+            if _is_ajax_request():
+                return jsonify({"error": "Select at least one post."}), 400
+            flash("Select at least one post to add.", "error")
+            return redirect(url_for("creator_detail", creator_id=creator_id, series_id=series_id))
+
+        moved_post_ids: list[int] = []
+        skipped_post_ids: list[int] = []
+        for post_id in requested_post_ids:
+            post = db.get_post(post_id)
+            if not post or int(post["creator_id"]) != creator_id:
+                skipped_post_ids.append(post_id)
+                continue
+            if post["series_id"] is not None and int(post["series_id"]) == series_id:
+                skipped_post_ids.append(post_id)
+                continue
+            moved_post_ids.append(post_id)
+
+        if moved_post_ids:
+            with db.transaction() as conn:
+                for post_id in moved_post_ids:
+                    db.update_post_series(post_id=post_id, series_id=series_id, conn=conn)
+
+        if _is_ajax_request():
+            return jsonify(
+                {
+                    "ok": True,
+                    "requested_count": len(requested_post_ids),
+                    "moved_count": len(moved_post_ids),
+                    "moved_post_ids": moved_post_ids,
+                    "skipped_count": len(skipped_post_ids),
+                    "skipped_post_ids": skipped_post_ids,
+                }
+            )
+
+        if moved_post_ids:
+            moved_label = "post" if len(moved_post_ids) == 1 else "posts"
+            flash(f"Added {len(moved_post_ids)} {moved_label} to this series.", "success")
+        elif skipped_post_ids:
+            flash("No posts were moved.", "error")
+        else:
+            flash("No changes were made.", "info")
         return redirect(url_for("creator_detail", creator_id=creator_id, series_id=series_id))
 
     @app.post("/creators/<int:creator_id>/delete")
