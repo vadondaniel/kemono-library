@@ -5286,6 +5286,9 @@ def test_creator_tag_explorer_and_and_filtering(tmp_path):
     assert explorer_soup.select_one(".creator-tag-explorer-grid") is not None
     assert any("Alpha" in node.get_text(" ", strip=True) for node in explorer_soup.select(".creator-tag-explorer-grid a"))
     assert any("Beta" in node.get_text(" ", strip=True) for node in explorer_soup.select(".creator-tag-explorer-grid a"))
+    popover_tag_collapse = explorer_soup.select_one(".creator-tag-sort-collapse")
+    assert popover_tag_collapse is not None
+    assert popover_tag_collapse.get("open") is None
     single_tag_collapse = explorer_soup.select_one(".creator-tag-explorer-collapse")
     assert single_tag_collapse is not None
     assert single_tag_collapse.get("open") is None

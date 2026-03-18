@@ -362,29 +362,38 @@
           <div class="creator-sort-popover-panel post-content-settings-popover-panel">
             <div class="creator-sort-bar">
               <div class="creator-sort-group post-view-mode-switch post-settings-switch creator-tag-sort-group">
-                <span class="post-view-mode-label">Tags</span>
-                <div class="creator-tag-sort-body">
-                  {% if selected_tag_filters %}
-                    <div class="post-view-mode-chip-row creator-tag-selected-row">
-                      {% for selected_tag in selected_tag_filters %}
-                        <a class="chip chip-link chip--control post-view-mode-chip is-active" href="{{ selected_tag['remove_url'] }}">{{ selected_tag['tag'] }}</a>
-                      {% endfor %}
-                      <a class="chip chip-link chip--control creator-tag-clear-chip" href="{{ clear_tag_filters_url }}">Clear</a>
-                    </div>
-                  {% endif %}
-                  {% if creator_tag_facets %}
-                    <div class="post-view-mode-chip-row creator-tag-option-row">
-                      {% for tag_facet in creator_tag_facets %}
-                        <a class="chip chip-link chip--control post-view-mode-chip creator-tag-option-chip {% if tag_facet['is_selected'] %}is-active{% endif %}" href="{{ tag_facet['toggle_url'] }}">
-                          <span>{{ tag_facet['tag'] }}</span>
-                          <small>{{ tag_facet['post_count'] }}</small>
-                        </a>
-                      {% endfor %}
-                    </div>
-                  {% else %}
-                    <small class="text-subtle">No tags in this scope.</small>
-                  {% endif %}
-                </div>
+                <details class="creator-tag-sort-collapse">
+                  <summary class="post-view-mode-label creator-tag-sort-toggle">
+                    <span class="creator-tag-sort-title">Tags</span>
+                    {% if selected_tag_filters %}
+                      <small>{{ selected_tag_filters|length }} selected</small>
+                    {% elif creator_tag_facets %}
+                      <small>{{ creator_tag_facets|length }} available</small>
+                    {% endif %}
+                  </summary>
+                  <div class="creator-tag-sort-body">
+                    {% if selected_tag_filters %}
+                      <div class="post-view-mode-chip-row creator-tag-selected-row">
+                        {% for selected_tag in selected_tag_filters %}
+                          <a class="chip chip-link chip--control post-view-mode-chip is-active" href="{{ selected_tag['remove_url'] }}">{{ selected_tag['tag'] }}</a>
+                        {% endfor %}
+                        <a class="chip chip-link chip--control creator-tag-clear-chip" href="{{ clear_tag_filters_url }}">Clear</a>
+                      </div>
+                    {% endif %}
+                    {% if creator_tag_facets %}
+                      <div class="post-view-mode-chip-row creator-tag-option-row">
+                        {% for tag_facet in creator_tag_facets %}
+                          <a class="chip chip-link chip--control post-view-mode-chip creator-tag-option-chip {% if tag_facet['is_selected'] %}is-active{% endif %}" href="{{ tag_facet['toggle_url'] }}">
+                            <span>{{ tag_facet['tag'] }}</span>
+                            <small>{{ tag_facet['post_count'] }}</small>
+                          </a>
+                        {% endfor %}
+                      </div>
+                    {% else %}
+                      <small class="text-subtle">No tags in this scope.</small>
+                    {% endif %}
+                  </div>
+                </details>
               </div>
               {% if not selected_series %}
                 <div class="creator-sort-group post-view-mode-switch post-settings-switch">

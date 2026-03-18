@@ -22,6 +22,14 @@
     const node = root.querySelector(".creator-sort-popover");
     return node instanceof HTMLDetailsElement ? node : null;
   };
+  const getCreatorTagSortCollapse = () => {
+    const root = getCreatorPageRoot();
+    if (!(root instanceof HTMLElement)) {
+      return null;
+    }
+    const node = root.querySelector(".creator-tag-sort-collapse");
+    return node instanceof HTMLDetailsElement ? node : null;
+  };
 
   const listTagPopovers = () =>
     Array.from(document.querySelectorAll(".creator-post-tag-details")).filter(
@@ -109,7 +117,12 @@
 
   const fetchAndRenderCreatorLayout = async (
     targetUrl,
-    { restoreSearchCaret = false, expectedSearchToken = null, preserveSortPopoverState = true } = {}
+    {
+      restoreSearchCaret = false,
+      expectedSearchToken = null,
+      preserveSortPopoverState = true,
+      preserveTagSortCollapseState = true,
+    } = {}
   ) => {
     if (!isCreatorDetailUrl(targetUrl)) {
       window.location.assign(targetUrl);
@@ -137,6 +150,11 @@
       preserveSortPopoverState &&
       currentSortPopover instanceof HTMLDetailsElement &&
       currentSortPopover.open;
+    const currentTagSortCollapse = getCreatorTagSortCollapse();
+    const reopenTagSortCollapse =
+      preserveTagSortCollapseState &&
+      currentTagSortCollapse instanceof HTMLDetailsElement &&
+      currentTagSortCollapse.open;
     if (restoreSearchCaret) {
       const activeElement = document.activeElement;
       if (activeElement instanceof HTMLInputElement && activeElement.matches(creatorFilterSearchSelector)) {
@@ -178,6 +196,12 @@
         const nextSortPopover = getCreatorSortPopover();
         if (nextSortPopover instanceof HTMLDetailsElement) {
           nextSortPopover.open = true;
+        }
+      }
+      if (reopenTagSortCollapse) {
+        const nextTagSortCollapse = getCreatorTagSortCollapse();
+        if (nextTagSortCollapse instanceof HTMLDetailsElement) {
+          nextTagSortCollapse.open = true;
         }
       }
 
