@@ -424,7 +424,7 @@
         .map((segment) => encodeURIComponent(segment))
         .join("/");
       if (encodedPath) {
-        return `/files/${encodedPath}`;
+        return `/files/${encodedPath}?thumb=grid`;
       }
     }
 

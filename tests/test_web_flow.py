@@ -1,8 +1,10 @@
+import io
 import sqlite3
 import threading
 from pathlib import Path
 import time
 from bs4 import BeautifulSoup
+from PIL import Image
 import pytest
 from werkzeug.datastructures import MultiDict
 
@@ -1115,6 +1117,57 @@ def test_served_files_are_inline_not_forced_download(tmp_path):
     assert response.status_code == 200
     disposition = response.headers.get("Content-Disposition", "")
     assert "attachment" not in disposition.lower()
+
+
+def test_files_route_serves_low_res_grid_thumbnail_for_large_image(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    file_path = Path(app.config["FILES_DIR"]) / "post_1" / "large.jpg"
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    with Image.new("RGB", (2400, 1600), color=(20, 70, 140)) as large_image:
+        large_image.save(file_path, format="JPEG", quality=95)
+
+    client = app.test_client()
+    original = client.get("/files/post_1/large.jpg")
+    grid_thumb = client.get("/files/post_1/large.jpg?thumb=grid")
+
+    assert original.status_code == 200
+    assert grid_thumb.status_code == 200
+    assert "attachment" not in (grid_thumb.headers.get("Content-Disposition", "").lower())
+
+    with Image.open(io.BytesIO(original.data)) as original_image:
+        assert original_image.size == (2400, 1600)
+    with Image.open(io.BytesIO(grid_thumb.data)) as thumb_image:
+        assert thumb_image.width <= 640
+        assert thumb_image.height <= 640
+
+
+def test_files_route_ignores_grid_thumbnail_mode_for_non_images(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    file_path = Path(app.config["FILES_DIR"]) / "post_1" / "notes.txt"
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    file_path.write_text("hello", encoding="utf-8")
+
+    response = app.test_client().get("/files/post_1/notes.txt?thumb=grid")
+
+    assert response.status_code == 200
+    assert response.data == b"hello"
+    assert "attachment" not in (response.headers.get("Content-Disposition", "").lower())
 
 
 def test_favicon_route_serves_svg_icon(tmp_path):
@@ -4471,6 +4524,46 @@ def test_edit_post_saves_thumbnail_focus_and_applies_to_creator_grid(tmp_path):
     assert "object-position: 22.5% 77.5%" in html
 
 
+def test_creator_grid_recovers_missing_thumbnail_local_path_from_existing_post_file(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    db = app.db  # type: ignore[attr-defined]
+    creator_id = db.create_creator("Recovered Thumb Creator")
+    post_id = db.upsert_post(
+        creator_id=creator_id,
+        series_id=None,
+        service="fanbox",
+        external_user_id="thumb-user",
+        external_post_id="thumb-post",
+        title="Recovered Thumb Post",
+        content="<p>Body</p>",
+        metadata={},
+        source_url="https://kemono.cr/fanbox/user/thumb-user/post/thumb-post",
+        thumbnail_name="angle.png",
+        thumbnail_remote_url="https://kemono.cr/89/6a/896a3d5e9a0bec1985ded67de009f3da74ff90627917188224a73aaddb39bd33.png",
+        thumbnail_local_path=None,
+    )
+
+    local_thumb = Path(app.config["FILES_DIR"]) / f"post_{post_id}" / "angle.png"
+    local_thumb.parent.mkdir(parents=True, exist_ok=True)
+    local_thumb.write_bytes(b"local-thumb")
+
+    response = app.test_client().get(f"/creators/{creator_id}")
+    assert response.status_code == 200
+    soup = BeautifulSoup(response.data, "html.parser")
+    thumb_image = soup.select_one(".creator-post-card .creator-post-thumb img")
+    assert thumb_image is not None
+    src = thumb_image.get("src") or ""
+    assert src.endswith(f"/files/post_{post_id}/angle.png?thumb=grid")
+
+
 def test_edit_post_ajax_submit_returns_redirect_json(tmp_path):
     app = create_app(
         {
@@ -5532,7 +5625,7 @@ def test_series_folder_tile_uses_first_entry_thumbnail(tmp_path):
     response = client.get(f"/creators/{creator_id}")
     assert response.status_code == 200
     assert b'class="folder-tile-thumb"' in response.data
-    assert b"/files/post_302/new.jpg" in response.data
+    assert b"/files/post_302/new.jpg?thumb=grid" in response.data
 
 
 def test_series_settings_apply_default_sort_and_cover_source(tmp_path):
@@ -5600,7 +5693,7 @@ def test_series_settings_apply_default_sort_and_cover_source(tmp_path):
 
     creator_view = client.get(f"/creators/{creator_id}")
     assert creator_view.status_code == 200
-    assert b"/files/post_401/zeta.jpg" in creator_view.data
+    assert b"/files/post_401/zeta.jpg?thumb=grid" in creator_view.data
 
     folder_default = client.get(f"/creators/{creator_id}?series_id={series_id}")
     assert folder_default.status_code == 200

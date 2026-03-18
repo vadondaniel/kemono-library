@@ -41,6 +41,9 @@ from .rendering import render_post_content
 
 SERIES_COVER_CHOICE_LATEST = "__latest__"
 SERIES_COVER_CHOICE_FIRST = "__first__"
+GRID_THUMB_QUERY_VALUE = "grid"
+GRID_THUMB_CACHE_DIR_NAME = ".grid_thumbs"
+GRID_THUMB_CACHE_VERSION = 1
 
 
 def create_app(test_config: dict | None = None) -> Flask:
@@ -50,6 +53,8 @@ def create_app(test_config: dict | None = None) -> Flask:
         DATABASE=str(Path(app.root_path).parent / "data" / "library.db"),
         FILES_DIR=str(Path(app.root_path).parent / "data" / "files"),
         ICONS_DIR=str(Path(app.root_path).parent / "data" / "icons"),
+        GRID_THUMB_MAX_EDGE=640,
+        GRID_THUMB_MIN_SOURCE_BYTES=768 * 1024,
     )
     if test_config:
         app.config.update(test_config)
@@ -847,8 +852,16 @@ def create_app(test_config: dict | None = None) -> Flask:
         creator = db.get_creator(creator_id)
         if not creator:
             return ("Creator not found", 404)
+        files_base = Path(app.config["FILES_DIR"])
         series_list = [dict(row) for row in db.list_series(creator_id)]
         for series in series_list:
+            series["cover_thumbnail_local_path"] = _derive_existing_thumbnail_local_path(
+                files_base,
+                post_id=series.get("cover_post_id"),
+                thumbnail_local_path=series.get("cover_thumbnail_local_path"),
+                thumbnail_name=None,
+                thumbnail_remote_url=series.get("cover_thumbnail_remote_url"),
+            )
             focus_x, focus_y = _extract_thumbnail_focus_from_raw_metadata(series.get("cover_metadata_json"))
             series["cover_thumbnail_focus_x"] = focus_x
             series["cover_thumbnail_focus_y"] = focus_y
@@ -1031,6 +1044,13 @@ def create_app(test_config: dict | None = None) -> Flask:
         posts: list[dict[str, Any]] = []
         for row in posts_rows:
             item = dict(row)
+            item["thumbnail_local_path"] = _derive_existing_thumbnail_local_path(
+                files_base,
+                post_id=item.get("id"),
+                thumbnail_local_path=item.get("thumbnail_local_path"),
+                thumbnail_name=item.get("thumbnail_name"),
+                thumbnail_remote_url=item.get("thumbnail_remote_url"),
+            )
             focus_x, focus_y = _extract_thumbnail_focus_from_raw_metadata(item.get("metadata_json"))
             item["thumbnail_focus_x"] = focus_x
             item["thumbnail_focus_y"] = focus_y
@@ -1189,6 +1209,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         creator = db.get_creator(creator_id)
         if not creator:
             return jsonify({"error": "Creator not found."}), 404
+        files_base = Path(app.config["FILES_DIR"])
 
         series = db.get_series(series_id)
         if not series or int(series["creator_id"]) != creator_id:
@@ -1259,6 +1280,13 @@ def create_app(test_config: dict | None = None) -> Flask:
         posts: list[dict[str, Any]] = []
         for row in candidate_rows:
             item = dict(row)
+            resolved_thumbnail_local_path = _derive_existing_thumbnail_local_path(
+                files_base,
+                post_id=item.get("id"),
+                thumbnail_local_path=item.get("thumbnail_local_path"),
+                thumbnail_name=item.get("thumbnail_name"),
+                thumbnail_remote_url=item.get("thumbnail_remote_url"),
+            )
             focus_x, focus_y = _extract_thumbnail_focus_from_raw_metadata(item.get("metadata_json"))
             unsorted_tags = default_tags_by_post_id.get(int(item["id"]), [])
             sorted_tags = sorted(
@@ -1275,7 +1303,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                     "series_id": int(item["series_id"]) if item["series_id"] is not None else None,
                     "series_name": str(item["series_name"]) if item["series_name"] else "Unsorted",
                     "published_at": str(item["published_at"]) if item["published_at"] else "",
-                    "thumbnail_local_path": _optional_str(item.get("thumbnail_local_path")),
+                    "thumbnail_local_path": resolved_thumbnail_local_path,
                     "thumbnail_remote_url": _optional_str(item.get("thumbnail_remote_url")),
                     "thumbnail_focus_x": focus_x,
                     "thumbnail_focus_y": focus_y,
@@ -2875,16 +2903,24 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     @app.get("/files/<path:relative_path>")
     def serve_file(relative_path: str):
-        # Keep compatibility with old Windows-stored paths using backslashes.
-        safe_relative = relative_path.replace("\\", "/")
         base_dir = Path(app.config["FILES_DIR"]).resolve()
-        target = (base_dir / safe_relative).resolve()
-        try:
-            target.relative_to(base_dir)
-        except ValueError:
+        resolved = _resolve_safe_file_target(base_dir=base_dir, relative_path=relative_path)
+        if resolved is None:
             return ("Not found", 404)
-        if not target.exists() or not target.is_file():
-            return ("Not found", 404)
+        safe_relative, target = resolved
+
+        thumb_mode = _optional_str(request.args.get("thumb"))
+        if thumb_mode and thumb_mode.lower() == GRID_THUMB_QUERY_VALUE:
+            thumbnail_response = _try_serve_grid_thumbnail(
+                source=target,
+                safe_relative=safe_relative,
+                files_base=base_dir,
+                max_edge=_coerce_positive_int_with_fallback(app.config.get("GRID_THUMB_MAX_EDGE"), fallback=640),
+                min_source_bytes=_coerce_non_negative_int(app.config.get("GRID_THUMB_MIN_SOURCE_BYTES"), fallback=768 * 1024),
+            )
+            if thumbnail_response is not None:
+                return thumbnail_response
+
         detected_mime = _detect_image_mime(target)
         if detected_mime:
             return send_file(target, mimetype=detected_mime, as_attachment=False)
@@ -2941,6 +2977,195 @@ def _file_size_if_valid(path: Path | None) -> int | None:
         return None
     size = int(path_stat.st_size)
     return size if size > 0 else None
+
+
+def _coerce_positive_int_with_fallback(value: Any, *, fallback: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return fallback
+    return parsed if parsed > 0 else fallback
+
+
+def _coerce_non_negative_int(value: Any, *, fallback: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return fallback
+    return parsed if parsed >= 0 else fallback
+
+
+def _resolve_safe_file_target(*, base_dir: Path, relative_path: str) -> tuple[str, Path] | None:
+    # Keep compatibility with old Windows-stored paths using backslashes.
+    safe_relative = relative_path.replace("\\", "/")
+    target = (base_dir / safe_relative).resolve()
+    try:
+        target.relative_to(base_dir)
+    except ValueError:
+        return None
+    if not target.exists() or not target.is_file():
+        return None
+    return safe_relative, target
+
+
+def _derive_existing_thumbnail_local_path(
+    files_base: Path,
+    *,
+    post_id: Any,
+    thumbnail_local_path: Any,
+    thumbnail_name: Any,
+    thumbnail_remote_url: Any,
+) -> str | None:
+    current_local_path = _optional_str(thumbnail_local_path)
+    if current_local_path:
+        return current_local_path
+
+    try:
+        normalized_post_id = int(post_id)
+    except (TypeError, ValueError):
+        return None
+    if normalized_post_id <= 0:
+        return None
+
+    post_dir_relative = f"post_{normalized_post_id}"
+    post_dir = files_base / post_dir_relative
+    try:
+        if not post_dir.is_dir():
+            return None
+    except OSError:
+        return None
+
+    candidate_names: list[str] = []
+
+    def _add_candidate_name(raw_name: Any) -> None:
+        optional_name = _optional_str(raw_name)
+        if not optional_name:
+            return
+        for candidate in (optional_name, sanitize_filename(optional_name)):
+            normalized_candidate = candidate.strip()
+            if normalized_candidate and normalized_candidate not in candidate_names:
+                candidate_names.append(normalized_candidate)
+
+    _add_candidate_name(thumbnail_name)
+    remote_url = _optional_str(thumbnail_remote_url)
+    if remote_url:
+        _add_candidate_name(Path(urlparse(remote_url).path).name)
+
+    if not candidate_names:
+        return None
+
+    for candidate_name in candidate_names:
+        candidate_file = post_dir / candidate_name
+        if _is_valid_file(candidate_file):
+            return f"{post_dir_relative}/{candidate_name}"
+
+    try:
+        available_names = {
+            entry.name.casefold(): entry.name
+            for entry in post_dir.iterdir()
+            if _is_valid_file(entry)
+        }
+    except OSError:
+        return None
+    for candidate_name in candidate_names:
+        matched_name = available_names.get(candidate_name.casefold())
+        if matched_name:
+            return f"{post_dir_relative}/{matched_name}"
+
+    return None
+
+
+def _image_mode_has_alpha(image: Any) -> bool:
+    mode = str(getattr(image, "mode", "") or "").upper()
+    if mode in {"RGBA", "LA"}:
+        return True
+    if mode == "P":
+        info = getattr(image, "info", None)
+        if isinstance(info, dict):
+            return "transparency" in info
+    return False
+
+
+def _try_serve_grid_thumbnail(
+    *,
+    source: Path,
+    safe_relative: str,
+    files_base: Path,
+    max_edge: int,
+    min_source_bytes: int,
+):
+    detected_mime = _detect_image_mime(source)
+    if detected_mime not in {"image/jpeg", "image/png", "image/webp", "image/bmp"}:
+        return None
+
+    source_size = _file_size_if_valid(source)
+    if source_size is None:
+        return None
+
+    try:
+        from PIL import Image
+        from PIL import UnidentifiedImageError
+    except Exception:  # noqa: BLE001
+        return None
+
+    try:
+        source_stat = source.stat()
+    except OSError:
+        return None
+
+    try:
+        with Image.open(source) as source_image:
+            if bool(getattr(source_image, "is_animated", False)):
+                return None
+            width, height = source_image.size
+            if width <= max_edge and height <= max_edge and source_size <= min_source_bytes:
+                return None
+
+            keep_alpha = _image_mode_has_alpha(source_image)
+            output_suffix = ".png" if keep_alpha else ".jpg"
+            output_mime = "image/png" if keep_alpha else "image/jpeg"
+            cache_key_payload = (
+                f"v{GRID_THUMB_CACHE_VERSION}|{safe_relative}|{source_stat.st_mtime_ns}"
+                f"|{source_size}|{max_edge}|{output_suffix}"
+            )
+            cache_key = hashlib.sha1(cache_key_payload.encode("utf-8")).hexdigest()
+            cache_dir = files_base / GRID_THUMB_CACHE_DIR_NAME
+            cache_path = cache_dir / f"{cache_key}{output_suffix}"
+
+            if _is_valid_file(cache_path):
+                return send_file(cache_path, mimetype=output_mime, as_attachment=False)
+
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            resample = Image.Resampling.LANCZOS if hasattr(Image, "Resampling") else Image.LANCZOS
+            thumbnail = source_image.copy()
+            thumbnail.thumbnail((max_edge, max_edge), resample=resample)
+
+            save_kwargs: dict[str, Any]
+            if keep_alpha:
+                save_kwargs = {"format": "PNG", "optimize": True}
+            else:
+                if str(getattr(thumbnail, "mode", "")).upper() not in {"RGB", "L"}:
+                    thumbnail = thumbnail.convert("RGB")
+                save_kwargs = {"format": "JPEG", "quality": 72, "optimize": True}
+                if thumbnail.width >= 16 and thumbnail.height >= 16:
+                    save_kwargs["progressive"] = True
+
+            temp_path = cache_path.with_suffix(f"{cache_path.suffix}.{uuid.uuid4().hex}.tmp")
+            try:
+                thumbnail.save(temp_path, **save_kwargs)
+                temp_path.replace(cache_path)
+            finally:
+                if temp_path.exists():
+                    try:
+                        temp_path.unlink()
+                    except OSError:
+                        pass
+    except (OSError, UnidentifiedImageError, ValueError):
+        return None
+
+    if _is_valid_file(cache_path):
+        return send_file(cache_path, mimetype=output_mime, as_attachment=False)
+    return None
 
 
 _WINDOWS_RESERVED_FILENAMES = {
