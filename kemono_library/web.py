@@ -44,6 +44,7 @@ SERIES_COVER_CHOICE_FIRST = "__first__"
 GRID_THUMB_QUERY_VALUE = "grid"
 GRID_THUMB_CACHE_DIR_NAME = ".grid_thumbs"
 GRID_THUMB_CACHE_VERSION = 1
+GRID_THUMB_TARGET_ASPECT_RATIO = 1200.0 / 630.0
 
 
 def create_app(test_config: dict | None = None) -> Flask:
@@ -2917,6 +2918,12 @@ def create_app(test_config: dict | None = None) -> Flask:
                 files_base=base_dir,
                 max_edge=_coerce_positive_int_with_fallback(app.config.get("GRID_THUMB_MAX_EDGE"), fallback=640),
                 min_source_bytes=_coerce_non_negative_int(app.config.get("GRID_THUMB_MIN_SOURCE_BYTES"), fallback=768 * 1024),
+                target_aspect_ratio=_coerce_positive_float_with_fallback(
+                    app.config.get("GRID_THUMB_TARGET_ASPECT_RATIO"),
+                    fallback=GRID_THUMB_TARGET_ASPECT_RATIO,
+                ),
+                focus_x=_coerce_percentage_float(request.args.get("fx"), fallback=50.0),
+                focus_y=_coerce_percentage_float(request.args.get("fy"), fallback=50.0),
             )
             if thumbnail_response is not None:
                 return thumbnail_response
@@ -2993,6 +3000,22 @@ def _coerce_non_negative_int(value: Any, *, fallback: int) -> int:
     except (TypeError, ValueError):
         return fallback
     return parsed if parsed >= 0 else fallback
+
+
+def _coerce_positive_float_with_fallback(value: Any, *, fallback: float) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return fallback
+    return parsed if parsed > 0 else fallback
+
+
+def _coerce_percentage_float(value: Any, *, fallback: float) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return fallback
+    return max(0.0, min(100.0, parsed))
 
 
 def _resolve_safe_file_target(*, base_dir: Path, relative_path: str) -> tuple[str, Path] | None:
@@ -3086,6 +3109,40 @@ def _image_mode_has_alpha(image: Any) -> bool:
     return False
 
 
+def _compute_focus_cover_crop_box(
+    *,
+    width: int,
+    height: int,
+    target_aspect_ratio: float,
+    focus_x: float,
+    focus_y: float,
+) -> tuple[int, int, int, int]:
+    if width <= 0 or height <= 0:
+        return (0, 0, max(1, width), max(1, height))
+    if target_aspect_ratio <= 0:
+        return (0, 0, width, height)
+
+    source_ratio = width / height
+    if abs(source_ratio - target_aspect_ratio) < 1e-9:
+        return (0, 0, width, height)
+
+    if source_ratio > target_aspect_ratio:
+        crop_height = height
+        crop_width = max(1, min(width, int(round(crop_height * target_aspect_ratio))))
+    else:
+        crop_width = width
+        crop_height = max(1, min(height, int(round(crop_width / target_aspect_ratio))))
+
+    center_x = (focus_x / 100.0) * width
+    center_y = (focus_y / 100.0) * height
+
+    left = int(round(center_x - (crop_width / 2)))
+    top = int(round(center_y - (crop_height / 2)))
+    left = max(0, min(left, width - crop_width))
+    top = max(0, min(top, height - crop_height))
+    return (left, top, left + crop_width, top + crop_height)
+
+
 def _try_serve_grid_thumbnail(
     *,
     source: Path,
@@ -3093,6 +3150,9 @@ def _try_serve_grid_thumbnail(
     files_base: Path,
     max_edge: int,
     min_source_bytes: int,
+    target_aspect_ratio: float,
+    focus_x: float,
+    focus_y: float,
 ):
     detected_mime = _detect_image_mime(source)
     if detected_mime not in {"image/jpeg", "image/png", "image/webp", "image/bmp"}:
@@ -3118,7 +3178,26 @@ def _try_serve_grid_thumbnail(
             if bool(getattr(source_image, "is_animated", False)):
                 return None
             width, height = source_image.size
-            if width <= max_edge and height <= max_edge and source_size <= min_source_bytes:
+            crop_box = _compute_focus_cover_crop_box(
+                width=width,
+                height=height,
+                target_aspect_ratio=target_aspect_ratio,
+                focus_x=focus_x,
+                focus_y=focus_y,
+            )
+            needs_crop = crop_box != (0, 0, width, height)
+
+            crop_width = crop_box[2] - crop_box[0]
+            crop_height = crop_box[3] - crop_box[1]
+            target_width = max_edge
+            target_height = max(1, int(round(max_edge / target_aspect_ratio)))
+
+            scale = min(target_width / crop_width, target_height / crop_height, 1.0)
+            output_width = max(1, int(round(crop_width * scale)))
+            output_height = max(1, int(round(crop_height * scale)))
+            needs_resize = output_width != crop_width or output_height != crop_height
+
+            if not needs_crop and not needs_resize and source_size <= min_source_bytes:
                 return None
 
             keep_alpha = _image_mode_has_alpha(source_image)
@@ -3126,7 +3205,8 @@ def _try_serve_grid_thumbnail(
             output_mime = "image/png" if keep_alpha else "image/jpeg"
             cache_key_payload = (
                 f"v{GRID_THUMB_CACHE_VERSION}|{safe_relative}|{source_stat.st_mtime_ns}"
-                f"|{source_size}|{max_edge}|{output_suffix}"
+                f"|{source_size}|{max_edge}|{output_suffix}|{target_aspect_ratio:.8f}"
+                f"|{focus_x:.4f}|{focus_y:.4f}"
             )
             cache_key = hashlib.sha1(cache_key_payload.encode("utf-8")).hexdigest()
             cache_dir = files_base / GRID_THUMB_CACHE_DIR_NAME
@@ -3137,8 +3217,12 @@ def _try_serve_grid_thumbnail(
 
             cache_dir.mkdir(parents=True, exist_ok=True)
             resample = Image.Resampling.LANCZOS if hasattr(Image, "Resampling") else Image.LANCZOS
-            thumbnail = source_image.copy()
-            thumbnail.thumbnail((max_edge, max_edge), resample=resample)
+            cropped = source_image.crop(crop_box) if needs_crop else source_image.copy()
+            thumbnail = (
+                cropped.resize((output_width, output_height), resample=resample)
+                if needs_resize
+                else cropped
+            )
 
             save_kwargs: dict[str, Any]
             if keep_alpha:

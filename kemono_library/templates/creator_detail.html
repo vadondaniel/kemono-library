@@ -298,7 +298,7 @@
                   <span class="folder-tile-thumb-wrap">
                     <img
                       class="folder-tile-thumb"
-                      src="{{ url_for('serve_file', relative_path=series['cover_thumbnail_local_path'], thumb='grid') }}"
+                      src="{{ url_for('serve_file', relative_path=series['cover_thumbnail_local_path'], thumb='grid', fx=series['cover_thumbnail_focus_x'], fy=series['cover_thumbnail_focus_y']) }}"
                       alt="{{ series['name'] }} thumbnail"
                       style="object-fit: cover; object-position: {{ series['cover_thumbnail_focus_x'] }}% {{ series['cover_thumbnail_focus_y'] }}%;"
                       loading="lazy"
@@ -504,7 +504,7 @@
                 <time class="creator-post-published" datetime="{{ post['published_at'] }}">{{ post['published_at']|format_datetime }}</time>
               {% endif %}
               {% if post['thumbnail_local_path'] %}
-                <img src="{{ url_for('serve_file', relative_path=post['thumbnail_local_path'], thumb='grid') }}" alt="{{ post['title'] }}" style="object-fit: cover; object-position: {{ post['thumbnail_focus_x'] }}% {{ post['thumbnail_focus_y'] }}%;" loading="lazy">
+                <img src="{{ url_for('serve_file', relative_path=post['thumbnail_local_path'], thumb='grid', fx=post['thumbnail_focus_x'], fy=post['thumbnail_focus_y']) }}" alt="{{ post['title'] }}" style="object-fit: cover; object-position: {{ post['thumbnail_focus_x'] }}% {{ post['thumbnail_focus_y'] }}%;" loading="lazy">
               {% elif post['thumbnail_remote_url'] %}
                 <img src="{{ post['thumbnail_remote_url'] }}" alt="{{ post['title'] }}" style="object-fit: cover; object-position: {{ post['thumbnail_focus_x'] }}% {{ post['thumbnail_focus_y'] }}%;" loading="lazy" referrerpolicy="no-referrer">
               {% else %}

@@ -3,6 +3,7 @@ import sqlite3
 import threading
 from pathlib import Path
 import time
+from urllib.parse import parse_qs, urlparse
 from bs4 import BeautifulSoup
 from PIL import Image
 import pytest
@@ -1145,8 +1146,44 @@ def test_files_route_serves_low_res_grid_thumbnail_for_large_image(tmp_path):
     with Image.open(io.BytesIO(original.data)) as original_image:
         assert original_image.size == (2400, 1600)
     with Image.open(io.BytesIO(grid_thumb.data)) as thumb_image:
-        assert thumb_image.width <= 640
-        assert thumb_image.height <= 640
+        assert thumb_image.size == (640, 336)
+
+
+def test_files_route_grid_thumbnail_applies_focus_aware_cover_crop(tmp_path):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test",
+            "DATABASE": str(tmp_path / "test.db"),
+            "FILES_DIR": str(tmp_path / "files"),
+            "ICONS_DIR": str(tmp_path / "icons"),
+        }
+    )
+    file_path = Path(app.config["FILES_DIR"]) / "post_1" / "focus.png"
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    with Image.new("RGB", (1200, 3600), color=(0, 0, 0)) as image:
+        image.paste((220, 20, 20), (0, 0, 1200, 1200))
+        image.paste((20, 220, 20), (0, 1200, 1200, 2400))
+        image.paste((20, 20, 220), (0, 2400, 1200, 3600))
+        image.save(file_path, format="PNG")
+
+    client = app.test_client()
+    top_focus = client.get("/files/post_1/focus.png?thumb=grid&fx=50&fy=5")
+    bottom_focus = client.get("/files/post_1/focus.png?thumb=grid&fx=50&fy=95")
+
+    assert top_focus.status_code == 200
+    assert bottom_focus.status_code == 200
+    assert top_focus.data != bottom_focus.data
+
+    with Image.open(io.BytesIO(top_focus.data)) as top_image:
+        assert top_image.size == (640, 336)
+        top_center = top_image.getpixel((top_image.width // 2, top_image.height // 2))
+    with Image.open(io.BytesIO(bottom_focus.data)) as bottom_image:
+        assert bottom_image.size == (640, 336)
+        bottom_center = bottom_image.getpixel((bottom_image.width // 2, bottom_image.height // 2))
+
+    assert int(top_center[0]) > int(top_center[2]) + 40
+    assert int(bottom_center[2]) > int(bottom_center[0]) + 40
 
 
 def test_files_route_ignores_grid_thumbnail_mode_for_non_images(tmp_path):
@@ -4561,7 +4598,12 @@ def test_creator_grid_recovers_missing_thumbnail_local_path_from_existing_post_f
     thumb_image = soup.select_one(".creator-post-card .creator-post-thumb img")
     assert thumb_image is not None
     src = thumb_image.get("src") or ""
-    assert src.endswith(f"/files/post_{post_id}/angle.png?thumb=grid")
+    parsed_src = urlparse(src)
+    assert parsed_src.path.endswith(f"/files/post_{post_id}/angle.png")
+    query = parse_qs(parsed_src.query)
+    assert query.get("thumb") == ["grid"]
+    assert query.get("fx") == ["50.0"]
+    assert query.get("fy") == ["50.0"]
 
 
 def test_edit_post_ajax_submit_returns_redirect_json(tmp_path):

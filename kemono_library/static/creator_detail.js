@@ -414,7 +414,7 @@
     }
   };
 
-  const getQuickAddThumbnailUrl = (post) => {
+  const getQuickAddThumbnailUrl = (post, focusX = 50, focusY = 50) => {
     const localPath = typeof post.thumbnail_local_path === "string" ? post.thumbnail_local_path.trim() : "";
     if (localPath) {
       const normalizedPath = localPath.replace(/\\/g, "/").replace(/^\/+/, "");
@@ -424,7 +424,7 @@
         .map((segment) => encodeURIComponent(segment))
         .join("/");
       if (encodedPath) {
-        return `/files/${encodedPath}?thumb=grid`;
+        return `/files/${encodedPath}?thumb=grid&fx=${encodeURIComponent(String(focusX))}&fy=${encodeURIComponent(String(focusY))}`;
       }
     }
 
@@ -476,9 +476,9 @@
       const seriesId = Number(post.series_id);
       const hasSourceSeries = Number.isInteger(seriesId) && seriesId > 0;
       const publishedAt = typeof post.published_at === "string" && post.published_at.trim() ? post.published_at.trim() : "";
-      const thumbnailUrl = getQuickAddThumbnailUrl(post);
       const focusX = clampQuickAddThumbnailFocus(post.thumbnail_focus_x, 50);
       const focusY = clampQuickAddThumbnailFocus(post.thumbnail_focus_y, 50);
+      const thumbnailUrl = getQuickAddThumbnailUrl(post, focusX, focusY);
       const tags = Array.isArray(post.default_tags)
         ? post.default_tags.map((value) => String(value || "").trim()).filter((value) => value.length > 0)
         : [];
