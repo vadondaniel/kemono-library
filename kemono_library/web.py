@@ -1075,6 +1075,8 @@ def create_app(test_config: dict | None = None) -> Flask:
             page_title = _build_page_title(_optional_str(selected_series.get("name")) or "Series", creator_name)
         else:
             page_title = _build_page_title(creator_name)
+        default_sort_for_view = series_default_sort if selected_series else "published"
+        default_direction_for_view = series_default_direction if selected_series else "desc"
         return render_template(
             "creator_detail.html",
             creator=creator,
@@ -1096,6 +1098,9 @@ def create_app(test_config: dict | None = None) -> Flask:
             explorer_mode=explorer_mode,
             explorer_series_url=explorer_series_url,
             explorer_tags_url=explorer_tags_url,
+            default_sort_for_view=default_sort_for_view,
+            default_direction_for_view=default_direction_for_view,
+            default_explorer_for_view="series",
             header_context=header_context if selected_series else None,
             title=page_title,
         )

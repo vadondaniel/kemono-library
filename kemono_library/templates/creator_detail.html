@@ -19,7 +19,12 @@
   {% set import_post_url = url_for('import_form', creator_id=creator['id']) %}
 {% endif %}
 
-<section data-creator-detail-page>
+<section
+  data-creator-detail-page
+  data-default-sort="{{ default_sort_for_view }}"
+  data-default-direction="{{ default_direction_for_view }}"
+  data-default-explorer="{{ default_explorer_for_view }}"
+>
   {% if not selected_series %}
     <section class="panel creator-hero">
       <div class="creator-hero-main">

@@ -136,13 +136,94 @@
     }
   };
 
+  const getCreatorDetailDefaults = (root = null) => {
+    const sourceRoot = root instanceof HTMLElement ? root : getCreatorPageRoot();
+    const defaultSortRaw =
+      sourceRoot instanceof HTMLElement ? (sourceRoot.getAttribute("data-default-sort") || "").trim().toLowerCase() : "";
+    const defaultDirectionRaw =
+      sourceRoot instanceof HTMLElement ? (sourceRoot.getAttribute("data-default-direction") || "").trim().toLowerCase() : "";
+    const defaultExplorerRaw =
+      sourceRoot instanceof HTMLElement ? (sourceRoot.getAttribute("data-default-explorer") || "").trim().toLowerCase() : "";
+
+    return {
+      defaultSort: defaultSortRaw === "title" ? "title" : "published",
+      defaultDirection: defaultDirectionRaw === "asc" ? "asc" : "desc",
+      defaultExplorer: defaultExplorerRaw === "tags" ? "tags" : "series",
+    };
+  };
+
+  const canonicalizeCreatorDetailUrl = (href, { root = null } = {}) => {
+    try {
+      const targetUrl = new URL(href, window.location.href);
+      if (!isCreatorDetailUrl(targetUrl.toString())) {
+        return targetUrl.toString();
+      }
+
+      const { defaultSort, defaultDirection, defaultExplorer } = getCreatorDetailDefaults(root);
+      const params = targetUrl.searchParams;
+
+      const sortValue = (params.get("sort") || "").trim().toLowerCase();
+      if (!sortValue || sortValue === defaultSort) {
+        params.delete("sort");
+      }
+
+      const directionValue = (params.get("direction") || "").trim().toLowerCase();
+      if (!directionValue || directionValue === defaultDirection) {
+        params.delete("direction");
+      }
+
+      const explorerValue = (params.get("explorer") || "").trim().toLowerCase();
+      if (!explorerValue || explorerValue === defaultExplorer) {
+        params.delete("explorer");
+      }
+
+      const queryText = (params.get("q") || "").trim();
+      if (!queryText) {
+        params.delete("q");
+      } else {
+        params.set("q", queryText);
+      }
+
+      const normalizedTags = params
+        .getAll("tag")
+        .map((tag) => tag.trim())
+        .filter((tag) => tag.length > 0);
+      params.delete("tag");
+      normalizedTags.forEach((tag) => {
+        params.append("tag", tag);
+      });
+
+      const rawSeriesId = (params.get("series_id") || "").trim();
+      const seriesId = Number(rawSeriesId);
+      const hasValidSeriesId = Number.isInteger(seriesId) && seriesId > 0;
+      if (!hasValidSeriesId) {
+        params.delete("series_id");
+      }
+
+      if (hasValidSeriesId) {
+        params.delete("folder");
+      } else {
+        const folderValue = (params.get("folder") || "").trim().toLowerCase();
+        if (folderValue !== "unsorted") {
+          params.delete("folder");
+        } else {
+          params.set("folder", "unsorted");
+        }
+      }
+
+      return targetUrl.toString();
+    } catch (_error) {
+      return href;
+    }
+  };
+
   const buildUrlFromForm = (form) => {
     const action = form.getAttribute("action") || window.location.pathname;
     const targetUrl = new URL(action, window.location.href);
     const params = new URLSearchParams(new FormData(form));
     const query = params.toString();
     targetUrl.search = query;
-    return targetUrl.toString();
+    return canonicalizeCreatorDetailUrl(targetUrl.toString());
   };
 
   let pendingSearchTimer = null;
@@ -666,10 +747,11 @@
         document.title = parsedTitle;
       }
     }
+    const canonicalDestinationUrl = canonicalizeCreatorDetailUrl(destinationUrl, { root: nextCreatorPage });
     if (historyMode === "push") {
-      window.history.pushState(null, "", destinationUrl);
+      window.history.pushState(null, "", canonicalDestinationUrl);
     } else if (historyMode === "replace") {
-      window.history.replaceState(null, "", destinationUrl);
+      window.history.replaceState(null, "", canonicalDestinationUrl);
     }
     resetQuickAddState();
     syncAllCardLayers();
@@ -1135,6 +1217,11 @@
       preserveTagSortCollapseState: false,
     });
   });
+
+  const canonicalCurrentUrl = canonicalizeCreatorDetailUrl(window.location.href);
+  if (canonicalCurrentUrl !== window.location.href) {
+    window.history.replaceState(null, "", canonicalCurrentUrl);
+  }
 
   syncAllCardLayers();
 })();
