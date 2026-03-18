@@ -5853,14 +5853,15 @@ def test_series_quick_add_candidates_exclude_current_series_and_support_filters(
     assert base_response.status_code == 200
     base_payload = base_response.get_json()
     assert isinstance(base_payload, dict)
+    assert base_payload["include_assigned"] is False
 
     base_ids = {int(row["id"]) for row in base_payload["posts"]}
     assert in_target_post_id not in base_ids
-    assert {unsorted_post_id, source_post_id, mixed_post_id}.issubset(base_ids)
+    assert base_ids == {unsorted_post_id}
 
     facets_by_key = {str(row["normalized_tag"]): int(row["post_count"]) for row in base_payload["tag_facets"]}
-    assert facets_by_key["alpha"] >= 2
-    assert facets_by_key["beta"] >= 2
+    assert facets_by_key["alpha"] >= 1
+    assert "beta" not in facets_by_key
 
     search_response = client.get(
         f"/creators/{creator_id}/series/{target_series_id}/quick-add/candidates?q=beta"
@@ -5869,10 +5870,20 @@ def test_series_quick_add_candidates_exclude_current_series_and_support_filters(
     search_payload = search_response.get_json()
     assert isinstance(search_payload, dict)
     search_ids = {int(row["id"]) for row in search_payload["posts"]}
-    assert search_ids == {source_post_id, mixed_post_id}
+    assert search_ids == set()
+
+    include_assigned_response = client.get(
+        f"/creators/{creator_id}/series/{target_series_id}/quick-add/candidates?include_assigned=1"
+    )
+    assert include_assigned_response.status_code == 200
+    include_assigned_payload = include_assigned_response.get_json()
+    assert isinstance(include_assigned_payload, dict)
+    assert include_assigned_payload["include_assigned"] is True
+    include_assigned_ids = {int(row["id"]) for row in include_assigned_payload["posts"]}
+    assert {unsorted_post_id, source_post_id, mixed_post_id}.issubset(include_assigned_ids)
 
     tagged_response = client.get(
-        f"/creators/{creator_id}/series/{target_series_id}/quick-add/candidates?tag=alpha&tag=beta"
+        f"/creators/{creator_id}/series/{target_series_id}/quick-add/candidates?include_assigned=1&tag=alpha&tag=beta"
     )
     assert tagged_response.status_code == 200
     tagged_payload = tagged_response.get_json()
@@ -6034,6 +6045,9 @@ def test_series_quick_add_controls_render_only_in_selected_series_view(tmp_path)
     clear_button = quick_add_form.select_one("[data-series-quick-add-search-clear]")
     assert clear_button is not None
     assert clear_button.has_attr("hidden")
+    include_assigned_toggle = quick_add_form.select_one("[data-series-quick-add-include-assigned]")
+    assert include_assigned_toggle is not None
+    assert include_assigned_toggle.get_text(strip=True) == "Show assigned"
 
     action_row = selected_soup.select_one(".series-meta-actions")
     assert action_row is not None

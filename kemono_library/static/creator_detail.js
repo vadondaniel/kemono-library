@@ -7,6 +7,7 @@
   const seriesQuickAddFormSelector = "[data-series-quick-add-form]";
   const seriesQuickAddSearchSelector = "[data-series-quick-add-search]";
   const seriesQuickAddSearchClearSelector = "[data-series-quick-add-search-clear]";
+  const seriesQuickAddIncludeAssignedSelector = "[data-series-quick-add-include-assigned]";
   const seriesQuickAddTagRowSelector = "[data-series-quick-add-tag-row]";
   const seriesQuickAddGridSelector = "[data-series-quick-add-grid]";
   const seriesQuickAddEmptySelector = "[data-series-quick-add-empty]";
@@ -238,6 +239,7 @@
   let quickAddSelectedTags = [];
   let quickAddSelectedTagKeys = new Set();
   let quickAddSelectedPostIds = new Set();
+  let quickAddIncludeAssigned = false;
 
   const clearPendingSearchTimer = () => {
     if (pendingSearchTimer !== null) {
@@ -266,6 +268,7 @@
     quickAddSelectedTags = [];
     quickAddSelectedTagKeys = new Set();
     quickAddSelectedPostIds = new Set();
+    quickAddIncludeAssigned = false;
   };
 
   const getQuickAddElements = () => {
@@ -277,6 +280,7 @@
     const form = root.querySelector(seriesQuickAddFormSelector);
     const searchInput = root.querySelector(seriesQuickAddSearchSelector);
     const searchClear = root.querySelector(seriesQuickAddSearchClearSelector);
+    const includeAssignedToggle = root.querySelector(seriesQuickAddIncludeAssignedSelector);
     const tagRow = root.querySelector(seriesQuickAddTagRowSelector);
     const grid = root.querySelector(seriesQuickAddGridSelector);
     const empty = root.querySelector(seriesQuickAddEmptySelector);
@@ -290,6 +294,7 @@
       !(form instanceof HTMLFormElement) ||
       !(searchInput instanceof HTMLInputElement) ||
       !(searchClear instanceof HTMLElement) ||
+      !(includeAssignedToggle instanceof HTMLButtonElement) ||
       !(tagRow instanceof HTMLElement) ||
       !(grid instanceof HTMLElement) ||
       !(empty instanceof HTMLElement) ||
@@ -307,6 +312,7 @@
       form,
       searchInput,
       searchClear,
+      includeAssignedToggle,
       tagRow,
       grid,
       empty,
@@ -335,12 +341,14 @@
         resetQuickAddState();
         elements.searchInput.value = "";
         updateQuickAddSearchClearVisibility();
+        updateQuickAddIncludeAssignedToggle();
         updateQuickAddSubmitState();
         fetchAndRenderQuickAddCandidates();
       }
       return;
     }
     resetQuickAddState();
+    updateQuickAddIncludeAssignedToggle();
   };
 
   const updateQuickAddSearchClearVisibility = () => {
@@ -349,6 +357,16 @@
       return;
     }
     elements.searchClear.hidden = !elements.searchInput.value.trim();
+  };
+
+  const updateQuickAddIncludeAssignedToggle = () => {
+    const elements = getQuickAddElements();
+    if (!elements) {
+      return;
+    }
+    elements.includeAssignedToggle.classList.toggle("is-active", quickAddIncludeAssigned);
+    elements.includeAssignedToggle.setAttribute("aria-pressed", quickAddIncludeAssigned ? "true" : "false");
+    elements.includeAssignedToggle.textContent = quickAddIncludeAssigned ? "Hide assigned" : "Show assigned";
   };
 
   const updateQuickAddSubmitState = () => {
@@ -455,6 +473,8 @@
 
       const title = typeof post.title === "string" && post.title.trim() ? post.title.trim() : `Post ${postId}`;
       const seriesName = typeof post.series_name === "string" && post.series_name.trim() ? post.series_name.trim() : "Unsorted";
+      const seriesId = Number(post.series_id);
+      const hasSourceSeries = Number.isInteger(seriesId) && seriesId > 0;
       const publishedAt = typeof post.published_at === "string" && post.published_at.trim() ? post.published_at.trim() : "";
       const thumbnailUrl = getQuickAddThumbnailUrl(post);
       const focusX = clampQuickAddThumbnailFocus(post.thumbnail_focus_x, 50);
@@ -518,10 +538,12 @@
       const meta = document.createElement("div");
       meta.className = "creator-post-meta series-quick-add-card-meta";
 
-      const sourceChip = document.createElement("span");
-      sourceChip.className = "chip chip--accent creator-post-badge";
-      sourceChip.textContent = seriesName;
-      meta.append(sourceChip);
+      if (hasSourceSeries) {
+        const sourceChip = document.createElement("span");
+        sourceChip.className = "chip chip--accent creator-post-badge";
+        sourceChip.textContent = seriesName;
+        meta.append(sourceChip);
+      }
 
       const inlineTagCount = 4;
       let inlineTags = tags.slice(0, inlineTagCount);
@@ -617,6 +639,9 @@
     if (searchText) {
       url.searchParams.set("q", searchText);
     }
+    if (quickAddIncludeAssigned) {
+      url.searchParams.set("include_assigned", "1");
+    }
     for (const tag of quickAddSelectedTags) {
       url.searchParams.append("tag", tag);
     }
@@ -665,6 +690,10 @@
 
       const selectedTags = Array.isArray(payload.selected_tags) ? payload.selected_tags : [];
       setQuickAddTags(selectedTags);
+      if (typeof payload.include_assigned === "boolean") {
+        quickAddIncludeAssigned = payload.include_assigned;
+      }
+      updateQuickAddIncludeAssignedToggle();
       renderQuickAddTagFacets(Array.isArray(payload.tag_facets) ? payload.tag_facets : []);
       renderQuickAddPosts(Array.isArray(payload.posts) ? payload.posts : []);
       updateQuickAddSearchClearVisibility();
@@ -1102,6 +1131,14 @@
         updateQuickAddSearchClearVisibility();
         queueQuickAddSearchRefresh();
       }
+      return;
+    }
+
+    const includeAssignedToggle = target.closest(seriesQuickAddIncludeAssignedSelector);
+    if (includeAssignedToggle instanceof HTMLElement) {
+      quickAddIncludeAssigned = !quickAddIncludeAssigned;
+      updateQuickAddIncludeAssignedToggle();
+      queueQuickAddSearchRefresh();
       return;
     }
 

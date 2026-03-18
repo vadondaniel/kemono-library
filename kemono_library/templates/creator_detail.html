@@ -177,7 +177,15 @@
             >&times;</button>
           </div>
           <div class="post-view-mode-chip-row series-quick-add-tag-row" data-series-quick-add-tag-row></div>
-          <small class="text-subtle series-quick-add-status" data-series-quick-add-status aria-live="polite">Loading posts...</small>
+          <div class="series-quick-add-meta-row">
+            <small class="text-subtle series-quick-add-status" data-series-quick-add-status aria-live="polite">Loading posts...</small>
+            <button
+              type="button"
+              class="chip chip--control series-quick-add-scope-toggle"
+              data-series-quick-add-include-assigned
+              aria-pressed="false"
+            >Show assigned</button>
+          </div>
           <div class="series-quick-add-grid" data-series-quick-add-grid></div>
           <p class="creator-empty series-quick-add-empty" data-series-quick-add-empty hidden>No matching posts found.</p>
           <div class="series-quick-add-actions">

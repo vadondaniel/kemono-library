@@ -1195,11 +1195,13 @@ def create_app(test_config: dict | None = None) -> Flask:
             return jsonify({"error": "Series not found for this creator."}), 404
 
         search_text = request.args.get("q", "").strip()
+        include_assigned = request.args.get("include_assigned", "").strip().lower() in {"1", "true", "yes", "on"}
         selected_tags = _normalize_tag_values(request.args.getlist("tag"))
         selected_tag_keys = {tag.casefold() for tag in selected_tags}
 
         candidate_rows = db.list_posts_for_creator(
             creator_id,
+            unsorted_only=not include_assigned,
             exclude_series_id=series_id,
             sort_by="published",
             sort_direction="desc",
@@ -1210,11 +1212,16 @@ def create_app(test_config: dict | None = None) -> Flask:
         default_tags_by_post_id = db.list_default_tags_for_posts(candidate_post_ids)
         global_tag_popularity = {
             str(row["normalized_tag"]): int(row["post_count"])
-            for row in db.list_creator_tag_facets(creator_id, exclude_series_id=series_id)
+            for row in db.list_creator_tag_facets(
+                creator_id,
+                unsorted_only=not include_assigned,
+                exclude_series_id=series_id,
+            )
         }
 
         tag_facet_rows = db.list_creator_tag_facets(
             creator_id,
+            unsorted_only=not include_assigned,
             exclude_series_id=series_id,
             search_text=search_text,
             required_tags=selected_tags,
@@ -1281,6 +1288,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                 "posts": posts,
                 "tag_facets": facets,
                 "selected_tags": selected_tags,
+                "include_assigned": include_assigned,
                 "count": len(posts),
             }
         )
