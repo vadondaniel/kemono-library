@@ -3487,6 +3487,11 @@ button:disabled,
   box-shadow: var(--popover-shadow);
 }
 
+.creator-post-tag-details.is-tag-list-align-right .creator-post-tag-list {
+  left: auto;
+  right: 0;
+}
+
 .creator-post-tag-chip {
   font-size: 0.74rem;
 }

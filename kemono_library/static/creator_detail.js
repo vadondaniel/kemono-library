@@ -58,9 +58,45 @@
       if (!(popover instanceof HTMLDetailsElement) || popover === keepOpen) {
         return;
       }
+      popover.classList.remove("is-tag-list-align-right");
       popover.open = false;
       syncCardLayerClass(popover);
     });
+  };
+
+  const ensureTagListInViewport = (popover) => {
+    if (!(popover instanceof HTMLDetailsElement) || !popover.open) {
+      return;
+    }
+    const list = popover.querySelector(".creator-post-tag-list");
+    if (!(list instanceof HTMLElement)) {
+      return;
+    }
+
+    const viewportPadding = 12;
+    popover.classList.remove("is-tag-list-align-right");
+
+    let rect = list.getBoundingClientRect();
+    if (rect.right > window.innerWidth - viewportPadding) {
+      popover.classList.add("is-tag-list-align-right");
+      rect = list.getBoundingClientRect();
+    }
+
+    if (rect.left < viewportPadding && popover.classList.contains("is-tag-list-align-right")) {
+      popover.classList.remove("is-tag-list-align-right");
+      rect = list.getBoundingClientRect();
+    }
+
+    let deltaY = 0;
+    if (rect.bottom > window.innerHeight - viewportPadding) {
+      deltaY = rect.bottom - (window.innerHeight - viewportPadding);
+    } else if (rect.top < viewportPadding) {
+      deltaY = rect.top - viewportPadding;
+    }
+
+    if (Math.abs(deltaY) > 1) {
+      window.scrollBy({ top: deltaY, behavior: "smooth" });
+    }
   };
 
   const isCreatorDetailUrl = (href) => {
@@ -259,6 +295,9 @@
       syncCardLayerClass(target);
       if (target.open) {
         closeAllTagPopoversExcept(target);
+        window.requestAnimationFrame(() => {
+          ensureTagListInViewport(target);
+        });
       }
     },
     true
