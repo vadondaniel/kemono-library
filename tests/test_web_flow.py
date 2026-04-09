@@ -926,6 +926,8 @@ def test_import_start_queues_later_jobs_until_running_import_finishes(tmp_path, 
 
     allow_first_download = threading.Event()
     first_download_started = threading.Event()
+    allow_second_download = threading.Event()
+    second_download_started = threading.Event()
 
     def fake_fetch(ref, fallback_user_id=None):  # noqa: ARG001
         post_num = str(ref.post_id)
@@ -949,6 +951,10 @@ def test_import_start_queues_later_jobs_until_running_import_finishes(tmp_path, 
             first_download_started.set()
             if not allow_first_download.wait(timeout=2):
                 raise AssertionError("timed out waiting to release first queued import")
+        if remote_url.endswith("/201.jpg"):
+            second_download_started.set()
+            if not allow_second_download.wait(timeout=2):
+                raise AssertionError("timed out waiting to release second queued import")
         Path(destination).parent.mkdir(parents=True, exist_ok=True)
         Path(destination).write_bytes(b"ok")
 
@@ -1005,8 +1011,18 @@ def test_import_start_queues_later_jobs_until_running_import_finishes(tmp_path, 
     assert "Queue position: 1" in queued_status["message"]
 
     allow_first_download.set()
+    assert second_download_started.wait(timeout=2)
 
-    second_running_seen = False
+    first_status = client.get(first_status_url).get_json()
+    second_status = client.get(second_status_url).get_json()
+    if first_status["status"] == "failed":
+        raise AssertionError(first_status["error"])
+    if second_status["status"] == "failed":
+        raise AssertionError(second_status["error"])
+    assert second_status["status"] == "running"
+
+    allow_second_download.set()
+
     second_completed = False
     for _ in range(200):
         first_status = client.get(first_status_url).get_json()
@@ -1015,14 +1031,11 @@ def test_import_start_queues_later_jobs_until_running_import_finishes(tmp_path, 
             raise AssertionError(first_status["error"])
         if second_status["status"] == "failed":
             raise AssertionError(second_status["error"])
-        if second_status["status"] == "running":
-            second_running_seen = True
         if first_status["status"] == "completed" and second_status["status"] == "completed":
             second_completed = True
             break
         time.sleep(0.01)
 
-    assert second_running_seen is True
     assert second_completed is True
 
 
