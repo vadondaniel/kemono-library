@@ -6,6 +6,7 @@ import json
 import os
 import re
 import secrets
+import string
 import shutil
 import sqlite3
 import stat
@@ -49,8 +50,38 @@ GRID_THUMB_CACHE_VERSION = 1
 GRID_THUMB_TARGET_ASPECT_RATIO = 1200.0 / 630.0
 
 
+def _load_env_file(path: Path) -> None:
+    if not path.is_file():
+        return
+
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+        if "=" not in line:
+            continue
+
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key or any(ch not in string.ascii_letters + string.digits + "_" for ch in key):
+            continue
+        if key in os.environ:
+            continue
+
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        elif " #" in value:
+            value = value.split(" #", 1)[0].rstrip()
+
+        os.environ[key] = value
+
+
 def create_app(test_config: dict | None = None) -> Flask:
     app = Flask(__name__)
+    _load_env_file(Path(app.root_path).parent / ".env")
     default_data_dir = Path(os.environ.get("KEMONO_LIBRARY_DATA_DIR", Path(app.root_path).parent / "data"))
     app.config.update(
         SECRET_KEY=os.environ.get("KEMONO_LIBRARY_SECRET_KEY") or secrets.token_hex(32),

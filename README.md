@@ -33,7 +33,10 @@ Runtime data is stored locally under `data/` by default and is ignored by git.
 
 ## Configuration
 
-The app reads configuration from environment variables when they are present:
+The app loads a repo-root `.env` file automatically when it exists, then reads configuration from environment variables:
+
+- Copy `.env.example` to `.env` and set the values you want to keep local.
+- Existing process environment variables still win over `.env` values.
 
 - `KEMONO_LIBRARY_SECRET_KEY`
   Use this if you want stable Flask sessions across restarts.
@@ -55,9 +58,3 @@ Run the test suite with:
 ```bash
 pytest -q
 ```
-
-## Repo Notes
-
-- Local databases, downloads, debug folders, and editor settings are excluded from version control.
-- No sample content is committed with the repository.
-- If you plan to publish the repo publicly, review existing git history before pushing in case earlier commits contain personal metadata you do not want exposed.
