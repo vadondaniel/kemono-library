@@ -30,11 +30,18 @@ htmlcov/
 *.swo
 Thumbs.db
 .DS_Store
+.python-version
 
 # Local app data
 data/
 *.db
 *.sqlite
 *.sqlite3
+tmp_dbg/
+tmp_debug_ext/
+*.log
+.env
+.env.*
+!.env.example
 
 AGENTS.md

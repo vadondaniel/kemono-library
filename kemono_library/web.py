@@ -3,7 +3,9 @@ from __future__ import annotations
 import html
 import hashlib
 import json
+import os
 import re
+import secrets
 import shutil
 import sqlite3
 import stat
@@ -49,11 +51,12 @@ GRID_THUMB_TARGET_ASPECT_RATIO = 1200.0 / 630.0
 
 def create_app(test_config: dict | None = None) -> Flask:
     app = Flask(__name__)
+    default_data_dir = Path(os.environ.get("KEMONO_LIBRARY_DATA_DIR", Path(app.root_path).parent / "data"))
     app.config.update(
-        SECRET_KEY="dev-local-secret",
-        DATABASE=str(Path(app.root_path).parent / "data" / "library.db"),
-        FILES_DIR=str(Path(app.root_path).parent / "data" / "files"),
-        ICONS_DIR=str(Path(app.root_path).parent / "data" / "icons"),
+        SECRET_KEY=os.environ.get("KEMONO_LIBRARY_SECRET_KEY") or secrets.token_hex(32),
+        DATABASE=str(Path(os.environ.get("KEMONO_LIBRARY_DATABASE", default_data_dir / "library.db"))),
+        FILES_DIR=str(Path(os.environ.get("KEMONO_LIBRARY_FILES_DIR", default_data_dir / "files"))),
+        ICONS_DIR=str(Path(os.environ.get("KEMONO_LIBRARY_ICONS_DIR", default_data_dir / "icons"))),
         GRID_THUMB_MAX_EDGE=640,
         GRID_THUMB_MIN_SOURCE_BYTES=768 * 1024,
     )
